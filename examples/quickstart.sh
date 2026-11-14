@@ -16,7 +16,9 @@ fi
 mkdir -p config/local/jobs state snapshots
 [[ -f config/local/cluster.json ]] || cp config/examples/cluster.example.json config/local/cluster.json
 [[ -f config/local/nodes.json ]] || cp config/examples/nodes.example.json config/local/nodes.json
-[[ -f config/local/jobs/decider.json ]] || cp config/examples/decider.example.json config/local/jobs/decider.json
+if [[ ! -f config/local/jobs/shell-job.json ]] && [[ ! -f config/local/jobs/decider.json ]]; then
+  cp config/examples/shell-job.example.json config/local/jobs/shell-job.json
+fi
 
 # Optional root compat symlinks (gitignored)
 ln -sfn config/local/cluster.json cluster.json

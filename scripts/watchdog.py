@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 import _bootstrap  # noqa: F401
 from paths import CLI, INVENTORY_FILE, PROJECT_DIR, STATE_DIR, VENV_PYTHON
+from jobs_util import default_job_name
 
 LOG_FILE = STATE_DIR / "watchdog.log"
 STATE_FILE = STATE_DIR / "watchdog_state.json"
@@ -145,7 +146,10 @@ def main() -> int:
     parser.add_argument("--once", action="store_true", help="Single check then exit")
     args = parser.parse_args()
 
-    jobs = args.jobs or ["decider"]
+    jobs = args.jobs or ([default_job_name()] if default_job_name() else [])
+    if not jobs:
+        log("no jobs to watch (register a job or pass --job)")
+        return 1
     log(f"watchdog start jobs={jobs} interval={args.interval}s nodes={args.nodes or 'all'}")
     while True:
         for job in jobs:

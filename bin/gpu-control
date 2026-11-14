@@ -29,6 +29,7 @@ from paths import (  # noqa: E402
     nodes_file,
 )
 from node_paths import group_nodes_by_job, load_nodes_data  # noqa: E402
+from jobs_util import default_job_name  # noqa: E402
 
 LEASES_FILE = STATE_DIR / "leases.json"
 QUEUE_FILE = STATE_DIR / "queue.json"
@@ -478,7 +479,9 @@ def cmd_plan(args: argparse.Namespace) -> int:
 def cmd_status_default(args: argparse.Namespace) -> int:
     args.action = "status"
     if not args.job:
-        args.job = "decider"
+        args.job = default_job_name()
+        if not args.job:
+            die("没有已注册 Job。请复制 config/examples/*.example.json → config/local/jobs/")
     return cmd_job_action(args)
 
 

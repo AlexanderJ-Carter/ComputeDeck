@@ -40,6 +40,7 @@ from paths import (  # noqa: E402
 )
 
 from node_paths import default_paths, node_paths  # noqa: E402
+from jobs_util import default_job_name  # noqa: E402
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 from render_gateway import (  # noqa: E402
@@ -494,7 +495,8 @@ SETUP_GUIDE = [
         "title": "注册 Job（可选）",
         "body": "复制模板到 config/local/jobs/；路径用 ${paths.*}。",
         "cli": [
-            "cp config/examples/decider.example.json config/local/jobs/myjob.json",
+            "cp config/examples/shell-job.example.json config/local/jobs/myjob.json",
+            "# 按需改 python/script/extra_args；decider 只是领域示例之一",
             "gpu-control status myjob --nodes all",
         ],
     },
@@ -555,15 +557,19 @@ def build_setup_status() -> dict:
         job = json.loads(path.read_text(encoding="utf-8"))
         jobs.append({
             "name": job.get("name") or path.stem,
+            "description": job.get("description") or "",
             "path": str(path),
             "python": job.get("python"),
             "script": job.get("script"),
+            "extra_args": job.get("extra_args") or [],
+            "gpus_per_node": job.get("gpus_per_node"),
+            "runtime": job.get("runtime") or "process",
             "python_exists": Path(expand_path(str(job.get("python") or ""))).exists()
-            if job.get("python")
-            else False,
+            if job.get("python") and "${paths." not in str(job.get("python"))
+            else None,
             "script_exists": Path(expand_path(str(job.get("script") or ""))).exists()
-            if job.get("script")
-            else False,
+            if job.get("script") and "${paths." not in str(job.get("script"))
+            else None,
         })
 
     checklist = [
@@ -856,7 +862,9 @@ def run_oneclick(action: str, body: dict | None = None) -> dict:
             ),
         )
     elif action == "deploy":
-        job = (body.get("job") or "decider").strip()
+        job = (body.get("job") or default_job_name() or "").strip()
+        if not job:
+            return {"ok": False, "error": "未指定 job，且没有已注册任务", "steps": []}
         gpus = int(body.get("gpus") or 4)
         if body.get("nodes"):
             args = ["deploy", job, "--nodes", str(body["nodes"])]
@@ -868,10 +876,13 @@ def run_oneclick(action: str, body: dict | None = None) -> dict:
         step("刷新 GPU", lambda: run_cli(["gpu", "refresh", "--quiet"], timeout=180))
         step("API 健康", lambda: run_cli(["health", "--mode", "local"], timeout=180))
     elif action == "watchdog":
+        job = (body.get("job") or default_job_name() or "").strip()
+        if not job:
+            return {"ok": False, "error": "未指定 job，且没有已注册任务", "steps": []}
         step(
             "启动看门狗",
             lambda: run_cli(
-                ["watchdog", "--job", body.get("job") or "decider", "--background"],
+                ["watchdog", "--job", job, "--background"],
                 timeout=30,
             ),
         )

@@ -1,8 +1,8 @@
 {
   "name": "my-gpu-pool",
   "strategy": "inference-pool",
-  "description": "N nodes × M GPUs inference pool. Copy to ../local/cluster.json and edit.",
-  "default_job": "decider",
+  "description": "Copy to ../local/cluster.json. default_job = 你注册的任一 Job 名。",
+  "default_job": "shell-job",
   "control": {
     "node": "control",
     "host": "10.0.0.10",
@@ -11,8 +11,8 @@
     "note": "CPU control host only — UI/CLI/Ansible; not a GPU worker"
   },
   "api": {
-    "base_port": 30000,
-    "ports_per_node": 4,
+    "base_port": 8000,
+    "ports_per_node": 1,
     "health_path": "/health",
     "auth_header": "Authorization",
     "api_key_file": "${GPU_CONTROL_API_KEY_FILE}"
@@ -24,8 +24,8 @@
     "nginx_listen": 18080
   },
   "watchdog": {
-    "enabled": true,
-    "jobs": ["decider"],
+    "enabled": false,
+    "jobs": [],
     "interval_sec": 60,
     "max_restarts": 3,
     "nodes": "all"
@@ -38,9 +38,9 @@
   "collaboration": {
     "mode": "horizontal-scale",
     "notes": [
-      "control = CPU control-plane (UI/CLI/Ansible); nodes.* = GPU workers only.",
-      "Horizontal replica pool; clients round-robin endpoints.",
-      "Borrow a whole node with: gpu-control free --node X --cordon"
+      "control = CPU control-plane; nodes.* = GPU workers.",
+      "Jobs are pluggable JSON + remote manager scripts — not tied to one model.",
+      "Borrow a node: gpu-control free --node X --cordon"
     ]
   }
 }

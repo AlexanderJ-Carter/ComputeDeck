@@ -1,0 +1,11 @@
+{
+  "name": "http-serve",
+  "description": "通用示例：把你自己的 HTTP/推理服务管理脚本挂进来即可",
+  "gpus_per_node": 4,
+  "runtime": "process",
+  "python": "${paths.python}",
+  "script": "${paths.model_root}/your_team/manage_serve.py",
+  "extra_args": ["--base-port", "8000"],
+  "env": {},
+  "actions": ["start", "stop", "restart", "status", "wait"]
+}

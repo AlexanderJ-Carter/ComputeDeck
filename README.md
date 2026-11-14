@@ -23,7 +23,7 @@ gpu-control doctor && gpu-control ui --background
 |----|------|
 | 一键运维 | 连通 / 体检 / 同步 |
 | 总览 | 节点矩阵 · 腾空/隔离 |
-| 任务 | Job 启停 · 启动参数 · 部署 |
+| 任务 | 任意 Job 启停（JSON 插件，非绑死某一模型） |
 | 模型 | 路径 · 校验 · 拉取 |
 | 节点 | inventory 增删 |
 | 推理池 | API 健康 · 网关片段 |

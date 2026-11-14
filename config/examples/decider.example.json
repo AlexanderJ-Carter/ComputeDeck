@@ -1,6 +1,6 @@
 {
   "name": "decider",
-  "description": "Example job: process runtime + ${paths.*}；启动参数在 extra_args",
+  "description": "【领域示例·非框架必需】Mapika Decider；可删，换成自己的 Job",
   "gpus_per_node": 4,
   "runtime": "process",
   "model": "decider-2b",

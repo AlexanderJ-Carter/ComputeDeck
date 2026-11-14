@@ -97,7 +97,9 @@ def main() -> int:
 
     jobs = list_job_files()
     if not jobs:
-        issues.append("no jobs registered (copy config/examples/decider.example.json → config/local/jobs/)")
+        issues.append(
+            "no jobs registered（复制 config/examples/shell-job.example.json → config/local/jobs/）"
+        )
     else:
         notes.append(f"jobs: {', '.join(p.stem for p in jobs)}")
 

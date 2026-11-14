@@ -8,6 +8,7 @@
     "role": "serving",
     "paths": {
       "python": "/usr/bin/python3",
+      "repo": "/path/to/gpu-control",
       "model_root": "/data/models",
       "workdir": "/tmp/gpu-workdir",
       "cache": "/data/hf-cache"

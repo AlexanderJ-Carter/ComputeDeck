@@ -44,7 +44,7 @@ def main() -> int:
             })
 
     payload = {
-        "job": cluster.get("default_job", "decider"),
+        "job": cluster.get("default_job") or "",
         "strategy": cluster.get("strategy"),
         "api_key_file": key_file,
         "count": len(endpoints),

@@ -1056,7 +1056,8 @@ async function runOneclick(action, extra = {}) {
   try {
     const body = { action, ...extra };
     if (action === "deploy") {
-      body.job = document.getElementById("quick-job").value || "decider";
+      body.job = document.getElementById("quick-job").value || "";
+      if (!body.job) return log("请先选择任务（或注册 Job）");
       body.gpus = Number(document.getElementById("quick-gpus").value || 4);
       if (!confirm(`确认一键部署 ${body.job}（${body.gpus} GPU）？`)) return;
     }
@@ -1320,22 +1321,32 @@ function fillSetupForm(data) {
   document.getElementById("ssh-user").value = defaults.ansible_user || "";
   document.getElementById("ssh-port").value = defaults.ansible_port ?? "";
   document.getElementById("cluster-name").value = cluster.name || "";
-  document.getElementById("cluster-job").value = cluster.default_job || "decider";
-  document.getElementById("cluster-base-port").value = api.base_port ?? 30000;
-  document.getElementById("cluster-ports").value = api.ports_per_node ?? 4;
+  const defaultJob =
+    cluster.default_job ||
+    ((data.jobs || [])[0] && (data.jobs || [])[0].name) ||
+    "";
+  document.getElementById("cluster-job").value = defaultJob;
+  document.getElementById("cluster-base-port").value = api.base_port ?? 8000;
+  document.getElementById("cluster-ports").value = api.ports_per_node ?? 1;
   document.getElementById("cluster-api-key").value = api.api_key_file || "";
   document.getElementById("cluster-prefer").value = (scheduling.prefer_labels || []).join(",");
   document.getElementById("cluster-avoid").value = (scheduling.avoid_labels || []).join(",");
   document.getElementById("nodes-editor").value = nodesDocToEditor(data.nodes || {});
 
-  const job = (data.jobs || []).find((j) => j.name === "decider") || (data.jobs || [])[0];
+  const job =
+    (data.jobs || []).find((j) => j.name === defaultJob) || (data.jobs || [])[0];
   if (job) {
-    document.getElementById("setup-job-path").textContent = job.path || "";
-    document.getElementById("job-desc").value = "";
-    document.getElementById("job-gpus").value = "";
+    document.getElementById("job-name").value = job.name || defaultJob;
+    document.getElementById("setup-job-path").textContent =
+      job.path || `config/local/jobs/${job.name || defaultJob}.json`;
+    document.getElementById("job-desc").value = job.description || "";
+    document.getElementById("job-gpus").value = job.gpus_per_node ?? 4;
     document.getElementById("job-python").value = job.python || "";
     document.getElementById("job-script").value = job.script || "";
-    document.getElementById("job-extra").value = "";
+    document.getElementById("job-extra").value = (job.extra_args || []).join(" ");
+  } else {
+    document.getElementById("job-name").value = defaultJob || "";
+    document.getElementById("setup-job-path").textContent = "config/local/jobs/<name>.json";
   }
 
   const chips = document.getElementById("ssh-key-chips");
@@ -1462,7 +1473,7 @@ async function saveCluster() {
   const data = {
     ...base,
     name: document.getElementById("cluster-name").value.trim() || base.name,
-    default_job: document.getElementById("cluster-job").value.trim() || "decider",
+    default_job: document.getElementById("cluster-job").value.trim() || "",
     api: {
       ...(base.api || {}),
       base_port: Number(document.getElementById("cluster-base-port").value || 30000),
@@ -1525,7 +1536,8 @@ async function saveNodesEditor() {
 }
 
 async function saveJob() {
-  const name = "decider";
+  const name = (document.getElementById("job-name").value || "").trim();
+  if (!name) return log("请填写 Job 名");
   const extra = document
     .getElementById("job-extra")
     .value.trim()
@@ -1535,6 +1547,7 @@ async function saveJob() {
     name,
     description: document.getElementById("job-desc").value.trim(),
     gpus_per_node: Number(document.getElementById("job-gpus").value || 4),
+    runtime: "process",
     python: document.getElementById("job-python").value.trim(),
     script: document.getElementById("job-script").value.trim(),
     extra_args: extra,
@@ -1823,7 +1836,8 @@ async function boot() {
   });
 
   document.getElementById("btn-queue-submit").addEventListener("click", async () => {
-    const job = document.getElementById("job-select").value || "decider";
+    const job = document.getElementById("job-select").value;
+    if (!job) return log("请先选择任务");
     setBusy(true);
     try {
       const data = await api("/api/queue/submit", {

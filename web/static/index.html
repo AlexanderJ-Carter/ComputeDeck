@@ -453,8 +453,8 @@
           <pre class="snippet" id="guide-cli">gpu-control doctor
 gpu-control models deps
 gpu-control models verify
-gpu-control deploy decider --gpus 4
-gpu-control free --node 名称 --force --wait 30
+gpu-control deploy &lt;job&gt; --gpus 4
+gpu-control free --node 名称 --wait 30
 gpu-control ui --background</pre>
         </div>
       </section>
@@ -514,10 +514,12 @@ gpu-control ui --background</pre>
 
             <div class="panel">
               <div class="panel-h">
-                <h2>4. 任务 · decider</h2>
+                <h2>4. 默认 Job</h2>
                 <button id="btn-save-job" class="primary tiny" data-keep-enabled="1">保存</button>
               </div>
-              <p class="path-line" id="setup-job-path">config/local/jobs/decider.json</p>
+              <p class="muted" style="margin-top:0">任意可启停脚本都是 Job；下方编辑 <code>cluster.default_job</code> 对应文件。</p>
+              <label class="field"><span>Job 名</span><input id="job-name" placeholder="my-service" /></label>
+              <p class="path-line" id="setup-job-path">config/local/jobs/&lt;name&gt;.json</p>
               <label class="field"><span>描述</span><input id="job-desc" /></label>
               <label class="field"><span>每节点 GPU</span><input id="job-gpus" type="number" /></label>
               <label class="field"><span>Python 路径</span><input id="job-python" /></label>
