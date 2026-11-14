@@ -14,6 +14,25 @@
 
 ---
 
+## [0.11.1] - 2026-11-14
+
+### Added
+
+- 网关分层拓扑（backends / edge LB / AI Gateway / control）
+- 生成 LiteLLM `model_list` 片段：`state/gateway/litellm-model-list.yaml`
+- `cluster.gateway`：`model_name` · `litellm_model` · `openai_api_base_path` · `routing_strategy`
+
+### Changed
+
+- `GATEWAY.md` 写清「何时用 nginx / LiteLLM / 控制面」；UI 片段增加 LiteLLM 选项
+- nginx 片段标明仅做原始 HTTP LB，不做 model 路由
+
+### Notes
+
+- 虚拟密钥、预算、Redis、fallback 组仍由 AI Gateway 产品负责；gpu-control 只渲染对接片段
+
+---
+
 ## [0.11.0] - 2026-11-14
 
 ### Changed
@@ -219,6 +238,7 @@
 4. **链接**：下方版本锚点在具备远程 tag 后可改为 compare URL。
 
 [Unreleased]: #unreleased
+[0.11.1]: #0111---2026-11-14
 [0.11.0]: #0110---2026-11-14
 [0.10.10]: #01010---2026-11-14
 [0.10.9]: #0109---2026-11-14

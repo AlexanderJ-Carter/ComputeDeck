@@ -364,6 +364,7 @@ function activeSnippet(lb) {
   const kind = document.getElementById("snippet-kind")?.value || "python";
   const snippets = (lb && lb.snippets) || {};
   if (snippets[kind]) return snippets[kind];
+  if (kind === "litellm" && snippets.litellm_yaml) return snippets.litellm_yaml;
   if (kind === "gateway_notes" && snippets.litellm_notes) return snippets.litellm_notes;
   if (kind === "python") return (lb && lb.snippet) || "";
   return snippets.python || (lb && lb.snippet) || "";
@@ -380,13 +381,17 @@ function renderGatewayTopo(lb, endpointsCatalog) {
     const range = info.range || (info.ports || []).join(",") || `${info.base_port}+${info.ports_per_node}`;
     return `${name} ${range}`;
   });
+  const layers = topo.layers || {};
+  const ai = layers.ai_gateway || {};
   const nginx = local.nginx || {};
   const proxy = local.openai_compat_proxy || local.litellm_gateway || {};
   const extra = local.extra_http || local.legacy_vllm || {};
   const bits = [
     nodeBits.length ? `按节点 ${nodeBits.join(" · ")}` : `默认端口 ${(pool.port_range || []).join("-") || "-"}`,
   ];
-  if (proxy.port) bits.push(`proxy :${proxy.port}`);
+  if (ai.model_name) bits.push(`model=${ai.model_name}`);
+  if (ai.routing_strategy) bits.push(`route=${ai.routing_strategy}`);
+  if (proxy.port) bits.push(`AI Gateway :${proxy.port}`);
   if (extra.port) bits.push(`extra :${extra.port}`);
   bits.push(`nginx ${nginx.installed ? "已装" : "未装"}`);
   el.textContent = bits.join(" · ");

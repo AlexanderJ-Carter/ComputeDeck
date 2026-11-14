@@ -21,6 +21,10 @@
     "api_key_file": "${GPU_CONTROL_API_KEY_FILE}"
   },
   "gateway": {
+    "model_name": "gpu-pool",
+    "litellm_model": "openai/local-model",
+    "openai_api_base_path": "/v1",
+    "routing_strategy": "least-busy",
     "openai_proxy_port": 4000,
     "openai_proxy_dir": "${GPU_CONTROL_GATEWAY_DIR}",
     "openai_proxy_role": "optional OpenAI-compatible proxy (LiteLLM 等)",

@@ -45,11 +45,8 @@ from api_catalog import catalog_payload, openapi_payload  # noqa: E402
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 from render_gateway import (  # noqa: E402
+    apply_upstreams as apply_gateway_upstreams,
     build_payload as build_gateway_payload,
-    render_curl,
-    render_gateway_notes,
-    render_nginx,
-    render_python_client,
     write_artifacts as write_gateway_artifacts,
 )
 from model_ops import (  # noqa: E402
@@ -304,17 +301,7 @@ def _build_gateway_payload(upstreams: list[dict] | None = None) -> dict:
         })
     if not cleaned:
         return payload
-    pool = (payload.get("topology") or {}).get("inference_pool") or {}
-    payload["upstreams"] = cleaned
-    notes = render_gateway_notes(payload["topology"], cleaned)
-    payload["snippets"] = {
-        "python": render_python_client(cleaned),
-        "nginx": render_nginx(cleaned),
-        "curl": render_curl(cleaned, pool),
-        "gateway_notes": notes,
-        "litellm_notes": notes,
-    }
-    return payload
+    return apply_gateway_upstreams(payload, cleaned)
 
 
 def state_fingerprint() -> str:
