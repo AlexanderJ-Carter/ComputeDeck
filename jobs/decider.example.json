@@ -1,9 +1,11 @@
 {
   "name": "decider",
-  "description": "Example job: 4 GPUs per node, OpenAI-compatible API ports 30000-30003",
+  "description": "Example job: process runtime + ${paths.*}；启动参数在 extra_args",
   "gpus_per_node": 4,
-  "python": "${GPU_CONTROL_PYTHON}",
-  "script": "${GPU_CONTROL_JOB_SCRIPT}",
+  "runtime": "process",
+  "model": "decider-2b",
+  "python": "${paths.python}",
+  "script": "${paths.model_root}/Mapika/start_model.py",
   "extra_args": ["--base-port", "30000"],
   "actions": ["start", "stop", "restart", "status", "wait"]
 }

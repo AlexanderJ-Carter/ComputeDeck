@@ -8,6 +8,7 @@ const state = {
   quality: null,
   refreshInFlight: false,
   lb: null,
+  models: null,
 };
 
 const VIEW_TITLE = {
@@ -15,6 +16,7 @@ const VIEW_TITLE = {
   cluster: "总览",
   nodes: "节点",
   workloads: "任务",
+  models: "模型",
   endpoints: "推理池",
   ops: "命令",
   terminal: "终端",
@@ -27,6 +29,7 @@ const VIEW_CLI = {
   cluster: "gpu-control get nodes",
   nodes: "gpu-control node render",
   workloads: "gpu-control get jobs",
+  models: "gpu-control models list && gpu-control models check",
   endpoints: "gpu-control health",
   ops: "gpu-control exec --nodes all -- ...",
   terminal: "ssh <node>  # Web 内置 PTY",
@@ -167,6 +170,14 @@ function fillTargetSelects(nodes) {
     optsNode || `<option value="">暂无节点</option>`,
     state.selectedNode
   );
+  const modelNode = document.getElementById("model-node");
+  if (modelNode) {
+    const prev = modelNode.value;
+    modelNode.innerHTML =
+      `<option value="">集群默认 paths</option>` +
+      nodes.map((n) => `<option value="${n.name}">${n.name}</option>`).join("");
+    if ([...modelNode.options].some((o) => o.value === prev)) modelNode.value = prev;
+  }
   syncDeployMode();
 }
 
@@ -660,10 +671,80 @@ function renderJobs(jobs) {
   }
   document.getElementById("jobs").innerHTML =
     (jobs || [])
-      .map(
-        (j) => `<div class="item"><div><strong>${j.name}</strong><div class="meta">${j.description || ""}</div></div><span class="chip">${j.gpus_per_node || "?"} GPU</span></div>`
-      )
+      .map((j) => {
+        const runtime = j.runtime || "process";
+        const args = (j.extra_args || []).join(" ");
+        return `<div class="item"><div><strong>${escapeHtml(j.name)}</strong>
+          <div class="meta">${escapeHtml(j.description || "")}</div>
+          <div class="meta">${escapeHtml(runtime)}${j.model ? " · model=" + escapeHtml(j.model) : ""}
+          ${args ? " · " + escapeHtml(args) : ""}</div></div>
+          <span class="chip">${j.gpus_per_node || "?"} GPU</span></div>`;
+      })
       .join("") || '<div class="meta">暂无任务</div>';
+  syncJobArgsHint(jobs);
+}
+
+function syncJobArgsHint(jobs) {
+  const sel = document.getElementById("job-select");
+  const hint = document.getElementById("job-args-hint");
+  const input = document.getElementById("job-extra-args");
+  if (!sel || !hint) return;
+  const job = (jobs || state.overview?.jobs || []).find((j) => j.name === sel.value);
+  const args = (job?.extra_args || []).join(" ");
+  hint.textContent = args
+    ? `默认参数：${args}（留空用默认；填写则本次覆盖）`
+    : "默认无 extra_args；填写后仅本次生效。";
+  if (input && !input.dataset.touched) input.placeholder = args || "--base-port 30000";
+}
+
+function renderModels(payload) {
+  state.models = payload;
+  const models = payload?.models || [];
+  const sel = document.getElementById("model-select");
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML =
+    models.map((m) => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.id)}</option>`).join("") ||
+    `<option value="">未配置 models[]</option>`;
+  if ([...sel.options].some((o) => o.value === prev)) sel.value = prev;
+  const caches = document.getElementById("model-caches");
+  if (caches) {
+    caches.innerHTML =
+      (payload?.caches || [])
+        .map(
+          (c) =>
+            `<div class="item"><div><strong>${escapeHtml(c.id)}</strong><div class="meta">${escapeHtml(
+              c.path
+            )}</div><div class="meta">${escapeHtml(c.note || "")}</div></div></div>`
+        )
+        .join("") || '<div class="meta">无 caches</div>';
+  }
+  const defaults = document.getElementById("model-defaults-paths");
+  if (defaults) {
+    defaults.textContent = JSON.stringify(payload?.defaults_paths || {}, null, 2);
+  }
+  syncModelDetail();
+}
+
+function syncModelDetail() {
+  const payload = state.models;
+  const id = document.getElementById("model-select")?.value;
+  const m = (payload?.models || []).find((x) => x.id === id);
+  document.getElementById("model-path").textContent = m?.path || "-";
+  document.getElementById("model-repo").textContent = m?.repo || "-";
+  document.getElementById("model-job").textContent = m?.launch?.job || "-";
+  document.getElementById("model-args").textContent = (m?.launch?.extra_args || []).join(" ") || "-";
+}
+
+async function refreshModels() {
+  const node = document.getElementById("model-node")?.value || "";
+  const q = node ? `?node=${encodeURIComponent(node)}` : "";
+  try {
+    const data = await api(`/api/models${q}`);
+    renderModels(data);
+  } catch (err) {
+    toast(String(err.message || err));
+  }
 }
 
 function renderQueue(queue) {
@@ -974,6 +1055,12 @@ async function runPython() {
   }
 }
 
+function parseExtraArgs(text) {
+  const raw = (text || "").trim();
+  if (!raw) return null;
+  return raw.split(/\s+/).filter(Boolean);
+}
+
 async function runJobAction(action) {
   const job = document.getElementById("job-select").value;
   if (!job) return;
@@ -984,11 +1071,14 @@ async function runJobAction(action) {
     state.selectedNode = scope;
     target = { node: scope };
   }
+  const extraArgs = parseExtraArgs(document.getElementById("job-extra-args")?.value);
+  const body = { action, ...target };
+  if (extraArgs) body.extra_args = extraArgs;
   setBusy(true);
   try {
     const data = await api(`/api/jobs/${encodeURIComponent(job)}/action`, {
       method: "POST",
-      body: JSON.stringify({ action, ...target }),
+      body: JSON.stringify(body),
     });
     document.getElementById("console").classList.remove("empty");
     document.getElementById("console").textContent =
@@ -1059,6 +1149,9 @@ function setView(name) {
   if (hint) hint.textContent = VIEW_CLI[name] || "gpu-control --help";
   if (name === "guide" || name === "config") {
     loadSetup().catch((err) => log(String(err.message || err)));
+  }
+  if (name === "models") {
+    refreshModels().catch((err) => log(String(err.message || err)));
   }
   if (name === "actions") {
     loadQuality().catch(() => { });
@@ -1508,6 +1601,69 @@ async function boot() {
   document.getElementById("btn-run-py").addEventListener("click", runPython);
   document.querySelectorAll("[data-job-action]").forEach((btn) => {
     btn.addEventListener("click", () => runJobAction(btn.dataset.jobAction));
+  });
+  document.getElementById("job-select")?.addEventListener("change", () => {
+    syncJobArgsHint(state.overview?.jobs);
+  });
+  document.getElementById("job-extra-args")?.addEventListener("input", (ev) => {
+    ev.target.dataset.touched = "1";
+  });
+
+  document.getElementById("btn-models-refresh")?.addEventListener("click", () => refreshModels());
+  document.getElementById("model-select")?.addEventListener("change", syncModelDetail);
+  document.getElementById("model-node")?.addEventListener("change", () => refreshModels());
+  document.getElementById("btn-models-check")?.addEventListener("click", async () => {
+    const node = document.getElementById("model-node")?.value;
+    setBusy(true);
+    try {
+      const body = node ? { node } : { nodes: "all" };
+      const data = await api("/api/models/check", { method: "POST", body: JSON.stringify(body) });
+      showResults(data.results, "models check");
+      if (data.models) renderModels(data.models);
+      toast(data.result?.rc === 0 ? "检查完成" : "检查有失败");
+    } catch (err) {
+      log(String(err.message || err));
+    } finally {
+      setBusy(false);
+    }
+  });
+  document.getElementById("btn-models-pull")?.addEventListener("click", async () => {
+    const model = document.getElementById("model-select")?.value;
+    if (!model) return log("请选择模型");
+    const node = document.getElementById("model-node")?.value;
+    if (!confirm(`确认在节点上拉取 ${model}？`)) return;
+    setBusy(true);
+    try {
+      const body = { model };
+      if (node) body.node = node;
+      else body.nodes = "all";
+      const data = await api("/api/models/pull", { method: "POST", body: JSON.stringify(body) });
+      showResults(data.results, "models pull");
+      toast(data.result?.rc === 0 ? "拉取完成" : "拉取失败");
+    } catch (err) {
+      log(String(err.message || err));
+    } finally {
+      setBusy(false);
+    }
+  });
+  document.getElementById("btn-models-apply-job")?.addEventListener("click", () => {
+    const m = (state.models?.models || []).find(
+      (x) => x.id === document.getElementById("model-select")?.value
+    );
+    if (!m) return;
+    if (m.launch?.job) {
+      const jobSel = document.getElementById("job-select");
+      if (jobSel && [...jobSel.options].some((o) => o.value === m.launch.job)) {
+        jobSel.value = m.launch.job;
+      }
+    }
+    const input = document.getElementById("job-extra-args");
+    if (input) {
+      input.value = (m.launch?.extra_args || []).join(" ");
+      input.dataset.touched = "1";
+    }
+    setView("workloads");
+    toast("已填入任务页参数");
   });
 
   document.getElementById("deploy-mode").addEventListener("change", syncDeployMode);

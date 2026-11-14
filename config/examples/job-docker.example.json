@@ -1,0 +1,25 @@
+{
+  "name": "vllm-docker",
+  "description": "示例：每节点用 docker 起 vLLM（需节点已装 docker + nvidia-container-toolkit）",
+  "gpus_per_node": 4,
+  "runtime": "docker",
+  "docker": {
+    "image": "vllm/vllm-openai:latest",
+    "name": "gpu-control-vllm",
+    "gpus": "all",
+    "ports": ["8000:8000"],
+    "volumes": ["${paths.model_root}:/models:ro"],
+    "env": {
+      "HUGGING_FACE_HUB_TOKEN": ""
+    },
+    "command": [
+      "--model",
+      "/models/your-model",
+      "--tensor-parallel-size",
+      "4",
+      "--port",
+      "8000"
+    ]
+  },
+  "actions": ["start", "stop", "restart", "status", "wait"]
+}

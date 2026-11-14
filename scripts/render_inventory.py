@@ -8,6 +8,7 @@ import json
 
 import _bootstrap  # noqa: F401
 from paths import INVENTORY_FILE, STATE_DIR, expand_path, nodes_file
+from node_paths import default_paths, inventory_path_kv, node_paths
 
 
 def _control_meta(data: dict) -> dict | None:
@@ -53,7 +54,11 @@ def main() -> int:
         host = meta.get("ansible_host", "")
         gpus = meta.get("gpus_per_node", defaults.get("gpus_per_node", 4))
         role = meta.get("role") or defaults.get("role") or "serving"
-        lines.append(f"{name} ansible_host={host} gpus_per_node={gpus} node_role={role}")
+        path_kv = inventory_path_kv(node_paths(name, data))
+        line = f"{name} ansible_host={host} gpus_per_node={gpus} node_role={role}"
+        if path_kv:
+            line = f"{line} {path_kv}"
+        lines.append(line)
     lines.append("")
     lines.append("[gpu_workers:vars]")
     for key in (
@@ -67,6 +72,8 @@ def main() -> int:
             if key == "ansible_ssh_private_key_file":
                 value = expand_path(str(value))
             lines.append(f"{key}={value}")
+    for key, value in sorted(default_paths(data).items()):
+        lines.append(f"path_{key}={value}")
     lines.append("")
 
     INVENTORY_FILE.write_text("\n".join(lines), encoding="utf-8")

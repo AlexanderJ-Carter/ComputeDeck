@@ -1,19 +1,28 @@
 {
-  "description": "Optional model cache roots on shared storage. Copy to ../local/models.json",
+  "description": "模型目录与缓存。path 可用 ${paths.*}（见 nodes.json defaults.paths）。复制到 ../local/models.json",
   "caches": [
     {
       "id": "hf-hub",
-      "path": "${HOME}/.cache/huggingface/hub",
-      "note": "Hugging Face hub cache"
-    },
+      "path": "${paths.cache}",
+      "note": "Hugging Face / 共享权重根"
+    }
+  ],
+  "models": [
     {
-      "id": "shared-weights",
-      "path": "/path/to/shared/models",
-      "note": "Team shared weights directory"
+      "id": "decider-2b",
+      "repo": "Mapika/decider-2b",
+      "path": "${paths.model_root}/Mapika/decider-2b",
+      "cache": "hf-hub",
+      "note": "示例：决策模型权重目录",
+      "launch": {
+        "job": "decider",
+        "runtime": "process",
+        "extra_args": ["--base-port", "30000"]
+      }
     }
   ],
   "pull": {
     "tool": "huggingface-cli",
-    "default_cache": "shared-weights"
+    "default_cache": "hf-hub"
   }
 }

@@ -1,24 +1,101 @@
 ---
-- name: Manage a registered GPU job
+- name: Manage a registered GPU job (process or docker)
   hosts: gpu_workers
   gather_facts: false
 
   vars:
     job_action: status
-    job_python: /tmp/sgl-workspace/dsv4-sglang/bin/python
-    job_script: /opt/meituan/dolphinfs_huanghaoyu05/huggingface.co/Mapika/start_model.py
+    runtime: process
+    job_python: python3
+    job_script: ""
     job_extra_args: []
+    job_env: {}
+    docker_image: ""
+    docker_name: ""
+    docker_gpus: all
+    docker_ports: []
+    docker_volumes: []
+    docker_command: []
+    docker_env: {}
 
   tasks:
     - name: Validate action
       ansible.builtin.assert:
         that:
           - job_action in ['start', 'stop', 'restart', 'status', 'wait']
+          - runtime in ['process', 'docker']
+
+    - name: Build env prefix
+      ansible.builtin.set_fact:
+        env_prefix: >-
+          {% for k, v in (job_env | default({})).items() %}{{ k }}={{ v | quote }} {% endfor %}
+
+    - name: Process job command
+      when: runtime == 'process'
+      ansible.builtin.set_fact:
+        remote_cmd: >-
+          {{ env_prefix }}{{ job_python }} {{ job_script }} {{ job_action }}
+          {{ job_extra_args | join(' ') }}
+
+    - name: Docker availability
+      when: runtime == 'docker'
+      ansible.builtin.raw: command -v docker
+      register: docker_bin
+      changed_when: false
+      failed_when: false
+
+    - name: Fail when docker missing
+      when: runtime == 'docker' and docker_bin.rc != 0
+      ansible.builtin.fail:
+        msg: "节点未安装 docker；runtime=docker 不可用"
+
+    - name: Docker run flags
+      when: runtime == 'docker'
+      ansible.builtin.set_fact:
+        docker_port_flags: "{% for p in docker_ports %} -p {{ p }}{% endfor %}"
+        docker_vol_flags: "{% for v in docker_volumes %} -v {{ v }}{% endfor %}"
+        docker_env_flags: "{% for k, v in (docker_env | default({})).items() %} -e {{ k }}={{ v | quote }}{% endfor %}"
+        docker_cmd_flags: "{{ docker_command | join(' ') }}"
+
+    - name: Docker start/restart command
+      when: runtime == 'docker' and job_action in ['start', 'restart']
+      ansible.builtin.set_fact:
+        remote_cmd: >-
+          docker rm -f {{ docker_name }} >/dev/null 2>&1 || true;
+          docker run -d --restart unless-stopped
+          --name {{ docker_name }}
+          --gpus {{ docker_gpus }}
+          {{ docker_port_flags }}
+          {{ docker_vol_flags }}
+          {{ docker_env_flags }}
+          {{ docker_image }}
+          {{ docker_cmd_flags }}
+
+    - name: Docker stop command
+      when: runtime == 'docker' and job_action == 'stop'
+      ansible.builtin.set_fact:
+        remote_cmd: docker rm -f {{ docker_name }}
+
+    - name: Docker status command
+      when: runtime == 'docker' and job_action == 'status'
+      ansible.builtin.set_fact:
+        remote_cmd: >-
+          docker inspect -f '{{ '{{' }}.State.Status{{ '}}' }}' {{ docker_name }}
+          || (echo missing; exit 1)
+
+    - name: Docker wait command
+      when: runtime == 'docker' and job_action == 'wait'
+      ansible.builtin.set_fact:
+        remote_cmd: >-
+          for i in $(seq 1 60); do
+            st=$(docker inspect -f '{{ '{{' }}.State.Status{{ '}}' }}' {{ docker_name }} 2>/dev/null || true);
+            if [ "$st" = "running" ]; then echo ready; exit 0; fi;
+            sleep 2;
+          done;
+          echo timeout; exit 1
 
     - name: Run job manager
-      ansible.builtin.raw: >-
-        {{ job_python }} {{ job_script }} {{ job_action }}
-        {{ job_extra_args | join(' ') }}
+      ansible.builtin.raw: "{{ remote_cmd }}"
       register: job_result
       changed_when: job_action in ['start', 'stop', 'restart'] and job_result.rc == 0
       failed_when: >-

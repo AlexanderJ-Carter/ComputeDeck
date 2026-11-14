@@ -27,6 +27,7 @@ from paths import (  # noqa: E402
     list_job_files,
     nodes_file,
 )
+from node_paths import group_nodes_by_job, load_nodes_data  # noqa: E402
 
 LEASES_FILE = STATE_DIR / "leases.json"
 QUEUE_FILE = STATE_DIR / "queue.json"
@@ -333,13 +334,74 @@ def release_lease_nodes(nodes: list[str]) -> int:
     return before - len(leases)
 
 
-def job_manager_extra(job: dict, action: str) -> dict:
-    return {
+def job_manager_extra(job: dict, action: str, *, extra_args: list[str] | None = None) -> dict:
+    runtime = job.get("runtime") or "process"
+    args = list(extra_args if extra_args is not None else job.get("extra_args") or [])
+    payload = {
         "job_action": action,
-        "job_python": job["python"],
-        "job_script": job["script"],
-        "job_extra_args": job.get("extra_args", []),
+        "runtime": runtime,
+        "job_python": job.get("python") or "python3",
+        "job_script": job.get("script") or "",
+        "job_extra_args": args,
+        "job_env": job.get("env") or {},
     }
+    if runtime == "docker":
+        docker = job.get("docker") or {}
+        name = docker.get("name") or f"gpu-control-{job.get('name', 'job')}"
+        payload.update(
+            {
+                "docker_image": docker.get("image") or "",
+                "docker_name": name,
+                "docker_gpus": docker.get("gpus") or "all",
+                "docker_ports": docker.get("ports") or [],
+                "docker_volumes": docker.get("volumes") or [],
+                "docker_command": docker.get("command") or [],
+                "docker_env": docker.get("env") or {},
+            }
+        )
+    return payload
+
+
+def target_worker_nodes(limit: str | None) -> list[str]:
+    hosts = list(inventory_hosts().keys())
+    if not limit:
+        return hosts
+    wanted = {n.strip() for n in limit.split(",") if n.strip()}
+    return [h for h in hosts if h in wanted]
+
+
+def run_job_on_nodes(
+    job: dict,
+    action: str,
+    *,
+    limit: str | None,
+    quiet: bool = False,
+    extra_args: list[str] | None = None,
+) -> int:
+    nodes = target_worker_nodes(limit)
+    if not nodes:
+        die("没有可操作的 gpu_workers 节点")
+    if job.get("runtime") == "docker" and not (job.get("docker") or {}).get("image"):
+        die("runtime=docker 时需要 job.docker.image")
+    if (job.get("runtime") or "process") == "process":
+        if not job.get("python") or not job.get("script"):
+            die("runtime=process 时需要 job.python 与 job.script")
+
+    data = load_nodes_data()
+    code = 0
+    for group_nodes, resolved in group_nodes_by_job(job, nodes, data):
+        if extra_args is not None:
+            resolved = dict(resolved)
+            resolved["extra_args"] = list(extra_args)
+        rc = ansible_playbook(
+            "manage-job.yml",
+            limit=",".join(group_nodes),
+            extra=job_manager_extra(resolved, action, extra_args=extra_args),
+            quiet=quiet,
+        )
+        if rc != 0:
+            code = rc
+    return code
 
 
 def cmd_jobs(_: argparse.Namespace) -> int:
@@ -364,14 +426,16 @@ def cmd_job_action(args: argparse.Namespace) -> int:
 
     limit = resolve_limit(getattr(args, "node", None), getattr(args, "nodes", None))
     quiet = bool(getattr(args, "quiet", False))
-    code = ansible_playbook(
-        "manage-job.yml",
+    override_args = getattr(args, "extra_args", None)
+    code = run_job_on_nodes(
+        job,
+        action,
         limit=limit,
-        extra=job_manager_extra(job, action),
         quiet=quiet,
+        extra_args=override_args,
     )
-    if action in {"stop", "restart"} and code == 0 and limit:
-        nodes = [n.strip() for n in limit.split(",") if n.strip()]
+    if action in {"stop", "restart"} and code == 0:
+        nodes = target_worker_nodes(limit)
         released = release_lease_nodes(nodes)
         if released:
             print(f"Released {released} lease(s) covering: {', '.join(nodes)}")
@@ -463,11 +527,7 @@ def cmd_overview(args: argparse.Namespace) -> int:
     if args.job:
         print(f"\n=== Job status: {args.job} ===")
         job = load_job(args.job)
-        return ansible_playbook(
-            "manage-job.yml",
-            extra=job_manager_extra(job, "status"),
-            quiet=False,
-        )
+        return run_job_on_nodes(job, "status", limit=None, quiet=False)
     return 0
 
 
@@ -513,31 +573,16 @@ def deploy_job(
     print(f"Deploying job={job['name']} nodes={limit}")
 
     if restart:
-        code = ansible_playbook(
-            "manage-job.yml",
-            limit=limit,
-            extra=job_manager_extra(job, "stop"),
-            quiet=quiet,
-        )
+        code = run_job_on_nodes(job, "stop", limit=limit, quiet=quiet)
         if code != 0:
             return code, selected
 
-    code = ansible_playbook(
-        "manage-job.yml",
-        limit=limit,
-        extra=job_manager_extra(job, "start"),
-        quiet=quiet,
-    )
+    code = run_job_on_nodes(job, "start", limit=limit, quiet=quiet)
     if code != 0:
         return code, selected
 
     if not no_wait:
-        code = ansible_playbook(
-            "manage-job.yml",
-            limit=limit,
-            extra=job_manager_extra(job, "wait"),
-            quiet=quiet,
-        )
+        code = run_job_on_nodes(job, "wait", limit=limit, quiet=quiet)
         if code != 0:
             return code, selected
 
@@ -668,12 +713,7 @@ def cmd_free(args: argparse.Namespace) -> int:
 
     for job_name in jobs:
         job = load_job(job_name)
-        code = ansible_playbook(
-            "manage-job.yml",
-            limit=node,
-            extra=job_manager_extra(job, "stop"),
-            quiet=quiet,
-        )
+        code = run_job_on_nodes(job, "stop", limit=node, quiet=quiet)
         if code != 0:
             print(f"warning: stop {job_name} on {node} rc={code}", file=sys.stderr)
 
@@ -822,13 +862,17 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def cmd_models(args: argparse.Namespace) -> int:
-    """Optional models module: cache check / pull on workers."""
+    """Optional models module: catalog / cache check / pull / paths."""
     ensure_runtime()
-    cmd = [args.models_action]
-    if args.models_action == "pull":
-        if not args.name:
-            die("models pull 需要 --name")
-        cmd.extend(["--name", args.name])
+    action = args.models_action
+    cmd = [action]
+    if action == "pull":
+        if not args.name and not args.model:
+            die("models pull 需要 --name 或 --model")
+        if args.name:
+            cmd.extend(["--name", args.name])
+        if args.model:
+            cmd.extend(["--model", args.model])
         if args.cache:
             cmd.extend(["--cache", args.cache])
         if args.node:
@@ -836,6 +880,14 @@ def cmd_models(args: argparse.Namespace) -> int:
         elif args.nodes:
             cmd.extend(["--nodes", args.nodes])
         cmd.extend(["--timeout", str(args.timeout)])
+    elif action == "check":
+        if args.node:
+            cmd.extend(["--node", args.node])
+        elif args.nodes:
+            cmd.extend(["--nodes", args.nodes])
+    elif action == "paths":
+        if args.node:
+            cmd.extend(["--node", args.node])
     return run_python("model_ops.py", *cmd).returncode
 
 
@@ -1165,6 +1217,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_status.add_argument("job", nargs="?", default=None)
     p_status.add_argument("--node")
     p_status.add_argument("--nodes")
+    p_status.add_argument(
+        "--arg",
+        dest="extra_args",
+        action="append",
+        default=None,
+        help="覆盖 job.extra_args，可重复",
+    )
     p_status.add_argument("--quiet", action="store_true")
     p_status.set_defaults(func=cmd_status_default)
 
@@ -1178,6 +1237,13 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("job")
         p.add_argument("--node")
         p.add_argument("--nodes", help="逗号分隔，或 all")
+        p.add_argument(
+            "--arg",
+            dest="extra_args",
+            action="append",
+            default=None,
+            help="覆盖 job.extra_args，可重复，如 --arg --base-port --arg 30000",
+        )
         p.add_argument("--quiet", action="store_true")
         p.set_defaults(func=cmd_job_action, action=name)
 
@@ -1307,14 +1373,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_models = sub.add_parser(
         "models",
-        help="可选模块：模型缓存检查 / 拉取（需 config/local/models.json）",
+        help="可选模块：模型目录 / 路径 / 缓存检查 / 拉取",
     )
     p_models.add_argument(
         "models_action",
-        choices=["show", "check", "pull"],
-        help="show|check|pull",
+        choices=["show", "list", "check", "pull", "paths"],
+        help="show|list|check|pull|paths",
     )
     p_models.add_argument("--name", help="pull 时的仓库 id")
+    p_models.add_argument("--model", help="models[].id")
     p_models.add_argument("--cache", help="caches[].id")
     p_models.add_argument("--node")
     p_models.add_argument("--nodes", default="all")

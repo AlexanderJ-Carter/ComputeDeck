@@ -12,7 +12,8 @@
 | **Core** | 节点清单、GPU/主机指标、远程命令、**交互终端**、腾空/隔离、lease、doctor、配置向导 | 是 |
 | **Workloads** | `jobs/*.json` 注册任意启停脚本（推理 / 评测 / 预处理…） | 按需 |
 | **Module: inference** | endpoints、health、deploy、gateway（nginx/LiteLLM 产物） | 按需 |
-| **Module: models** | 缓存检查、权重拉取（`models.json`） | 按需 |
+| **Module: models** | 模型目录、路径检查、权重拉取、启动参数 | 按需 |
+| **Docker Job** | `runtime: docker` 在节点起停容器（需本机已装 docker） | 按需 |
 
 设计说明见 [docs/架构.md](docs/架构.md)，操作见 [docs/指南.md](docs/指南.md)。
 
@@ -46,9 +47,12 @@ gpu-control deploy <job> --gpus 4
 # 可选模块
 gpu-control health
 gpu-control gateway               # nginx / curl / LiteLLM 对接说明
+gpu-control models list
 gpu-control models check
+gpu-control models paths
 ```
 
+节点目录不一致时：在 `nodes.json` 写 `defaults.paths`，差异节点再覆盖 `paths`；Job 用 `${paths.python}` 等。
 
 ## 仓库布局
 

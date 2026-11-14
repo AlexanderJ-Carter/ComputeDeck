@@ -39,6 +39,8 @@ from paths import (  # noqa: E402
     nodes_file,
 )
 
+from node_paths import default_paths, node_paths  # noqa: E402
+
 sys.path.insert(0, str(SCRIPTS_DIR))
 from render_gateway import (  # noqa: E402
     build_payload as build_gateway_payload,
@@ -47,6 +49,12 @@ from render_gateway import (  # noqa: E402
     render_nginx,
     render_python_client,
     write_artifacts as write_gateway_artifacts,
+)
+from model_ops import (  # noqa: E402
+    cache_entries,
+    load_models,
+    model_entries,
+    models_file,
 )
 from terminal import open_shell, pump_channel  # noqa: E402
 from ws import (  # noqa: E402
@@ -165,10 +173,35 @@ def node_registry() -> dict:
 
 
 def list_jobs() -> list[dict]:
-    return [
-        json.loads(path.read_text(encoding="utf-8"))
-        for path in list_job_files()
-    ]
+    jobs = []
+    for path in list_job_files():
+        job = json.loads(path.read_text(encoding="utf-8"))
+        jobs.append({
+            "name": job.get("name") or path.stem,
+            "description": job.get("description") or "",
+            "gpus_per_node": job.get("gpus_per_node"),
+            "runtime": job.get("runtime") or "process",
+            "model": job.get("model") or "",
+            "python": job.get("python") or "",
+            "script": job.get("script") or "",
+            "extra_args": job.get("extra_args") or [],
+            "docker": job.get("docker") or None,
+            "actions": job.get("actions") or ["start", "stop", "restart", "status", "wait"],
+        })
+    return jobs
+
+
+def build_models_payload(node: str | None = None) -> dict:
+    data = load_models()
+    return {
+        "path": str(models_file()),
+        "exists": models_file().is_file(),
+        "defaults_paths": default_paths(),
+        "node_paths": node_paths(node) if node else None,
+        "caches": cache_entries(data, node=node),
+        "models": model_entries(data, node=node),
+        "pull": data.get("pull") or {},
+    }
 
 
 def collect_exec_results() -> list[dict]:
@@ -1130,6 +1163,12 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"jobs": list_jobs()})
             return
 
+        if path == "/api/models":
+            qs = parse_qs(parsed.query)
+            node = (qs.get("node") or [None])[0]
+            self._json(200, build_models_payload(node))
+            return
+
         if path == "/api/leases":
             self._json(200, _read_json(LEASES_FILE, {"leases": []}))
             return
@@ -1216,9 +1255,48 @@ class Handler(BaseHTTPRequestHandler):
                 args.extend(["--node", body["node"]])
             elif body.get("nodes"):
                 args.extend(["--nodes", body["nodes"]])
+            for item in body.get("extra_args") or []:
+                args.extend(["--arg", str(item)])
             with _action_lock:
                 result = run_cli(args, timeout=1200)
             self._json(200 if result["rc"] == 0 else 500, {"result": result})
+            return
+
+        if path == "/api/models/check":
+            args = ["models", "check"]
+            if body.get("node"):
+                args.extend(["--node", body["node"]])
+            elif body.get("nodes"):
+                args.extend(["--nodes", body["nodes"]])
+            with _action_lock:
+                result = run_cli(args, timeout=180)
+            self._json(
+                200 if result["rc"] == 0 else 500,
+                {"result": result, "results": collect_exec_results(), "models": build_models_payload(body.get("node"))},
+            )
+            return
+
+        if path == "/api/models/pull":
+            args = ["models", "pull"]
+            if body.get("model"):
+                args.extend(["--model", body["model"]])
+            if body.get("name"):
+                args.extend(["--name", body["name"]])
+            if body.get("cache"):
+                args.extend(["--cache", body["cache"]])
+            if body.get("node"):
+                args.extend(["--node", body["node"]])
+            elif body.get("nodes"):
+                args.extend(["--nodes", body["nodes"]])
+            if not body.get("model") and not body.get("name"):
+                self._json(400, {"error": "model 或 name 必填"})
+                return
+            with _action_lock:
+                result = run_cli(args, timeout=int(body.get("timeout") or 3600))
+            self._json(
+                200 if result["rc"] == 0 else 500,
+                {"result": result, "results": collect_exec_results()},
+            )
             return
 
         if path == "/api/deploy":

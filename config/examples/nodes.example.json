@@ -5,7 +5,13 @@
     "ansible_connection": "ssh",
     "ansible_ssh_private_key_file": "${HOME}/.ssh/id_ed25519",
     "gpus_per_node": 4,
-    "role": "serving"
+    "role": "serving",
+    "paths": {
+      "python": "/usr/bin/python3",
+      "model_root": "/data/models",
+      "workdir": "/tmp/gpu-workdir",
+      "cache": "/data/hf-cache"
+    }
   },
   "control": {
     "name": "control",
@@ -20,13 +26,19 @@
       "gpus_per_node": 4,
       "labels": ["a100", "serving"],
       "role": "serving",
-      "note": "GPU 工作节点"
+      "note": "与 defaults.paths 一致时可省略 paths"
     },
     "gpu-2": {
       "ansible_host": "10.0.0.2",
       "gpus_per_node": 4,
       "labels": ["a100", "serving"],
-      "role": "serving"
+      "role": "serving",
+      "paths": {
+        "python": "/opt/alt/bin/python",
+        "model_root": "/mnt/shared/models",
+        "cache": "/mnt/shared/hf-cache"
+      },
+      "note": "目录与其它节点不同时，只覆盖差异项"
     }
   }
 }

@@ -37,6 +37,7 @@
           <button class="nav-item active" data-view="actions">一键运维</button>
           <button class="nav-item" data-view="cluster">总览</button>
           <button class="nav-item" data-view="workloads">任务</button>
+          <button class="nav-item" data-view="models">模型</button>
         </div>
         <div class="nav-group">
           <span class="nav-label">集群</span>
@@ -252,6 +253,11 @@
               </select>
             </label>
             <p class="muted tiny" id="job-target-hint">在此下拉框直接选节点；与「集群」页点选同步。</p>
+            <label class="field">
+              <span>启动参数</span>
+              <input id="job-extra-args" placeholder="覆盖 extra_args，空格分隔，如 --base-port 30000" />
+            </label>
+            <p class="muted tiny" id="job-args-hint">默认用 job 配置；填写后仅本次生效。</p>
             <div class="btn-row">
               <button data-job-action="status">状态</button>
               <button data-job-action="start" class="primary">启动</button>
@@ -297,6 +303,36 @@
               <button id="btn-schedule" class="ghost tiny" data-keep-enabled="1">调度队列</button>
             </div>
             <div id="probe" class="list"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" data-view-panel="models">
+        <div class="split">
+          <div class="panel">
+            <div class="panel-h">
+              <h2>模型目录</h2>
+              <button id="btn-models-refresh" class="ghost tiny" data-keep-enabled="1">刷新</button>
+            </div>
+            <label class="field"><span>模型</span><select id="model-select"></select></label>
+            <label class="field"><span>解析节点</span><select id="model-node"><option value="">集群默认 paths</option></select></label>
+            <div class="kv"><b>路径</b> <span id="model-path">-</span></div>
+            <div class="kv"><b>仓库</b> <span id="model-repo">-</span></div>
+            <div class="kv"><b>关联 Job</b> <span id="model-job">-</span></div>
+            <div class="kv"><b>启动参数</b> <span id="model-args">-</span></div>
+            <div class="kv"><b>默认 paths</b> <pre id="model-defaults-paths" class="snippet tiny-pre"></pre></div>
+            <div class="btn-row">
+              <button id="btn-models-check" class="primary">检查路径</button>
+              <button id="btn-models-pull">拉取权重</button>
+              <button id="btn-models-apply-job">填入任务参数</button>
+            </div>
+            <p class="muted tiny">拉取需节点有 huggingface-cli 或 modelscope。目录不一致时在 nodes.json 节点级 paths 覆盖。</p>
+          </div>
+          <div class="panel">
+            <div class="panel-h"><h2>缓存 / 说明</h2></div>
+            <div id="model-caches" class="list"></div>
+            <h3 class="sub">Docker</h3>
+            <p class="muted">Job 可设 <code>runtime: docker</code>（见 config/examples/job-docker.example.json）。当前集群 worker 未装 docker 时，process 运行时仍可用。</p>
           </div>
         </div>
       </section>
