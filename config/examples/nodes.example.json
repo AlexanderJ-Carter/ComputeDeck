@@ -12,16 +12,9 @@
     "ansible_host": "10.0.0.10",
     "ui_host": "0.0.0.0",
     "ui_port": 8787,
-    "note": "主控机：只在此跑 UI / CLI / Ansible"
+    "note": "CPU Control：只在此跑 UI / CLI / Ansible，不进 gpu_workers"
   },
   "nodes": {
-    "control": {
-      "ansible_host": "10.0.0.10",
-      "gpus_per_node": 4,
-      "labels": ["control", "a100"],
-      "role": "control",
-      "note": "主控；调度默认 avoid=control"
-    },
     "gpu-1": {
       "ansible_host": "10.0.0.1",
       "gpus_per_node": 4,

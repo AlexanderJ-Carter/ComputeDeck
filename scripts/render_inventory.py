@@ -10,14 +10,14 @@ import _bootstrap  # noqa: F401
 from paths import INVENTORY_FILE, STATE_DIR, expand_path, nodes_file
 
 
-def _control_name(data: dict) -> str | None:
-    ctrl = data.get("control") or {}
-    if isinstance(ctrl, dict) and ctrl.get("name"):
-        return str(ctrl["name"])
-    nodes = data.get("nodes") or {}
-    for name, meta in nodes.items():
+def _control_meta(data: dict) -> dict | None:
+    ctrl = data.get("control")
+    if isinstance(ctrl, dict) and ctrl.get("ansible_host"):
+        return ctrl
+    # legacy: control listed inside nodes with role=control
+    for name, meta in (data.get("nodes") or {}).items():
         if (meta or {}).get("role") == "control":
-            return name
+            return {"name": name, **meta}
     return None
 
 
@@ -29,22 +29,27 @@ def main() -> int:
     data = json.loads(nodes_file().read_text(encoding="utf-8"))
     defaults = data.get("defaults") or {}
     nodes = data.get("nodes") or {}
-    control = _control_name(data)
+    control = _control_meta(data)
+    control_name = (control or {}).get("name") or "control"
 
     lines: list[str] = []
-    if control and control in nodes:
-        meta = nodes[control]
-        gpus = meta.get("gpus_per_node", defaults.get("gpus_per_node", 4))
+    if control:
         lines.extend(
             [
                 "[control]",
-                f"{control} ansible_host={meta.get('ansible_host', '')} gpus_per_node={gpus}",
+                f"{control_name} ansible_host={control.get('ansible_host', '')}",
+                "",
+                "[control:vars]",
+                "ansible_connection=local",
+                f"ansible_user={defaults.get('ansible_user', 'sankuai')}",
                 "",
             ]
         )
 
     lines.append("[gpu_workers]")
     for name, meta in sorted(nodes.items()):
+        if (meta or {}).get("role") == "control":
+            continue
         host = meta.get("ansible_host", "")
         gpus = meta.get("gpus_per_node", defaults.get("gpus_per_node", 4))
         role = meta.get("role") or defaults.get("role") or "serving"
@@ -63,18 +68,10 @@ def main() -> int:
                 value = expand_path(str(value))
             lines.append(f"{key}={value}")
     lines.append("")
-    if control:
-        lines.extend(
-            [
-                "[control:vars]",
-                "ansible_connection=local",
-                f"ansible_user={defaults.get('ansible_user', 'sankuai')}",
-                "",
-            ]
-        )
 
     INVENTORY_FILE.write_text("\n".join(lines), encoding="utf-8")
-    print(f"Wrote {INVENTORY_FILE} ({len(nodes)} nodes; control={control or '-'})")
+    worker_count = sum(1 for _, m in nodes.items() if (m or {}).get("role") != "control")
+    print(f"Wrote {INVENTORY_FILE} (workers={worker_count}; control={control_name if control else '-'})")
 
     if args.write_ssh_snippet:
         STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -83,7 +80,21 @@ def main() -> int:
         port = defaults.get("ansible_port", 22)
         key = expand_path(str(defaults.get("ansible_ssh_private_key_file", "")))
         blocks = []
+        if control and control.get("ansible_host"):
+            blocks.append(
+                "\n".join(
+                    [
+                        f"Host {control_name}",
+                        f"    HostName {control.get('ansible_host')}",
+                        f"    User {user}",
+                        f"    Port {port}",
+                        f"    IdentityFile {key}",
+                    ]
+                )
+            )
         for name, meta in sorted(nodes.items()):
+            if (meta or {}).get("role") == "control":
+                continue
             blocks.append(
                 "\n".join(
                     [

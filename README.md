@@ -27,7 +27,7 @@ gpu-control ui --background    # 仅在主控 control 启动 :8787
 # 隧道：ssh -L 8787:127.0.0.1:8787 <control>
 ```
 
-角色：`control` = 主控（UI/CLI/Ansible）；其余 = GPU 工作节点。  
+角色：`control`（`10.146.226.228`，CPU）= 主控 UI/CLI/Ansible；`deepseek-1/2/4/5` = GPU 工作节点。  
 管理台 **终端** = 真 SSH PTY（xterm）；底部「批量输出」只显示命令结果，不是交互 shell。
 
 ## 常用命令

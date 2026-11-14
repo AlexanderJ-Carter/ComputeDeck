@@ -352,12 +352,14 @@ def build_overview() -> dict:
     cluster_doc = _read_json(cluster_file(), {})
     nodes_doc = _read_json(nodes_file(), {})
     control_meta = dict(cluster_doc.get("control") or {})
-    if not control_meta and isinstance(nodes_doc.get("control"), dict):
-        control_meta = dict(nodes_doc.get("control") or {})
+    nodes_control = nodes_doc.get("control")
+    if isinstance(nodes_control, dict):
+        for key in ("name", "ansible_host", "ui_host", "ui_port", "note"):
+            if key in nodes_control and key not in control_meta:
+                control_meta[key] = nodes_control[key]
+        if nodes_control.get("ansible_host") and not control_meta.get("host"):
+            control_meta["host"] = nodes_control["ansible_host"]
     control_name = control_meta.get("node") or control_meta.get("name") or "control"
-    control_node = next((n for n in nodes if n["name"] == control_name), None)
-    if control_node and not control_meta.get("host"):
-        control_meta["host"] = control_node.get("host")
     control_meta.setdefault("node", control_name)
     control_meta.setdefault("ui_port", 8787)
     return {

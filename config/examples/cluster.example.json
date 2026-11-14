@@ -8,7 +8,7 @@
     "host": "10.0.0.10",
     "ui_host": "0.0.0.0",
     "ui_port": 8787,
-    "note": "Management UI runs only on the control host"
+    "note": "CPU control host only — UI/CLI/Ansible; not a GPU worker"
   },
   "api": {
     "base_port": 30000,
@@ -32,13 +32,13 @@
   },
   "scheduling": {
     "prefer_labels": ["serving"],
-    "avoid_labels": ["shared", "control"],
+    "avoid_labels": ["shared"],
     "unit_gpus": 4
   },
   "collaboration": {
     "mode": "horizontal-scale",
     "notes": [
-      "control = control-plane (UI/CLI/Ansible); other nodes = GPU workers.",
+      "control = CPU control-plane (UI/CLI/Ansible); nodes.* = GPU workers only.",
       "Horizontal replica pool; clients round-robin endpoints.",
       "Borrow a whole node with: gpu-control free --node X --cordon"
     ]
