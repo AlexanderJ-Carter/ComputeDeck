@@ -33,7 +33,9 @@ gpu-control doctor && gpu-control ui --background
 
 ```bash
 gpu-control overview
-gpu-control free --node <name> --force --wait 30 [--cordon]
+gpu-control procs list --node <name> --refresh
+gpu-control procs kill --node <name> --all
+gpu-control free --node <name> --wait 30 [--cordon]
 gpu-control models deps && gpu-control models verify
 gpu-control models pull --model <id>
 gpu-control deploy <job> --gpus 4

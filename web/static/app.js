@@ -528,13 +528,39 @@ function renderDrawer() {
   const node = (state.overview.nodes || []).find((n) => n.name === name);
   if (!node) return;
   const cordon = node.cordon || {};
+  const procs = [];
+  for (const g of node.gpus || []) {
+    for (const p of g.processes || []) {
+      procs.push({
+        gpu: g.index,
+        pid: p.pid,
+        name: p.name,
+        memory_mib: p.memory_mib,
+      });
+    }
+  }
+  const procRows = procs.length
+    ? `<table class="table"><thead><tr><th>GPU</th><th>PID</th><th>MEM</th><th>NAME</th><th></th></tr></thead><tbody>
+        ${procs
+          .map(
+            (p) => `<tr>
+              <td>${escapeHtml(String(p.gpu))}</td>
+              <td>${escapeHtml(String(p.pid))}</td>
+              <td>${escapeHtml(String(p.memory_mib))}MiB</td>
+              <td class="meta">${escapeHtml(p.name || "-")}</td>
+              <td><button class="danger tiny" data-kill-pid="${p.pid}" data-kill-node="${escapeHtml(
+                node.name
+              )}">结束</button></td>
+            </tr>`
+          )
+          .join("")}
+      </tbody></table>`
+    : '<p class="muted tiny">当前快照无 GPU compute 进程</p>';
   const actions = node.cordoned
     ? `<button data-uncordon="${node.name}">取消隔离</button>
-       <button data-free="${node.name}" class="danger">腾空</button>
-       <button data-free-force="${node.name}" class="danger">强杀腾空</button>`
+       <button data-free="${node.name}" class="danger">腾空</button>`
     : `<button data-cordon="${node.name}">隔离</button>
        <button data-free="${node.name}" class="danger">腾空</button>
-       <button data-free-force="${node.name}" class="danger">强杀腾空</button>
        <button data-free-cordon="${node.name}" class="danger">腾空并隔离</button>`;
   body.innerHTML = `
     <h3>${escapeHtml(node.name)}</h3>
@@ -548,11 +574,21 @@ function renderDrawer() {
     <div class="kv"><b>占用</b> ${escapeHtml(node.lease ? node.lease.job + " / " + node.lease.id : "-")}</div>
     <div class="kv"><b>隔离原因</b> ${escapeHtml(node.cordoned ? (cordon.reason || "cordoned") : "-")}</div>
     <div class="kv"><b>备注</b> ${escapeHtml(node.note || "-")}</div>
-    <p class="muted tiny">腾空 = 停注册 Job + 释 lease + 校验 GPU；强杀会再 kill nvidia-smi 残留进程。</p>
+    <h3 class="sub">GPU 进程</h3>
+    ${procRows}
+    <div class="btn-row" style="margin:8px 0">
+      <button data-procs-refresh="${node.name}" data-keep-enabled="1">刷新进程</button>
+      <button data-procs-kill-all="${node.name}" class="danger">结束全部 GPU 进程</button>
+    </div>
+    <p class="muted tiny">腾空 = 停注册 Job + 结束 GPU 进程 + 释 lease + 校验空闲。</p>
     <div class="actions">${actions}
       <button data-open-term="${node.name}" class="primary">打开终端</button>
     </div>
-    <p class="meta" style="margin-top:12px">CLI: gpu-control free --node ${escapeHtml(node.name)} [--force] [--cordon]</p>`;
+    <p class="meta" style="margin-top:12px">CLI: gpu-control procs list --node ${escapeHtml(
+      node.name
+    )} --refresh<br/>gpu-control procs kill --node ${escapeHtml(node.name)} --all<br/>gpu-control free --node ${escapeHtml(
+      node.name
+    )}</p>`;
   bindNodeActions(body);
   body.querySelectorAll("[data-open-term]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -614,6 +650,13 @@ function bindNodeActions(root) {
       setBusy(false);
     }
   };
+  const showCliText = (data, fallback) => {
+    const text = [data.result?.stdout, data.result?.stderr].filter(Boolean).join("\n") || fallback;
+    document.getElementById("console").classList.remove("empty");
+    document.getElementById("console").textContent = text;
+    log(text.split("\n").slice(-4).join(" | "));
+    return text;
+  };
   const runFree = async (node, opts = {}) => {
     const data = await api("/api/free", {
       method: "POST",
@@ -623,26 +666,58 @@ function bindNodeActions(root) {
         ...opts,
       }),
     });
-    const text = [data.result?.stdout, data.result?.stderr].filter(Boolean).join("\n") || "free done";
-    document.getElementById("console").classList.remove("empty");
-    document.getElementById("console").textContent = text;
-    log(text.split("\n").slice(-3).join(" | "));
+    const text = showCliText(data, "free done");
     if (data.overview) applyOverview(data.overview);
     if (data.result?.rc !== 0) throw new Error(text || "腾空未完全空闲");
     toast(opts.cordon ? "已腾空并隔离" : "已腾空");
   };
-  root.querySelectorAll("button[data-free]").forEach((btn) => {
+  root.querySelectorAll("button[data-procs-refresh]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (!confirm(`确认腾空 ${btn.dataset.free}？（停 Job + 释 lease + 校验）`)) return;
-      wrap(`free ${btn.dataset.free}`, () => runFree(btn.dataset.free));
+      wrap(`procs ${btn.dataset.procsRefresh}`, async () => {
+        const data = await api("/api/procs", {
+          method: "POST",
+          body: JSON.stringify({ node: btn.dataset.procsRefresh, refresh: true }),
+        });
+        showCliText(data, "procs listed");
+        if (data.overview) applyOverview(data.overview);
+        toast("进程已刷新");
+      });
     });
   });
-  root.querySelectorAll("button[data-free-force]").forEach((btn) => {
+  root.querySelectorAll("button[data-procs-kill-all]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (!confirm(`确认强杀腾空 ${btn.dataset.freeForce}？会 kill 残留 GPU 进程`)) return;
-      wrap(`free --force ${btn.dataset.freeForce}`, () =>
-        runFree(btn.dataset.freeForce, { force: true })
-      );
+      if (!confirm(`确认结束 ${btn.dataset.procsKillAll} 上全部 GPU 进程？`)) return;
+      wrap(`procs kill --all ${btn.dataset.procsKillAll}`, async () => {
+        const data = await api("/api/procs/kill", {
+          method: "POST",
+          body: JSON.stringify({ node: btn.dataset.procsKillAll, all: true }),
+        });
+        showCliText(data, "killed");
+        if (data.overview) applyOverview(data.overview);
+        toast("已结束 GPU 进程");
+      });
+    });
+  });
+  root.querySelectorAll("button[data-kill-pid]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const pid = Number(btn.dataset.killPid);
+      const node = btn.dataset.killNode;
+      if (!confirm(`确认结束 ${node} 上 PID ${pid}？`)) return;
+      wrap(`kill ${pid}@${node}`, async () => {
+        const data = await api("/api/procs/kill", {
+          method: "POST",
+          body: JSON.stringify({ node, pids: [pid] }),
+        });
+        showCliText(data, "killed");
+        if (data.overview) applyOverview(data.overview);
+        toast(`已结束 PID ${pid}`);
+      });
+    });
+  });
+  root.querySelectorAll("button[data-free]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!confirm(`确认腾空 ${btn.dataset.free}？（停 Job + 结束 GPU 进程 + 校验）`)) return;
+      wrap(`free ${btn.dataset.free}`, () => runFree(btn.dataset.free));
     });
   });
   root.querySelectorAll("button[data-free-cordon]").forEach((btn) => {
@@ -651,7 +726,6 @@ function bindNodeActions(root) {
       wrap(`free+cordon ${btn.dataset.freeCordon}`, () =>
         runFree(btn.dataset.freeCordon, {
           cordon: true,
-          force: true,
           reason: "freed for external use",
         })
       );

@@ -1423,6 +1423,52 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {**payload, "written": written})
             return
 
+        if path == "/api/procs":
+            node = body.get("node")
+            nodes = body.get("nodes")
+            args = ["procs", "list"]
+            if node:
+                args.extend(["--node", node])
+            elif nodes:
+                args.extend(["--nodes", str(nodes)])
+            if body.get("refresh"):
+                args.append("--refresh")
+            with _action_lock:
+                result = run_cli(args, timeout=180)
+            overview = build_overview() if body.get("refresh") else None
+            self._json(
+                200 if result["rc"] == 0 else 500,
+                {"result": result, "overview": overview},
+            )
+            return
+
+        if path == "/api/procs/kill":
+            node = body.get("node")
+            if not node:
+                self._json(400, {"error": "node required"})
+                return
+            args = ["procs", "kill", "--node", node]
+            if body.get("all"):
+                args.append("--all")
+            for pid in body.get("pids") or []:
+                args.extend(["--pid", str(int(pid))])
+            if body.get("match"):
+                args.extend(["--match", str(body["match"])])
+            if body.get("signal"):
+                args.extend(["--signal", str(body["signal"])])
+            if body.get("dry_run"):
+                args.append("--dry-run")
+            if not body.get("all") and not body.get("pids") and not body.get("match"):
+                self._json(400, {"error": "需要 all / pids / match"})
+                return
+            with _action_lock:
+                result = run_cli(args, timeout=300)
+            self._json(
+                200 if result["rc"] == 0 else 500,
+                {"result": result, "overview": build_overview()},
+            )
+            return
+
         if path == "/api/free":
             node = body.get("node")
             if not node:
@@ -1433,6 +1479,8 @@ class Handler(BaseHTTPRequestHandler):
                 args.extend(["--job", body["job"]])
             if body.get("cordon"):
                 args.append("--cordon")
+            if body.get("no_kill"):
+                args.append("--no-kill")
             if body.get("force"):
                 args.append("--force")
             if body.get("allow_busy"):

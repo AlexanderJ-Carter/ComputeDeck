@@ -758,19 +758,154 @@ def gpu_occupancy(node: str) -> dict:
     }
 
 
-FORCE_KILL_GPU_CMD = (
+LIST_GPU_PROCS_CMD = (
     "echo HOST=$(hostname); "
-    "pids=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader,nounits 2>/dev/null "
-    "| tr -d ' ' | awk 'NF' | sort -u); "
-    "if [ -z \"$pids\" ]; then echo NO_GPU_PIDS; "
-    "else echo KILL_PIDS=$pids; kill $pids 2>/dev/null || true; sleep 2; "
-    "for p in $pids; do kill -0 $p 2>/dev/null && kill -9 $p 2>/dev/null || true; done; fi; "
-    "nvidia-smi --query-compute-apps=pid,process_name,used_gpu_memory --format=csv || true"
+    "nvidia-smi --query-gpu=index,uuid,memory.used,utilization.gpu "
+    "--format=csv,noheader,nounits 2>/dev/null | sed 's/^/GPU,/'; "
+    "echo ---; "
+    "nvidia-smi --query-compute-apps=gpu_uuid,pid,process_name,used_gpu_memory "
+    "--format=csv,noheader,nounits 2>/dev/null | sed 's/^/PROC,/'; "
+    "echo ---; "
+    "nvidia-smi --query-compute-apps=pid,process_name,used_gpu_memory "
+    "--format=csv 2>/dev/null || echo NO_COMPUTE_APPS"
 )
 
 
+def build_kill_gpu_cmd(
+    *,
+    pids: list[int] | None = None,
+    match: str | None = None,
+    signal: str = "TERM",
+) -> str:
+    sig = "9" if signal.upper() in {"KILL", "SIGKILL", "9"} else "15"
+    if pids:
+        pid_list = " ".join(str(int(p)) for p in pids)
+        return (
+            f"echo HOST=$(hostname); "
+            f"pids='{pid_list}'; "
+            f"echo TARGET_PIDS=$pids; "
+            f"for p in $pids; do kill -{sig} $p 2>/dev/null || true; done; "
+            f"sleep 2; "
+            f"for p in $pids; do kill -0 $p 2>/dev/null && kill -9 $p 2>/dev/null || true; done; "
+            f"nvidia-smi --query-compute-apps=pid,process_name,used_gpu_memory --format=csv 2>/dev/null || true"
+        )
+    match_filter = ""
+    if match:
+        match_q = match.replace("'", "'\\''")
+        match_filter = f"| grep -F '{match_q}' "
+    return (
+        "echo HOST=$(hostname); "
+        "pids=$(nvidia-smi --query-compute-apps=pid,process_name --format=csv,noheader,nounits "
+        "2>/dev/null "
+        f"{match_filter}"
+        "| awk -F',' '{gsub(/ /, \"\", $1); if ($1 ~ /^[0-9]+$/) print $1}' | sort -u); "
+        "if [ -z \"$pids\" ]; then echo NO_GPU_PIDS; "
+        f"else echo KILL_PIDS=$pids SIG={sig}; "
+        f"for p in $pids; do kill -{sig} $p 2>/dev/null || true; done; sleep 2; "
+        "for p in $pids; do kill -0 $p 2>/dev/null && kill -9 $p 2>/dev/null || true; done; fi; "
+        "nvidia-smi --query-compute-apps=pid,process_name,used_gpu_memory --format=csv 2>/dev/null || true"
+    )
+
+
+def kill_gpu_processes(
+    node: str,
+    *,
+    pids: list[int] | None = None,
+    match: str | None = None,
+    signal: str = "TERM",
+    quiet: bool = False,
+) -> int:
+    return ansible_playbook(
+        "exec.yml",
+        limit=node,
+        extra={
+            "remote_command": build_kill_gpu_cmd(pids=pids, match=match, signal=signal),
+        },
+        quiet=quiet,
+    )
+
+
+def cmd_procs(args: argparse.Namespace) -> int:
+    """List or kill GPU compute processes on workers."""
+    action = args.procs_action
+    quiet = bool(getattr(args, "quiet", False))
+    limit = resolve_limit(getattr(args, "node", None), getattr(args, "nodes", None))
+    if action == "list":
+        if getattr(args, "refresh", False):
+            refresh_resources(quiet=quiet)
+            nodes = target_worker_nodes(limit)
+            print(f"{'NODE':<12} {'GPU':>3} {'PID':>8}  {'MEM':>8}  NAME")
+            for name in nodes:
+                occ = gpu_occupancy(name)
+                procs = occ.get("processes") or []
+                if not procs:
+                    print(f"{name:<12} {'-':>3} {'-':>8}  {'-':>8}  (no compute apps)")
+                    continue
+                for proc in procs:
+                    print(
+                        f"{name:<12} {proc.get('gpu'):>3} {proc.get('pid'):>8}  "
+                        f"{str(proc.get('memory_mib')) + 'MiB':>8}  {proc.get('name')}"
+                    )
+            return 0
+        return ansible_playbook(
+            "exec.yml",
+            limit=limit,
+            extra={"remote_command": LIST_GPU_PROCS_CMD},
+            quiet=quiet,
+        )
+
+    if action == "kill":
+        node = getattr(args, "node", None)
+        if not node:
+            die("procs kill 需要 --node")
+        if node not in inventory_nodes():
+            die(f"Unknown node: {node}")
+        pids = [int(x) for x in (args.pid or [])]
+        if not pids and not args.all and not args.match:
+            die("procs kill 需要 --pid / --all / --match")
+        if args.all and (pids or args.match):
+            die("--all 不能与 --pid/--match 同时使用")
+        print(
+            f"Killing GPU procs on {node}: "
+            + (
+                "all compute apps"
+                if args.all
+                else (f"match={args.match}" if args.match else f"pids={pids}")
+            )
+        )
+        if args.dry_run:
+            return ansible_playbook(
+                "exec.yml",
+                limit=node,
+                extra={"remote_command": LIST_GPU_PROCS_CMD},
+                quiet=quiet,
+            )
+        code = kill_gpu_processes(
+            node,
+            pids=None if args.all else (pids or None),
+            match=None if args.all or pids else args.match,
+            signal=args.signal or "TERM",
+            quiet=quiet,
+        )
+        refresh_resources(quiet=quiet)
+        occ = gpu_occupancy(node)
+        print(
+            f"after: free={occ['free']}/{occ['total']} "
+            f"occupied={occ['occupied']} procs={len(occ['processes'])}"
+        )
+        for proc in occ["processes"][:12]:
+            print(
+                f"  still: gpu{proc['gpu']} pid={proc['pid']} "
+                f"{proc['name']} mem={proc['memory_mib']}MiB"
+            )
+        return code
+
+    die(f"Unknown procs action: {action}")
+    return 1
+
+
 def cmd_free(args: argparse.Namespace) -> int:
-    """Stop jobs on a node, optionally force-kill GPU procs, release leases, cordon, verify."""
+    """Stop jobs, kill GPU procs (default), release leases, cordon, verify."""
     node = args.node
     if node not in inventory_nodes():
         die(f"Unknown node: {node}. Known: {', '.join(inventory_nodes())}")
@@ -778,10 +913,13 @@ def cmd_free(args: argparse.Namespace) -> int:
     quiet = bool(args.quiet)
     jobs = [args.job] if args.job else [job["name"] for job in list_jobs()]
     stop_errors: list[str] = []
+    do_kill = not bool(getattr(args, "no_kill", False))
+    if getattr(args, "force", False):
+        do_kill = True
 
     print(f"Freeing node={node}")
     print(f"  jobs: {', '.join(jobs) or '(none)'}")
-    print(f"  force_kill_gpu: {bool(args.force)}")
+    print(f"  kill_gpu_procs: {do_kill}")
     print(f"  cordon: {bool(args.cordon)}")
     if args.dry_run:
         occ = gpu_occupancy(node) if RESOURCES_FILE.is_file() else {}
@@ -791,6 +929,11 @@ def cmd_free(args: argparse.Namespace) -> int:
                 f"  snapshot: free={occ.get('free')} occupied={occ.get('occupied')} "
                 f"total={occ.get('total')} procs={len(occ.get('processes') or [])}"
             )
+            for proc in (occ.get("processes") or [])[:20]:
+                print(
+                    f"    gpu{proc['gpu']} pid={proc['pid']} "
+                    f"{proc['name']} mem={proc['memory_mib']}MiB"
+                )
         return 0
 
     for job_name in jobs:
@@ -802,17 +945,12 @@ def cmd_free(args: argparse.Namespace) -> int:
         else:
             print(f"  stopped job={job_name}")
 
-    if args.force:
-        print("  force: killing remaining GPU compute processes")
-        code = ansible_playbook(
-            "exec.yml",
-            limit=node,
-            extra={"remote_command": FORCE_KILL_GPU_CMD},
-            quiet=quiet,
-        )
+    if do_kill:
+        print("  killing GPU compute processes")
+        code = kill_gpu_processes(node, signal="TERM", quiet=quiet)
         if code != 0:
-            stop_errors.append(f"force-kill:rc={code}")
-            print(f"warning: force kill on {node} rc={code}", file=sys.stderr)
+            stop_errors.append(f"kill-gpu:rc={code}")
+            print(f"warning: kill GPU procs on {node} rc={code}", file=sys.stderr)
 
     released = release_lease_nodes([node])
     print(f"  released leases: {released}")
@@ -857,7 +995,11 @@ def cmd_free(args: argparse.Namespace) -> int:
         print(f"warning: {msg}", file=sys.stderr)
         return 0
     print(msg, file=sys.stderr)
-    print("提示: 加 --force 强杀残留 GPU 进程；或 --wait 30 等待显存释放", file=sys.stderr)
+    print(
+        "提示: gpu-control procs list --node "
+        f"{node} --refresh；或 procs kill --node {node} --all；或 free --wait 30",
+        file=sys.stderr,
+    )
     return 1
 
 
@@ -1479,9 +1621,30 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor.add_argument("--json", action="store_true")
     p_doctor.set_defaults(func=cmd_doctor)
 
+    p_procs = sub.add_parser("procs", help="列出 / 结束节点上的 GPU 占用进程")
+    p_procs.add_argument("procs_action", choices=["list", "kill"], help="list|kill")
+    p_procs.add_argument("--node", help="节点名（kill 必填；list 可配合 --nodes）")
+    p_procs.add_argument("--nodes", help="list 时多节点，逗号分隔或 all")
+    p_procs.add_argument("--pid", action="append", type=int, help="kill 指定 PID，可重复")
+    p_procs.add_argument("--all", action="store_true", help="kill 该节点全部 GPU compute 进程")
+    p_procs.add_argument("--match", help="按进程名子串筛选后 kill，如 sglang")
+    p_procs.add_argument(
+        "--signal",
+        default="TERM",
+        help="先发信号（TERM/KILL），默认 TERM，仍存活再 KILL",
+    )
+    p_procs.add_argument(
+        "--refresh",
+        action="store_true",
+        help="list 时先刷新快照并用结构化表输出",
+    )
+    p_procs.add_argument("--dry-run", action="store_true", help="kill 前只列出进程")
+    p_procs.add_argument("--quiet", action="store_true")
+    p_procs.set_defaults(func=cmd_procs)
+
     p_free = sub.add_parser(
         "free",
-        help="腾空节点：停 Job →（可选）强杀 GPU 进程 → 释 lease →（可选）cordon → 校验空闲",
+        help="腾空节点：停 Job → 杀 GPU 进程（默认）→ 释 lease →（可选）cordon → 校验",
     )
     p_free.add_argument("--node", required=True, help="要腾空的节点")
     p_free.add_argument("--job", help="只停指定任务；默认停掉所有已注册任务")
@@ -1489,7 +1652,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_free.add_argument(
         "--force",
         action="store_true",
-        help="停 Job 后仍占用时，强杀 nvidia-smi 列出的 compute 进程",
+        help="兼容旧参数：等同默认杀进程行为",
+    )
+    p_free.add_argument(
+        "--no-kill",
+        action="store_true",
+        help="只停注册 Job，不杀 nvidia-smi compute 进程",
     )
     p_free.add_argument(
         "--wait",
