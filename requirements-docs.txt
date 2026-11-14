@@ -1,0 +1,4 @@
+# 文档站（MkDocs Material，类 Read the Docs）
+mkdocs>=1.6.0
+mkdocs-material>=9.5.0
+pymdown-extensions>=10.0.0

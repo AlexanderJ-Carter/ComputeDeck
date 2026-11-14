@@ -1,4 +1,4 @@
-"""Minimal RFC6455 WebSocket helpers for ThreadingHTTPServer."""
+"""最小 RFC6455 WebSocket 编解码（供 ThreadingHTTPServer）。"""
 
 from __future__ import annotations
 

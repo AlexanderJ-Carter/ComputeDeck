@@ -14,6 +14,20 @@
 
 ---
 
+## [0.18.0] - 2026-11-14
+
+### Added
+
+- MkDocs Material 文档站：`mkdocs.yml` · `gpu-control docs build|serve` · UI `/help/`
+- `/api/docs` Swagger 页增强：Bearer 保存、点选接口试调、链到文档站
+- Docstring 规范：`docs/develop/docstrings.md`；API 文档索引 `docs/api/`
+
+### Notes
+
+- 构建文档：`uv pip install -r requirements-docs.txt && gpu-control docs build`
+
+---
+
 ## [0.17.0] - 2026-11-14
 
 ### Added

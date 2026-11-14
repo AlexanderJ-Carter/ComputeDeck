@@ -1,9 +1,6 @@
-"""Project path resolution for GitHub-friendly layout.
+"""项目路径解析与配置查找。
 
-Lookup order for configs:
-1. ``config/local/<name>``  (machine-specific, gitignored)
-2. ``config/<name>``
-3. repo root ``<name>``      (legacy / symlink compat)
+配置查找顺序：``config/local/<name>`` → ``config/<name>`` → 仓库根 ``<name>``。
 """
 
 from __future__ import annotations

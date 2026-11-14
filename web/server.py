@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """轻量控制面 Web UI（仅标准库）。
 
-提供静态页面、``/api/*`` JSON、OpenAPI / 文档页与终端 WebSocket。
+静态页、``/api/*`` JSON、``/api/docs`` Swagger、``/help/`` 文档站与终端 WebSocket。
 """
 
 from __future__ import annotations
@@ -1327,6 +1327,33 @@ class Handler(BaseHTTPRequestHandler):
                 docs.read_bytes(),
                 "text/html; charset=utf-8",
                 cache_control="public, max-age=30",
+            )
+            return
+
+        if path in {"/help", "/help/"} or path.startswith("/help/"):
+            help_root = (STATIC_DIR / "help").resolve()
+            rel = path[len("/help"):].lstrip("/") or "index.html"
+            if rel.endswith("/"):
+                rel = rel + "index.html"
+            target = (help_root / rel).resolve()
+            if help_root.is_dir() and str(target).startswith(str(help_root)) and target.is_file():
+                content_type = {
+                    ".html": "text/html; charset=utf-8",
+                    ".css": "text/css; charset=utf-8",
+                    ".js": "application/javascript; charset=utf-8",
+                    ".svg": "image/svg+xml",
+                    ".png": "image/png",
+                    ".woff2": "font/woff2",
+                    ".json": "application/json",
+                }.get(target.suffix, "application/octet-stream")
+                self._send(200, target.read_bytes(), content_type, cache_control="public, max-age=60")
+                return
+            fallback = STATIC_DIR / "help-fallback.html"
+            self._send(
+                200,
+                fallback.read_bytes(),
+                "text/html; charset=utf-8",
+                cache_control="no-store",
             )
             return
 

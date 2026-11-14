@@ -1,4 +1,7 @@
-"""推理池端点端口解析（支持节点异构）。"""
+"""推理池端点端口解析（支持节点异构）。
+
+供 Gateway / LB / health probe；节点级覆盖见 ``nodes.json``。
+"""
 
 from __future__ import annotations
 

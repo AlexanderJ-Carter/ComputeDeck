@@ -1,0 +1,66 @@
+site_name: gpu-control
+site_description: 多节点 GPU 通用控制面文档
+site_url: ""
+repo_name: gpu-control
+docs_dir: docs
+site_dir: web/static/help
+strict: false
+
+theme:
+  name: material
+  language: zh
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: 切换深色
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: 切换浅色
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - content.code.copy
+    - toc.follow
+
+plugins:
+  - search:
+      lang: zh
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+
+extra:
+  generator: false
+
+nav:
+  - 首页: index.md
+  - 上手与运维: 手册.md
+  - AI / MCP 接入: ai-接入.md
+  - HTTP API:
+      - 概览: api/index.md
+      - OpenAPI / Swagger: api/openapi.md
+  - 开发约定:
+      - Docstring 规范: develop/docstrings.md

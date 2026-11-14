@@ -1,4 +1,8 @@
-"""已注册 Job、默认任务与可安装模板。"""
+"""已注册 Job、默认任务与可安装模板。
+
+Job 为 ``jobs/*.json`` 插件；内置仅 ``shell-job``，其余见 ``examples/``。
+CLI：``gpu-control jobs``；HTTP：``/api/jobs*``。
+"""
 
 from __future__ import annotations
 

@@ -20,6 +20,8 @@ state/**
 !state/.gitkeep
 snapshots/**
 !snapshots/.gitkeep
+# MkDocs 构建产物（gpu-control docs build）
+web/static/help/
 inventory.ini
 resources.json
 *.pid

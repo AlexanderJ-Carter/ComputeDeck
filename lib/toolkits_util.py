@@ -1,6 +1,7 @@
-"""一站式 AI 工具栈目录：探测 / 安装说明与节点侧命令。
+"""一站式 AI 工具栈目录与节点侧 probe / install 命令。
 
-控制面不内置二进制，通过节点 ``paths.python`` 做 probe / pip install。
+内置 LLaMA-Factory / DeepSpeed / vLLM 等；可被 ``config/local/toolkits.json`` 覆盖。
+CLI：``gpu-control toolkits``；HTTP：``/api/toolkits*``。
 """
 
 from __future__ import annotations

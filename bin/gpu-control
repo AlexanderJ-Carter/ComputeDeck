@@ -1213,6 +1213,15 @@ def cmd_logs(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_docs(args: argparse.Namespace) -> int:
+    """MkDocs 文档站 build / serve / clean。"""
+    ensure_runtime()
+    cmd = [args.docs_action]
+    if args.docs_action == "serve":
+        cmd.extend(["--host", args.host, "--port", str(args.port)])
+    return run_python("docs_ops.py", *cmd).returncode
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     """Validate config / runtime readiness before publish or handoff."""
     extra = ["--json"] if args.json else []
@@ -1778,6 +1787,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor = sub.add_parser("doctor", help="配置与运行环境自检（发布前）")
     p_doctor.add_argument("--json", action="store_true")
     p_doctor.set_defaults(func=cmd_doctor)
+
+    p_docs = sub.add_parser("docs", help="MkDocs 文档站（类 Read the Docs）")
+    p_docs.add_argument("docs_action", choices=["build", "serve", "clean"])
+    p_docs.add_argument("--host", default="127.0.0.1")
+    p_docs.add_argument("--port", type=int, default=8000)
+    p_docs.set_defaults(func=cmd_docs)
 
     p_diag = sub.add_parser("diagnose", help="一键检测 / 安全自动修复")
     p_diag.add_argument("diagnose_action", choices=["check", "repair"])

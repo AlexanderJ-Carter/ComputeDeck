@@ -1,4 +1,8 @@
-"""控制面运行日志（JSONL）：运维动作、CLI、一键修复等。"""
+"""控制面运行日志（JSONL）。
+
+记录 CLI / 一键动作 / 检测修复；文件 ``state/runlog.jsonl``。
+CLI：``gpu-control logs``；HTTP：``GET /api/runlog``。
+"""
 
 from __future__ import annotations
 

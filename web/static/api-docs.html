@@ -3,48 +3,27 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>gpu-control API 文档</title>
+  <title>gpu-control API · Swagger</title>
   <style>
     :root {
-      --bg: #f6f7f4;
-      --panel: #fff;
-      --ink: #1a1f1c;
-      --muted: #5c6b64;
-      --line: #d7ddd8;
-      --accent: #0e7c74;
-      --code: #eef3f0;
+      --bg: #f6f7f4; --panel: #fff; --ink: #1a1f1c; --muted: #5c6b64;
+      --line: #d7ddd8; --accent: #0e7c74; --code: #eef3f0;
       --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       --sans: "Segoe UI", "PingFang SC", "Noto Sans SC", sans-serif;
+      --ok: #1b7f4a; --bad: #b42318;
     }
     @media (prefers-color-scheme: dark) {
       :root {
-        --bg: #0f1412;
-        --panel: #171d1a;
-        --ink: #e7eee9;
-        --muted: #9aaba3;
-        --line: #2a342f;
-        --accent: #2ec4b6;
-        --code: #1f2824;
+        --bg: #0f1412; --panel: #171d1a; --ink: #e7eee9; --muted: #9aaba3;
+        --line: #2a342f; --accent: #2ec4b6; --code: #1f2824;
+        --ok: #3dd68c; --bad: #f97066;
       }
     }
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: var(--sans);
-      color: var(--ink);
-      background: var(--bg);
-      line-height: 1.5;
-    }
+    body { margin: 0; font-family: var(--sans); color: var(--ink); background: var(--bg); line-height: 1.5; }
     header {
-      position: sticky;
-      top: 0;
-      z-index: 5;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      align-items: center;
-      justify-content: space-between;
-      padding: 14px 20px;
+      position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 12px;
+      align-items: center; justify-content: space-between; padding: 14px 20px;
       border-bottom: 1px solid var(--line);
       background: color-mix(in srgb, var(--panel) 92%, transparent);
       backdrop-filter: blur(8px);
@@ -52,100 +31,52 @@
     h1 { margin: 0; font-size: 18px; }
     .meta { color: var(--muted); font-size: 13px; }
     .links { display: flex; gap: 8px; flex-wrap: wrap; }
-    a.btn {
-      display: inline-flex;
-      align-items: center;
-      padding: 6px 10px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      color: var(--ink);
-      text-decoration: none;
-      font-size: 13px;
-      background: var(--panel);
+    a.btn, button.btn {
+      display: inline-flex; align-items: center; padding: 6px 10px;
+      border: 1px solid var(--line); border-radius: 8px; color: var(--ink);
+      text-decoration: none; font-size: 13px; background: var(--panel); cursor: pointer; font: inherit;
     }
-    a.btn.primary {
-      background: var(--accent);
-      border-color: transparent;
-      color: #fff;
-    }
+    a.btn.primary, button.btn.primary { background: var(--accent); border-color: transparent; color: #fff; }
     main { max-width: 1100px; margin: 0 auto; padding: 20px; }
     .card {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 14px 16px;
-      margin-bottom: 14px;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+      padding: 14px 16px; margin-bottom: 14px;
     }
     .card h2 { margin: 0 0 8px; font-size: 15px; }
-    .auth-box {
-      border-left: 3px solid var(--accent);
-      padding-left: 12px;
-      color: var(--muted);
-      font-size: 13px;
+    .auth-box { border-left: 3px solid var(--accent); padding-left: 12px; color: var(--muted); font-size: 13px; }
+    code, .mono { font-family: var(--mono); font-size: 12px; background: var(--code); padding: 1px 5px; border-radius: 4px; }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+    input, select, textarea {
+      border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+      background: var(--panel); color: var(--ink); font: inherit; width: 100%;
     }
-    .auth-box code, code {
-      font-family: var(--mono);
-      font-size: 12px;
-      background: var(--code);
-      padding: 1px 5px;
-      border-radius: 4px;
-    }
-    .toolbar {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin: 12px 0;
-    }
-    input, select {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 8px 10px;
-      background: var(--panel);
-      color: var(--ink);
-      font: inherit;
-    }
-    input { flex: 1; min-width: 180px; }
+    textarea { min-height: 90px; font-family: var(--mono); font-size: 12px; }
+    .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; font-size: 12px; color: var(--muted); font-weight: 600; }
+    .row { display: grid; grid-template-columns: 100px 1fr auto; gap: 8px; align-items: center; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
     th { color: var(--muted); font-weight: 600; font-size: 12px; }
     .method {
-      display: inline-block;
-      min-width: 52px;
-      text-align: center;
-      font-family: var(--mono);
-      font-size: 11px;
-      font-weight: 700;
-      padding: 2px 6px;
-      border-radius: 4px;
-      color: #fff;
+      display: inline-block; min-width: 52px; text-align: center; font-family: var(--mono);
+      font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 4px; color: #fff;
     }
-    .get { background: #2b6cb0; }
-    .post { background: #2f855a; }
-    .put { background: #c05621; }
-    .delete { background: #c53030; }
+    .get { background: #2b6cb0; } .post { background: #2f855a; } .put { background: #c05621; } .delete { background: #c53030; }
     .path { font-family: var(--mono); font-size: 12px; }
     .tag {
-      display: inline-block;
-      margin-right: 4px;
-      padding: 1px 6px;
-      border-radius: 999px;
-      border: 1px solid var(--line);
-      color: var(--muted);
-      font-size: 11px;
+      display: inline-block; margin-right: 4px; padding: 1px 6px; border-radius: 999px;
+      border: 1px solid var(--line); color: var(--muted); font-size: 11px;
     }
     .public { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
     details { margin-top: 6px; }
     summary { cursor: pointer; color: var(--muted); font-size: 12px; }
     pre {
-      margin: 8px 0 0;
-      padding: 10px;
-      overflow: auto;
-      background: var(--code);
-      border-radius: 8px;
-      font-family: var(--mono);
-      font-size: 12px;
+      margin: 8px 0 0; padding: 10px; overflow: auto; background: var(--code);
+      border-radius: 8px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap;
     }
-    .err { color: #c53030; }
+    .err { color: var(--bad); } .ok { color: var(--ok); }
+    tr.active { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+    .try-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 900px) { .try-grid { grid-template-columns: 1fr; } .row { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -155,55 +86,91 @@
       <div class="meta" id="hdr-meta">加载 OpenAPI…</div>
     </div>
     <div class="links">
-      <a class="btn" href="/">返回 UI</a>
-      <a class="btn" href="/api">/api 目录</a>
+      <a class="btn" href="/">UI</a>
+      <a class="btn" href="/help/">文档站</a>
+      <a class="btn" href="/api">/api</a>
       <a class="btn primary" href="/api/openapi.json">openapi.json</a>
     </div>
   </header>
   <main>
-    <section class="card" id="auth-card">
+    <section class="card">
       <h2>鉴权</h2>
       <div class="auth-box" id="auth-box">读取中…</div>
+      <div class="field" style="margin-top:10px">
+        <span>Bearer Token（写入 localStorage，仅本机浏览器）</span>
+        <div class="row">
+          <span class="meta">Bearer</span>
+          <input id="token" type="password" placeholder="gpu-control auth issue-token" autocomplete="off" />
+          <button class="btn" type="button" id="btn-save-token">保存</button>
+        </div>
+      </div>
     </section>
+
+    <section class="card">
+      <h2>试调</h2>
+      <div class="try-grid">
+        <div>
+          <div class="field"><span>方法 / 路径</span>
+            <div class="row">
+              <select id="try-method">
+                <option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option>
+              </select>
+              <input id="try-path" placeholder="/api/overview?light=1" />
+              <button class="btn primary" type="button" id="btn-send">发送</button>
+            </div>
+          </div>
+          <div class="field"><span>JSON Body（POST/PUT）</span>
+            <textarea id="try-body" placeholder='{"action":"status"}'></textarea>
+          </div>
+        </div>
+        <div>
+          <div class="field"><span>响应</span>
+            <pre id="try-out" class="meta">点击表格行可填入路径，再发送。</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <div class="toolbar">
       <input id="q" placeholder="筛选 path / summary / tag" />
-      <select id="tag">
-        <option value="">全部分组</option>
-      </select>
+      <select id="tag"><option value="">全部分组</option></select>
     </div>
     <section class="card">
       <table>
         <thead>
-          <tr>
-            <th style="width:70px">方法</th>
-            <th>路径</th>
-            <th>说明</th>
-          </tr>
+          <tr><th style="width:70px">方法</th><th>路径</th><th>说明</th></tr>
         </thead>
         <tbody id="rows"></tbody>
       </table>
     </section>
   </main>
   <script>
-    const state = { paths: {}, auth: null, info: null };
+    const TOKEN_KEY = "gpu-control-api-token";
+    const state = { paths: {}, auth: null, info: null, rows: [] };
 
-    function methodClass(m) {
-      return (m || "get").toLowerCase();
+    function escapeHtml(s) {
+      return String(s)
+        .replaceAll("&", "&amp;").replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    }
+
+    function methodClass(m) { return (m || "get").toLowerCase(); }
+
+    function authHeaders() {
+      const token = (document.getElementById("token").value || "").trim();
+      const h = { Accept: "application/json" };
+      if (token) h.Authorization = "Bearer " + token;
+      return h;
     }
 
     function renderAuth(auth) {
       const el = document.getElementById("auth-box");
-      if (!auth) {
-        el.textContent = "无鉴权元数据";
-        return;
-      }
+      if (!auth) { el.textContent = "无鉴权元数据"; return; }
       const schemes = (auth.schemes || []).join(" / ") || "（未启用）";
       el.innerHTML = [
-        `<div><b>mode</b> = <code>${auth.mode}</code> · enabled=${auth.enabled} · 方案：${schemes}</div>`,
-        `<div style="margin-top:6px">${auth.note || ""}</div>`,
-        `<div style="margin-top:6px">Header：<code>${auth.header || ""}</code></div>`,
-        `<div style="margin-top:6px">MCP：<code>GPU_CONTROL_API_BASE</code> + <code>GPU_CONTROL_API_TOKEN</code></div>`,
-        `<div style="margin-top:6px">签发：<code>${auth.issue_token || ""}</code></div>`,
+        `<div><b>mode</b> = <code>${escapeHtml(auth.mode)}</code> · enabled=${auth.enabled} · ${schemes}</div>`,
+        `<div style="margin-top:6px">${escapeHtml(auth.note || "")}</div>`,
+        `<div style="margin-top:6px">签发：<code>${escapeHtml(auth.issue_token || "")}</code></div>`,
       ].join("");
     }
 
@@ -226,6 +193,34 @@
       return rows;
     }
 
+    function fillTry(row) {
+      document.getElementById("try-method").value = row.method;
+      document.getElementById("try-path").value = row.path;
+      if (row.body && row.body.content && row.body.content["application/json"]) {
+        const schema = row.body.content["application/json"].schema || {};
+        document.getElementById("try-body").value = JSON.stringify(exampleFromSchema(schema), null, 2);
+      }
+      document.querySelectorAll("#rows tr").forEach((tr) => tr.classList.remove("active"));
+    }
+
+    function exampleFromSchema(schema) {
+      if (!schema || typeof schema !== "object") return {};
+      if (schema.example != null) return schema.example;
+      if (schema.type === "object" || schema.properties) {
+        const out = {};
+        for (const [k, v] of Object.entries(schema.properties || {})) {
+          if (v.enum) out[k] = v.enum[0];
+          else if (v.type === "boolean") out[k] = false;
+          else if (v.type === "integer" || v.type === "number") out[k] = 0;
+          else if (v.type === "array") out[k] = [];
+          else if (v.type === "object") out[k] = {};
+          else out[k] = "";
+        }
+        return out;
+      }
+      return {};
+    }
+
     function render() {
       const q = (document.getElementById("q").value || "").trim().toLowerCase();
       const tag = document.getElementById("tag").value;
@@ -233,40 +228,69 @@
       const rows = flatten().filter((r) => {
         if (tag && !(r.tags || []).includes(tag)) return false;
         if (!q) return true;
-        const blob = `${r.method} ${r.path} ${r.summary} ${(r.tags || []).join(" ")}`.toLowerCase();
-        return blob.includes(q);
+        return `${r.method} ${r.path} ${r.summary} ${(r.tags || []).join(" ")}`.toLowerCase().includes(q);
       });
-      tbody.innerHTML = rows.map((r) => {
+      state.rows = rows;
+      tbody.innerHTML = rows.map((r, idx) => {
         const publicOp = Array.isArray(r.security) && r.security.length === 0;
-        const tags = (r.tags || []).map((t) => `<span class="tag">${t}</span>`).join("");
+        const tags = (r.tags || []).map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("");
         const pub = publicOp ? `<span class="tag public">公开</span>` : "";
         let detail = "";
-        if (r.params.length || r.body) {
-          const payload = {
-            parameters: r.params,
-            requestBody: r.body,
-          };
-          detail = `<details><summary>参数 / 请求体</summary><pre>${escapeHtml(JSON.stringify(payload, null, 2))}</pre></details>`;
+        if ((r.params && r.params.length) || r.body) {
+          detail = `<details><summary>参数 / 请求体</summary><pre>${escapeHtml(JSON.stringify({ parameters: r.params, requestBody: r.body }, null, 2))}</pre></details>`;
         }
-        return `<tr>
+        return `<tr data-idx="${idx}">
           <td><span class="method ${methodClass(r.method)}">${r.method}</span></td>
           <td><div class="path">${escapeHtml(r.path)}</div>${tags}${pub}${detail}</td>
           <td>${escapeHtml(r.summary)}</td>
         </tr>`;
       }).join("") || `<tr><td colspan="3" class="meta">无匹配接口</td></tr>`;
+
+      tbody.querySelectorAll("tr[data-idx]").forEach((tr) => {
+        tr.addEventListener("click", (ev) => {
+          if (ev.target.closest("details")) return;
+          const row = state.rows[Number(tr.dataset.idx)];
+          if (!row) return;
+          fillTry(row);
+          tr.classList.add("active");
+        });
+      });
     }
 
-    function escapeHtml(s) {
-      return String(s)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;");
+    async function sendTry() {
+      const method = document.getElementById("try-method").value;
+      let path = (document.getElementById("try-path").value || "").trim();
+      if (!path.startsWith("/")) path = "/" + path;
+      const out = document.getElementById("try-out");
+      out.textContent = "请求中…";
+      const opts = { method, headers: authHeaders(), credentials: "same-origin" };
+      if (method !== "GET" && method !== "HEAD") {
+        opts.headers["Content-Type"] = "application/json";
+        const raw = document.getElementById("try-body").value.trim();
+        opts.body = raw || "{}";
+      }
+      try {
+        const res = await fetch(path, opts);
+        const text = await res.text();
+        let body = text;
+        try { body = JSON.stringify(JSON.parse(text), null, 2); } catch (_) {}
+        out.innerHTML = `<span class="${res.ok ? "ok" : "err"}">HTTP ${res.status}</span>\n${escapeHtml(body)}`;
+      } catch (err) {
+        out.innerHTML = `<span class="err">${escapeHtml(err.message || err)}</span>`;
+      }
     }
 
     async function boot() {
+      document.getElementById("token").value = localStorage.getItem(TOKEN_KEY) || "";
+      document.getElementById("btn-save-token").addEventListener("click", () => {
+        localStorage.setItem(TOKEN_KEY, document.getElementById("token").value.trim());
+        alert("已保存 Token");
+      });
+      document.getElementById("btn-send").addEventListener("click", sendTry);
+      document.getElementById("q").addEventListener("input", render);
+      document.getElementById("tag").addEventListener("change", render);
       try {
-        const res = await fetch("/api/openapi.json", { credentials: "same-origin" });
+        const res = await fetch("/api/openapi.json", { credentials: "same-origin", headers: authHeaders() });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const doc = await res.json();
         state.paths = doc.paths || {};
@@ -277,24 +301,17 @@
         renderAuth(state.auth);
         const tags = new Set();
         for (const methods of Object.values(state.paths)) {
-          for (const op of Object.values(methods)) {
-            (op.tags || []).forEach((t) => tags.add(t));
-          }
+          for (const op of Object.values(methods)) (op.tags || []).forEach((t) => tags.add(t));
         }
         const sel = document.getElementById("tag");
         [...tags].sort().forEach((t) => {
           const opt = document.createElement("option");
-          opt.value = t;
-          opt.textContent = t;
-          sel.appendChild(opt);
+          opt.value = t; opt.textContent = t; sel.appendChild(opt);
         });
-        document.getElementById("q").addEventListener("input", render);
-        sel.addEventListener("change", render);
         render();
       } catch (err) {
         document.getElementById("hdr-meta").innerHTML = `<span class="err">${escapeHtml(err.message || err)}</span>`;
-        document.getElementById("auth-box").textContent =
-          "无法加载 /api/openapi.json（若已启用鉴权，请先登录 UI 或带 Bearer 访问）";
+        document.getElementById("auth-box").textContent = "无法加载 openapi.json；可先填写 Bearer 再刷新";
       }
     }
     boot();

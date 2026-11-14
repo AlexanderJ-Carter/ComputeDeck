@@ -1,4 +1,7 @@
-"""Interactive SSH shell sessions via paramiko."""
+"""交互式 SSH 终端会话（paramiko）。
+
+供 UI ``/ws/terminal`` 使用；会话状态保存在控制面进程内。
+"""
 
 from __future__ import annotations
 

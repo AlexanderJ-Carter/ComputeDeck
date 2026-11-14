@@ -24,8 +24,9 @@ gpu-control doctor && gpu-control ui --background
 ```bash
 curl -s http://127.0.0.1:8787/api              # 接口目录（含鉴权说明）
 curl -s http://127.0.0.1:8787/api/openapi.json # OpenAPI 3
-# 浏览器：http://127.0.0.1:8787/api/docs
+# 浏览器：/api/docs（Swagger 试调）· /help/（MkDocs 文档站）
 uv pip install -r requirements-mcp.txt
+uv pip install -r requirements-docs.txt && gpu-control docs build
 # Cursor：复制 config/examples/mcp.cursor.json，改绝对路径 + API Token
 ```
 

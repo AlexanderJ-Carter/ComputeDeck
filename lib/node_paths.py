@@ -1,4 +1,7 @@
-"""节点路径合并与 ``${paths.*}`` 占位符展开。"""
+"""节点路径合并与 ``${paths.*}`` 占位符展开。
+
+供 Job / models 解析；配置见 ``nodes.json`` 的 ``defaults.paths``。
+"""
 
 from __future__ import annotations
 

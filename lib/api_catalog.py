@@ -374,8 +374,10 @@ def catalog_payload() -> dict[str, Any]:
         "docs": {
             "openapi": "/api/openapi.json",
             "swagger_ui": "/api/docs",
+            "help": "/help/",
             "handbook": "docs/手册.md",
             "ai": "docs/ai-接入.md",
+            "mkdocs": "mkdocs.yml",
         },
         "auth": auth,
         "ui_default": "http://<control>:8787",

@@ -43,6 +43,8 @@ AUTH_DISCOVERY_PATHS = frozenset({
     "/api/openapi.json",
     "/api/docs",
     "/docs",
+    "/help",
+    "/help/",
 })
 
 DEFAULT_TTL_HOURS = 168
