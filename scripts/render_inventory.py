@@ -36,10 +36,10 @@ def main() -> int:
     if control:
         lines.extend(
             [
-                "[control]",
+                "[control_plane]",
                 f"{control_name} ansible_host={control.get('ansible_host', '')}",
                 "",
-                "[control:vars]",
+                "[control_plane:vars]",
                 "ansible_connection=local",
                 f"ansible_user={defaults.get('ansible_user', 'sankuai')}",
                 "",
