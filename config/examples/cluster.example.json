@@ -3,6 +3,13 @@
   "strategy": "inference-pool",
   "description": "N nodes × M GPUs inference pool. Copy to ../local/cluster.json and edit.",
   "default_job": "decider",
+  "control": {
+    "node": "control",
+    "host": "10.0.0.10",
+    "ui_host": "0.0.0.0",
+    "ui_port": 8787,
+    "note": "Management UI runs only on the control host"
+  },
   "api": {
     "base_port": 30000,
     "ports_per_node": 4,
@@ -25,12 +32,13 @@
   },
   "scheduling": {
     "prefer_labels": ["serving"],
-    "avoid_labels": ["shared"],
+    "avoid_labels": ["shared", "control"],
     "unit_gpus": 4
   },
   "collaboration": {
     "mode": "horizontal-scale",
     "notes": [
+      "control = control-plane (UI/CLI/Ansible); other nodes = GPU workers.",
       "Horizontal replica pool; clients round-robin endpoints.",
       "Borrow a whole node with: gpu-control free --node X --cordon"
     ]

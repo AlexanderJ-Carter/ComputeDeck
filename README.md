@@ -23,10 +23,11 @@ uv venv .venv && uv pip install -r requirements.txt
 ./examples/quickstart.sh
 # 编辑 config/local/cluster.json、nodes.json
 gpu-control doctor
-gpu-control ui --background    # :8787
-# 本机隧道请指向 8787，并强刷缓存：ssh -L 8787:127.0.0.1:8787 <control>
+gpu-control ui --background    # 仅在主控 control 启动 :8787
+# 隧道：ssh -L 8787:127.0.0.1:8787 <control>
 ```
 
+角色：`control` = 主控（UI/CLI/Ansible）；其余 = GPU 工作节点。  
 管理台 **终端** = 真 SSH PTY（xterm）；底部「批量输出」只显示命令结果，不是交互 shell。
 
 ## 常用命令

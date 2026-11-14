@@ -349,10 +349,22 @@ def build_overview() -> dict:
     queue = _read_json(QUEUE_FILE, {"workloads": []}).get("workloads", [])
     pending = sum(1 for wl in queue if wl.get("status") == "pending")
     probe = _read_json(PROBE_FILE, {})
+    cluster_doc = _read_json(cluster_file(), {})
+    nodes_doc = _read_json(nodes_file(), {})
+    control_meta = dict(cluster_doc.get("control") or {})
+    if not control_meta and isinstance(nodes_doc.get("control"), dict):
+        control_meta = dict(nodes_doc.get("control") or {})
+    control_name = control_meta.get("node") or control_meta.get("name") or "control"
+    control_node = next((n for n in nodes if n["name"] == control_name), None)
+    if control_node and not control_meta.get("host"):
+        control_meta["host"] = control_node.get("host")
+    control_meta.setdefault("node", control_name)
+    control_meta.setdefault("ui_port", 8787)
     return {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "version": UI_VERSION,
         "etag": state_fingerprint(),
+        "control": control_meta,
         "summary": {
             "nodes": len(nodes),
             "gpus_free": free_total,
@@ -368,6 +380,7 @@ def build_overview() -> dict:
             "api_fail": endpoint_health.get("fail_count"),
             "api_total": endpoint_health.get("total"),
             "host_metrics_at": host_metrics.get("generated_at"),
+            "control": control_name,
         },
         "nodes": nodes,
         "leases": leases,
@@ -375,7 +388,7 @@ def build_overview() -> dict:
         "queue": queue,
         "probe": probe,
         "cordoned": cordoned,
-        "cluster": _read_json(cluster_file(), {}),
+        "cluster": cluster_doc,
         "endpoints": _read_json(ENDPOINTS_FILE, {}),
         "endpoint_health": endpoint_health,
         "host_metrics": host_metrics,

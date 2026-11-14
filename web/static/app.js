@@ -751,8 +751,12 @@ function applyOverview(data) {
   const strategy = (data.cluster && data.cluster.strategy) || "inference-pool";
   const strategyLabel =
     strategy === "inference-pool" ? "推理池水平扩展" : strategy;
-  document.getElementById("strategy-line").textContent =
-    `${strategyLabel} · 控制面统一调度`;
+  const ctrl = data.control || {};
+  const ctrlHost = ctrl.host || ctrl.ansible_host || "";
+  const ctrlPort = ctrl.ui_port || 8787;
+  document.getElementById("strategy-line").textContent = ctrlHost
+    ? `${strategyLabel} · 主控 ${ctrl.node || "control"}@${ctrlHost} · UI :${ctrlPort}`
+    : `${strategyLabel} · 主控统一调度`;
   renderSummary(data.summary || {});
   fillTargetSelects(data.nodes || []);
   renderPresets(data.exec_presets || []);
