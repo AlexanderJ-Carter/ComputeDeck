@@ -1,30 +1,14 @@
 ---
-- name: Manage GPU model services
-  hosts: gpu_workers
+# Deprecated: use Job JSON + manage-job.yml instead of this playbook.
+# Kept only as a thin wrapper so old -e invocations fail loudly with guidance.
+- name: Deprecated model playbook
+  hosts: localhost
   gather_facts: false
-
-  vars:
-    model_action: status
-    base_port: 30000
-    python_bin: /tmp/sgl-workspace/dsv4-sglang/bin/python
-    manager_script: /opt/meituan/dolphinfs_huanghaoyu05/huggingface.co/Mapika/start_model.py
-
+  connection: local
   tasks:
-    - name: Validate action
-      ansible.builtin.assert:
-        that:
-          - model_action in ['start', 'stop', 'restart', 'status', 'wait']
-
-    - name: Manage model
-      ansible.builtin.raw: >-
-        {{ python_bin }} {{ manager_script }}
-        {{ model_action }} --base-port {{ base_port }}
-      register: model_result
-      changed_when: model_action in ['start', 'stop', 'restart'] and model_result.rc == 0
-      failed_when: >-
-        model_result.rc != 0
-        and not (model_action == 'status' and model_result.rc == 1)
-
-    - name: Display result
-      ansible.builtin.debug:
-        var: model_result.stdout_lines
+    - name: Point operators to Job framework
+      ansible.builtin.fail:
+        msg: >-
+          manage-model.yml is removed as a hard-coded scene playbook.
+          Register a Job under config/local/jobs/*.json and use
+          `gpu-control start|stop|status <job>` / manage-job.yml instead.

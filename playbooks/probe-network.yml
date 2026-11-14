@@ -5,7 +5,7 @@
 
   vars:
     peer_map: {}
-    probe_port: 8416
+    probe_port: 22
     probe_timeout: 3
 
   tasks:

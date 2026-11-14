@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "gpu-control": {
+      "command": "/ABS/PATH/TO/gpu-control/bin/gpu-control-mcp",
+      "env": {
+        "GPU_CONTROL_API_BASE": "http://127.0.0.1:8787"
+      }
+    }
+  }
+}

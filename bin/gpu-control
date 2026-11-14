@@ -1148,6 +1148,10 @@ def cmd_models(args: argparse.Namespace) -> int:
             cmd.extend(["--cache", args.cache])
         if getattr(args, "tool", None):
             cmd.extend(["--tool", args.tool])
+        if getattr(args, "register", False):
+            cmd.append("--register")
+        if getattr(args, "register_id", None):
+            cmd.extend(["--register-id", args.register_id])
         if args.node:
             cmd.extend(["--node", args.node])
         elif args.nodes:
@@ -1466,11 +1470,11 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "常用（CLI）:\n"
             "  gpu-control get nodes\n"
-            "  gpu-control describe node deepseek-1\n"
+            "  gpu-control describe node gpu-1\n"
             "  gpu-control get endpoints\n"
             "  gpu-control health\n"
             "  gpu-control deploy <job> --gpus 4\n"
-            "  gpu-control free --node deepseek-2 --cordon\n"
+            "  gpu-control free --node gpu-2 --cordon\n"
             "  gpu-control ui --background\n"
         ),
     )
@@ -1522,7 +1526,7 @@ def build_parser() -> argparse.ArgumentParser:
             dest="extra_args",
             action="append",
             default=None,
-            help="覆盖 job.extra_args，可重复，如 --arg --base-port --arg 30000",
+            help="覆盖 job.extra_args，可重复，如 --arg --base-port --arg 8000",
         )
         p.add_argument(
             "--allow-cordoned",
@@ -1534,7 +1538,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_deploy = sub.add_parser("deploy", help="选节点 → 启动 → 等待 → 登记占用（一键）")
     p_deploy.add_argument("job")
-    p_deploy.add_argument("--gpus", type=int, choices=[4, 8, 12, 16], default=4)
+    p_deploy.add_argument("--gpus", type=int, default=4, help="所需 GPU 总数（任意正整数）")
     p_deploy.add_argument("--nodes", help="指定节点；不填则自动挑选空闲节点")
     p_deploy.add_argument("--restart", action="store_true", help="部署前先 stop")
     p_deploy.add_argument("--no-wait", action="store_true")
@@ -1559,7 +1563,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_gpu.set_defaults(func=cmd_gpu)
 
     p_plan = sub.add_parser("plan", help="刷新资源并挑选空闲节点")
-    p_plan.add_argument("--gpus", type=int, choices=[4, 8, 12, 16], default=8)
+    p_plan.add_argument("--gpus", type=int, default=8, help="所需 GPU 总数")
     p_plan.add_argument("--quiet", action="store_true")
     p_plan.set_defaults(func=cmd_plan)
 
@@ -1589,7 +1593,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_queue = sub.add_parser("queue", help="简易工作负载队列（pending→ready）")
     p_queue.add_argument("queue_action", choices=["list", "submit", "cancel", "schedule"])
     p_queue.add_argument("job", nargs="?", help="submit 时的任务名")
-    p_queue.add_argument("--gpus", type=int, choices=[4, 8, 12, 16], default=4)
+    p_queue.add_argument("--gpus", type=int, default=4, help="所需 GPU 总数")
     p_queue.add_argument("--nodes", help="指定节点；不填则调度时自动挑选")
     p_queue.add_argument("--id", dest="workload_id", help="cancel 用")
     p_queue.add_argument("--note", default="")
@@ -1599,12 +1603,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_queue.set_defaults(func=cmd_queue)
 
     p_probe = sub.add_parser("probe", help="探测节点间 TCP 互通（分布式前置检查）")
-    p_probe.add_argument("--port", type=int, default=8416)
+    p_probe.add_argument("--port", type=int, default=22, help="探测端口（默认 22；可按集群 SSH 端口改）")
     p_probe.add_argument("--timeout", type=float, default=3.0)
     p_probe.add_argument("--quiet", action="store_true")
     p_probe.set_defaults(func=cmd_probe)
 
-    p_endpoints = sub.add_parser("endpoints", help="列出推理池 API 端点（16 路）")
+    p_endpoints = sub.add_parser("endpoints", help="列出 API 端点目录（render_endpoints）")
     p_endpoints.add_argument("--json", action="store_true")
     p_endpoints.set_defaults(func=cmd_endpoints)
 
@@ -1633,7 +1637,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_procs.add_argument("--nodes", help="list 时多节点，逗号分隔或 all")
     p_procs.add_argument("--pid", action="append", type=int, help="kill 指定 PID，可重复")
     p_procs.add_argument("--all", action="store_true", help="kill 该节点全部 GPU compute 进程")
-    p_procs.add_argument("--match", help="按进程名子串筛选后 kill，如 sglang")
+    p_procs.add_argument("--match", help="按进程名子串筛选后 kill，如 python")
     p_procs.add_argument(
         "--signal",
         default="TERM",
@@ -1724,6 +1728,8 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["auto", "huggingface-cli", "modelscope"],
         help="pull 工具（默认看 models.json pull.tool）",
     )
+    p_models.add_argument("--register", action="store_true", help="pull 成功后写入 models.json")
+    p_models.add_argument("--register-id", help="登记本地 id")
     p_models.add_argument("--node")
     p_models.add_argument("--nodes", default="all")
     p_models.add_argument("--timeout", type=int, default=3600)

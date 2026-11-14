@@ -100,13 +100,25 @@ def probe_direct(endpoints: list[dict], *, key: str | None, timeout: float, work
 
 
 def probe_local(cluster: dict) -> list[dict]:
+    """Probe using per-host ports from inventory (heterogeneous-safe).
+
+    Does not force a global ports_per_node via ``-e`` (that would override inventory).
+    """
     api = cluster.get("api") or {}
+    # refresh catalog so by_node / urls match current nodes.json
+    subprocess.run(
+        [str(VENV_PYTHON), str(SCRIPTS_DIR / "render_endpoints.py"), "--write"],
+        cwd=PROJECT_DIR,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
     if PROBE_DIR.is_dir():
         for stale in PROBE_DIR.glob("*.json"):
             stale.unlink()
     extra = {
-        "base_port": int(api.get("base_port", 30000)),
-        "ports_per_node": int(api.get("ports_per_node", 4)),
+        "default_base_port": int(api.get("base_port", 8000)),
+        "default_ports_per_node": int(api.get("ports_per_node", 1)),
         "health_path": api.get("health_path", "/health"),
         "api_key_file": api.get("api_key_file") or "",
     }
@@ -128,6 +140,7 @@ def probe_local(cluster: dict) -> list[dict]:
             results.append({
                 "node": node,
                 "gpu": item.get("gpu"),
+                "port": item.get("port") or ep.get("port"),
                 "url": ep.get("url") or f"http://{payload.get('host')}:{item.get('port')}",
                 "ok": bool(item.get("ok")),
                 "latency_ms": item.get("latency_ms"),

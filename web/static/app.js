@@ -17,7 +17,7 @@ const VIEW_TITLE = {
   nodes: "节点",
   workloads: "任务",
   models: "模型",
-  endpoints: "推理池",
+  endpoints: "API 端点",
   ops: "命令",
   terminal: "终端",
   guide: "指南",
@@ -98,26 +98,166 @@ function escapeHtml(s) {
     .replaceAll(">", "&gt;");
 }
 
-function showResults(results, command) {
+function revealConsole() {
+  const wrap = document.getElementById("batch-console-wrap") || document.querySelector(".console-wrap");
+  if (wrap) wrap.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function setConsoleMeta(text) {
+  const meta = document.getElementById("console-meta");
+  if (meta) meta.textContent = text;
+}
+
+function writeConsoleHtml(html, { empty = false, meta = "" } = {}) {
   const el = document.getElementById("console");
-  el.classList.remove("empty");
+  if (!el) return;
+  el.classList.toggle("empty", !!empty);
+  el.innerHTML = html;
+  if (meta) setConsoleMeta(meta);
+  else setConsoleMeta(empty ? "空" : `已更新 · ${new Date().toLocaleTimeString()}`);
+  revealConsole();
+}
+
+function writeConsoleText(text, { empty = false, meta = "" } = {}) {
+  const el = document.getElementById("console");
+  if (!el) return;
+  el.classList.toggle("empty", !!empty);
+  el.textContent = text || "(empty)";
+  if (meta) setConsoleMeta(meta);
+  else setConsoleMeta(empty ? "空" : `已更新 · ${new Date().toLocaleTimeString()}`);
+  revealConsole();
+}
+
+function resultOk(item) {
+  if (typeof item?.ok === "boolean") return item.ok;
+  if (item?.rc !== undefined && item?.rc !== null) return Number(item.rc) === 0;
+  return false;
+}
+
+function resultBody(item) {
+  const parts = [item?.stdout, item?.stderr, item?.detail].filter(Boolean);
+  if (parts.length) return parts.join("\n").trim();
+  if (item?.latency_ms != null) return `latency ${item.latency_ms}ms`;
+  return "(empty)";
+}
+
+function resultMeta(item) {
+  const bits = [];
+  if (item?.rc !== undefined && item?.rc !== null) bits.push(`rc=${item.rc}`);
+  else bits.push(resultOk(item) ? "ok" : "fail");
+  if (item?.latency_ms != null) bits.push(`${item.latency_ms}ms`);
+  if (item?.host) bits.push(item.host);
+  return bits.join(" · ");
+}
+
+function showResults(results, command) {
   if (!results || !results.length) {
-    el.innerHTML = `<div class="node-block"><header class="fail">无结构化结果</header><pre>${escapeHtml(
-      command || ""
-    )}</pre></div>`;
+    writeConsoleHtml(
+      `<div class="node-block"><header class="fail">无结构化结果</header><pre>${escapeHtml(
+        command || ""
+      )}</pre></div>`,
+      { meta: "无结果" }
+    );
     return;
   }
-  el.innerHTML = results
-    .map((item) => {
-      const rc = item.rc ?? "?";
-      const ok = Number(rc) === 0;
-      const body = [item.stdout, item.stderr].filter(Boolean).join("\n").trim() || "(empty)";
-      return `<div class="node-block">
-        <header class="${ok ? "ok" : "fail"}"><span>${escapeHtml(item.node || "?")}</span><span>rc=${escapeHtml(String(rc))}</span></header>
-        <pre>${escapeHtml(body)}</pre>
+  writeConsoleHtml(
+    results
+      .map((item) => {
+        const ok = resultOk(item);
+        return `<div class="node-block">
+        <header class="${ok ? "ok" : "fail"}"><span>${escapeHtml(item.node || "?")}</span><span>${escapeHtml(resultMeta(item))}</span></header>
+        <pre>${escapeHtml(resultBody(item))}</pre>
       </div>`;
-    })
-    .join("");
+      })
+      .join(""),
+    { meta: `${results.length} 个节点` }
+  );
+}
+
+function formatStepBody(step) {
+  if (step?.error) return String(step.error);
+  const p = step?.payload;
+  if (p == null) return "(无返回)";
+  if (Array.isArray(p.results) && p.results.length) {
+    return p.results
+      .map((r) => {
+        const mark = resultOk(r) ? "OK" : "FAIL";
+        const label = r.node || r.host || "?";
+        return `[${mark}] ${label}\n${resultBody(r)}`;
+      })
+      .join("\n\n");
+  }
+  if (p.result && typeof p.result === "object") {
+    const nested = [p.result.stdout, p.result.stderr].filter(Boolean).join("\n").trim();
+    if (nested) return nested;
+  }
+  if (p.stdout || p.stderr) {
+    return [p.stdout, p.stderr].filter(Boolean).join("\n").trim() || `rc=${p.rc}`;
+  }
+  if (Array.isArray(p.issues) || Array.isArray(p.notes)) {
+    const lines = [];
+    lines.push(p.ok ? "doctor: OK" : "doctor: FAIL");
+    for (const issue of p.issues || []) lines.push(`! ${issue}`);
+    for (const note of p.notes || []) lines.push(`· ${note}`);
+    return lines.join("\n");
+  }
+  try {
+    return JSON.stringify(p, null, 2);
+  } catch {
+    return String(p);
+  }
+}
+
+function showSteps(steps, title) {
+  if (!steps || !steps.length) {
+    writeConsoleHtml(
+      `<div class="node-block"><header class="fail">${escapeHtml(
+        title || "动作"
+      )}</header><pre>无步骤输出</pre></div>`,
+      { meta: "无步骤" }
+    );
+    return;
+  }
+  const rich = steps.find(
+    (s) => s.payload && Array.isArray(s.payload.results) && s.payload.results.length
+  );
+  if (rich && steps.length === 1) {
+    showResults(rich.payload.results, rich.name);
+    return;
+  }
+  writeConsoleHtml(
+    steps
+      .map((step) => {
+        const ok = !!step.ok;
+        return `<div class="node-block">
+        <header class="${ok ? "ok" : "fail"}"><span>${escapeHtml(step.name || "?")}</span><span>${
+          ok ? "成功" : "失败"
+        } · ${escapeHtml(String(step.ms ?? "-"))}ms</span></header>
+        <pre>${escapeHtml(formatStepBody(step))}</pre>
+      </div>`;
+      })
+      .join(""),
+    { meta: `${steps.length} 步 · ${title || "动作"}` }
+  );
+}
+
+async function seedConsole() {
+  try {
+    const doctor = await api("/api/doctor");
+    const lines = [];
+    lines.push(doctor.ok ? "Doctor OK" : "Doctor FAIL");
+    for (const issue of doctor.issues || []) lines.push(`! ${issue}`);
+    for (const note of (doctor.notes || []).slice(0, 12)) lines.push(`· ${note}`);
+    lines.push("");
+    lines.push("点上方「一键连通 / 一键就绪 / 刷新 GPU」后，完整 stdout 会写在这里。");
+    writeConsoleText(lines.join("\n"), { meta: doctor.ok ? "Doctor OK" : "Doctor 有问题" });
+    log(doctor.ok ? "Doctor 通过，控制台已就绪" : "Doctor 有问题，详见批量输出");
+  } catch (err) {
+    writeConsoleText(
+      `控制台已就绪，但 Doctor 失败：${err.message || err}\n\n点「跑一键连通」或上方运维卡片查看输出。`,
+      { meta: "Doctor 失败" }
+    );
+  }
 }
 
 async function api(path, options = {}) {
@@ -174,9 +314,12 @@ function fillTargetSelects(nodes) {
   if (modelNode) {
     const prev = modelNode.value;
     modelNode.innerHTML =
-      `<option value="">集群默认 paths</option>` +
+      `<option value="">全部节点</option>` +
       nodes.map((n) => `<option value="${n.name}">${n.name}</option>`).join("");
     if ([...modelNode.options].some((o) => o.value === prev)) modelNode.value = prev;
+    else if (state.selectedNode && [...modelNode.options].some((o) => o.value === state.selectedNode)) {
+      modelNode.value = state.selectedNode;
+    }
   }
   syncDeployMode();
 }
@@ -221,54 +364,82 @@ function activeSnippet(lb) {
   const kind = document.getElementById("snippet-kind")?.value || "python";
   const snippets = (lb && lb.snippets) || {};
   if (snippets[kind]) return snippets[kind];
+  if (kind === "gateway_notes" && snippets.litellm_notes) return snippets.litellm_notes;
   if (kind === "python") return (lb && lb.snippet) || "";
   return snippets.python || (lb && lb.snippet) || "";
 }
 
-function renderGatewayTopo(lb) {
+function renderGatewayTopo(lb, endpointsCatalog) {
   const el = document.getElementById("gateway-topo");
   if (!el) return;
   const topo = (lb && lb.topology) || {};
   const pool = topo.inference_pool || {};
   const local = topo.local_services || {};
-  const ports = (pool.port_range || []).join("-");
+  const byNode = pool.by_node || (endpointsCatalog && endpointsCatalog.by_node) || {};
+  const nodeBits = Object.entries(byNode).map(([name, info]) => {
+    const range = info.range || (info.ports || []).join(",") || `${info.base_port}+${info.ports_per_node}`;
+    return `${name} ${range}`;
+  });
   const nginx = local.nginx || {};
-  const litellm = local.litellm_gateway || {};
-  const vllm = local.legacy_vllm || {};
-  el.textContent = [
-    `Decider 池端口 ${ports || "30000-30003"} · 鉴权 Bearer · 路径 /health /decide /v1/systemone`,
-    `LiteLLM Gateway :${litellm.port || 4000}（OpenAI 兼容，非 Decider 替代）`,
-    `历史 vLLM :${vllm.port || 8000}`,
-    `nginx ${nginx.installed ? "已安装" : "未安装"} · 可生成 conf → state/gateway/`,
-  ].join(" · ");
+  const proxy = local.openai_compat_proxy || local.litellm_gateway || {};
+  const extra = local.extra_http || local.legacy_vllm || {};
+  const bits = [
+    nodeBits.length ? `按节点 ${nodeBits.join(" · ")}` : `默认端口 ${(pool.port_range || []).join("-") || "-"}`,
+  ];
+  if (proxy.port) bits.push(`proxy :${proxy.port}`);
+  if (extra.port) bits.push(`extra :${extra.port}`);
+  bits.push(`nginx ${nginx.installed ? "已装" : "未装"}`);
+  el.textContent = bits.join(" · ");
 }
 
 function renderPool(overview) {
-  const endpoints = (overview.endpoints && overview.endpoints.endpoints) || [];
+  const catalog = overview.endpoints || {};
+  const endpoints = catalog.endpoints || [];
   const health = overview.endpoint_health || {};
   const byKey = {};
   for (const r of health.results || []) byKey[`${r.node}:${r.gpu}`] = r;
   const mosaic = document.getElementById("api-mosaic");
-  mosaic.innerHTML = endpoints.length
-    ? endpoints
-      .map((ep) => {
-        const h = byKey[`${ep.node}:${ep.gpu}`];
-        const cls = !h ? "" : h.ok ? "ok" : "fail";
-        const lat = h ? `${h.latency_ms}ms` : "n/a";
-        return `<div class="api-cell ${cls}">
-            <div class="t">${escapeHtml(ep.node)} · g${ep.gpu}</div>
-            <div class="u">:${ep.port}</div>
-            <div class="t">${escapeHtml(lat)}</div>
+  if (!endpoints.length) {
+    mosaic.innerHTML = '<div class="meta">暂无端点</div>';
+  } else {
+    const groups = new Map();
+    for (const ep of endpoints) {
+      const key = ep.node || "?";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(ep);
+    }
+    mosaic.innerHTML = [...groups.entries()]
+      .map(([node, eps]) => {
+        const okN = eps.filter((ep) => byKey[`${ep.node}:${ep.gpu}`]?.ok).length;
+        const ports = eps.map((ep) => {
+          const h = byKey[`${ep.node}:${ep.gpu}`];
+          const cls = !h ? "" : h.ok ? "ok" : "fail";
+          const lat = h ? `${h.latency_ms}ms` : "n/a";
+          return `<div class="api-cell ${cls}">
+              <div class="u">:${escapeHtml(String(ep.port))}</div>
+              <div class="t">g${escapeHtml(String(ep.gpu))} · ${escapeHtml(lat)}</div>
+            </div>`;
+        });
+        return `<div class="api-node-row">
+            <div class="api-node-label">
+              <strong>${escapeHtml(node)}</strong>
+              <span class="meta">${eps.length} 路 · ${okN}/${eps.length}</span>
+            </div>
+            <div class="api-node-ports">${ports.join("")}</div>
           </div>`;
       })
-      .join("")
-    : '<div class="meta">暂无端点</div>';
+      .join("");
+  }
+  const byNode = catalog.by_node || {};
+  const hetero = Object.values(byNode).map((x) => x.ports_per_node);
+  const heteroNote =
+    hetero.length && new Set(hetero).size > 1 ? " · 异构端口" : "";
   document.getElementById("pool-meta").textContent = health.generated_at
-    ? `上次探测 ${health.generated_at} · ${health.ok_count}/${health.total} 正常 · 模式=${health.mode || "-"}`
-    : "对各节点本地探测 /health（需 api_key_file）";
+    ? `${health.ok_count}/${health.total} 正常 · ${health.mode || "-"} · ${health.generated_at}${heteroNote}`
+    : `端点 ${endpoints.length}${heteroNote}`;
   const lb = overview.lb;
   state.lb = lb || null;
-  renderGatewayTopo(lb);
+  renderGatewayTopo(lb, catalog);
   if (lb) {
     document.getElementById("client-snippet").textContent = activeSnippet(lb);
     document.getElementById("lb-meta").textContent =
@@ -652,8 +823,7 @@ function bindNodeActions(root) {
   };
   const showCliText = (data, fallback) => {
     const text = [data.result?.stdout, data.result?.stderr].filter(Boolean).join("\n") || fallback;
-    document.getElementById("console").classList.remove("empty");
-    document.getElementById("console").textContent = text;
+    writeConsoleText(text, { meta: "节点动作" });
     log(text.split("\n").slice(-4).join(" | "));
     return text;
   };
@@ -790,10 +960,16 @@ function syncJobArgsHint(jobs) {
   if (!sel || !hint) return;
   const job = (jobs || state.overview?.jobs || []).find((j) => j.name === sel.value);
   const args = (job?.extra_args || []).join(" ");
-  hint.textContent = args
-    ? `默认参数：${args}（留空用默认；填写则本次覆盖）`
-    : "默认无 extra_args；填写后仅本次生效。";
-  if (input && !input.dataset.touched) input.placeholder = args || "--base-port 30000";
+  hint.textContent = args ? `默认：${args}` : "";
+  if (input && !input.dataset.touched) input.placeholder = args || "--flag value";
+}
+
+function renderSecretsMeta(secrets) {
+  const el = document.getElementById("secrets-meta");
+  if (!el) return;
+  const hf = secrets?.hf_configured ? "HF✓" : "HF–";
+  const ms = secrets?.modelscope_configured ? "MS✓" : "MS–";
+  el.textContent = `${hf} · ${ms}`;
 }
 
 function renderModels(payload) {
@@ -804,7 +980,7 @@ function renderModels(payload) {
   const prev = sel.value;
   sel.innerHTML =
     models.map((m) => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.id)}</option>`).join("") ||
-    `<option value="">未配置 models[]</option>`;
+    `<option value="">尚未登记模型</option>`;
   if ([...sel.options].some((o) => o.value === prev)) sel.value = prev;
   const caches = document.getElementById("model-caches");
   if (caches) {
@@ -814,7 +990,7 @@ function renderModels(payload) {
           (c) =>
             `<div class="item"><div><strong>${escapeHtml(c.id)}</strong><div class="meta">${escapeHtml(
               c.path
-            )}</div><div class="meta">${escapeHtml(c.note || "")}</div></div></div>`
+            )}</div></div></div>`
         )
         .join("") || '<div class="meta">无 caches</div>';
   }
@@ -822,6 +998,7 @@ function renderModels(payload) {
   if (defaults) {
     defaults.textContent = JSON.stringify(payload?.defaults_paths || {}, null, 2);
   }
+  renderSecretsMeta(payload?.secrets);
   syncModelDetail();
 }
 
@@ -959,9 +1136,13 @@ function applyOverview(data) {
     state.selectedNode = null;
   }
   if (data.version) document.getElementById("ui-version").textContent = `v${data.version}`;
-  const strategy = (data.cluster && data.cluster.strategy) || "inference-pool";
+  const strategy = (data.cluster && data.cluster.strategy) || "multi-node";
   const strategyLabel =
-    strategy === "inference-pool" ? "推理池水平扩展" : strategy;
+    strategy === "inference-pool"
+      ? "多节点 API 水平扩展"
+      : strategy === "multi-node"
+        ? "多节点 GPU 控制面"
+        : strategy;
   const ctrl = data.control || {};
   const ctrlHost = ctrl.host || ctrl.ansible_host || "";
   const ctrlPort = ctrl.ui_port || 8787;
@@ -1057,7 +1238,10 @@ async function runOneclick(action, extra = {}) {
     const body = { action, ...extra };
     if (action === "deploy") {
       body.job = document.getElementById("quick-job").value || "";
-      if (!body.job) return log("请先选择任务（或注册 Job）");
+      if (!body.job) {
+        showSteps([{ name: "deploy", ok: false, ms: 0, error: "请先选择任务（或注册 Job）" }], action);
+        return log("请先选择任务（或注册 Job）");
+      }
       body.gpus = Number(document.getElementById("quick-gpus").value || 4);
       if (!confirm(`确认一键部署 ${body.job}（${body.gpus} GPU）？`)) return;
     }
@@ -1069,31 +1253,15 @@ async function runOneclick(action, extra = {}) {
     renderActionSteps(data.steps || [], data.elapsed_ms);
     if (data.quality) renderQuality(data.quality);
     if (data.overview) applyOverview(data.overview);
-
-    const resultStep = (data.steps || []).find(
-      (s) => s.payload && Array.isArray(s.payload.results) && s.payload.results.length
-    );
-    if (resultStep) {
-      showResults(resultStep.payload.results, resultStep.name);
-    } else if (action === "model-check") {
-      const step = (data.steps || []).find((s) => s.name === "模型缓存检查");
-      const text =
-        (step && step.payload && step.payload.result && (step.payload.result.stdout || step.payload.result.stderr)) ||
-        "未配置 models.json：复制 config/examples/models.example.json → config/local/models.json";
-      document.getElementById("console").classList.remove("empty");
-      document.getElementById("console").textContent = text;
-    } else if (action === "connect" || action === "full-sync") {
-      const ssh = (data.steps || []).find((s) => String(s.name).includes("SSH"));
-      if (ssh && ssh.payload && ssh.payload.results) {
-        document.getElementById("console").classList.remove("empty");
-        document.getElementById("console").textContent = (ssh.payload.results || [])
-          .map((r) => `${r.ok ? "OK" : "FAIL"} ${r.node} ${r.latency_ms ?? "-"}ms ${r.detail || ""}`)
-          .join("\n");
-      }
+    if (data.error && !(data.steps || []).length) {
+      showSteps([{ name: action, ok: false, ms: data.elapsed_ms, error: data.error }], action);
+    } else {
+      showSteps(data.steps || [], action);
     }
     toast(data.ok ? `完成 · ${data.elapsed_ms}ms` : `部分失败 · ${data.elapsed_ms}ms`);
     log(`${action} ${data.ok ? "成功" : "失败"} · ${data.elapsed_ms}ms`);
   } catch (err) {
+    showSteps([{ name: action, ok: false, ms: 0, error: String(err.message || err) }], action);
     log(String(err.message || err));
   } finally {
     setBusy(false);
@@ -1186,11 +1354,13 @@ async function runJobAction(action) {
       method: "POST",
       body: JSON.stringify(body),
     });
-    document.getElementById("console").classList.remove("empty");
-    document.getElementById("console").textContent =
-      data.result.stdout || data.result.stderr || `(rc=${data.result.rc})`;
+    writeConsoleText(
+      data.result.stdout || data.result.stderr || `(rc=${data.result.rc})`,
+      { meta: `Job ${action}` }
+    );
     await refresh(false);
   } catch (err) {
+    writeConsoleText(String(err.message || err), { meta: `Job ${action} 失败` });
     log(String(err.message || err));
   } finally {
     setBusy(false);
@@ -1223,14 +1393,14 @@ async function runDoctor() {
     const text = data.ok
       ? `Doctor OK\n${(data.notes || []).map((x) => "· " + x).join("\n")}`
       : `Doctor ISSUES\n${(data.issues || []).map((x) => "! " + x).join("\n")}`;
-    document.getElementById("console").classList.remove("empty");
-    document.getElementById("console").textContent = text;
+    writeConsoleText(text, { meta: data.ok ? "Doctor OK" : "Doctor 有问题" });
     const box = document.getElementById("doctor-box");
     if (box) box.textContent = text;
     toast(data.ok ? "自检通过" : "自检发现问题");
     setView("config");
     setConfigTab("checklist");
   } catch (err) {
+    writeConsoleText(String(err.message || err), { meta: "Doctor 失败" });
     log(String(err.message || err));
   } finally {
     setBusy(false);
@@ -1476,8 +1646,8 @@ async function saveCluster() {
     default_job: document.getElementById("cluster-job").value.trim() || "",
     api: {
       ...(base.api || {}),
-      base_port: Number(document.getElementById("cluster-base-port").value || 30000),
-      ports_per_node: Number(document.getElementById("cluster-ports").value || 4),
+      base_port: Number(document.getElementById("cluster-base-port").value || 8000),
+      ports_per_node: Number(document.getElementById("cluster-ports").value || 1),
       api_key_file: document.getElementById("cluster-api-key").value.trim(),
     },
     scheduling: {
@@ -1740,10 +1910,12 @@ async function boot() {
       else body.nodes = "all";
       if (path.endsWith("/verify") && model) body.model = model;
       const data = await api(path, { method: "POST", body: JSON.stringify(body) });
-      showResults(data.results, label);
+      if (data.results?.length) showResults(data.results, label);
+      else writeConsoleText(data.result?.stdout || data.result?.stderr || label, { meta: label });
       if (data.models) renderModels(data.models);
       toast(data.result?.rc === 0 ? `${label}完成` : `${label}有失败`);
     } catch (err) {
+      writeConsoleText(String(err.message || err), { meta: label });
       log(String(err.message || err));
     } finally {
       setBusy(false);
@@ -1759,24 +1931,86 @@ async function boot() {
     runModelsAction("/api/models/verify", "模型校验")
   );
   document.getElementById("btn-models-install")?.addEventListener("click", async () => {
-    if (!confirm("确认在目标节点 pip 安装 huggingface_hub + modelscope？")) return;
+    if (!confirm("在目标节点安装 huggingface_hub + modelscope？")) return;
     await runModelsAction("/api/models/install-tools", "安装拉取工具");
   });
-  document.getElementById("btn-models-pull")?.addEventListener("click", async () => {
-    const model = document.getElementById("model-select")?.value;
-    if (!model) return log("请选择模型");
+  document.getElementById("btn-models-download")?.addEventListener("click", async () => {
+    const name = document.getElementById("pull-repo")?.value.trim();
+    if (!name) return toast("请填写仓库 ID，例如 org/model");
+    const tool = document.getElementById("pull-tool")?.value || "auto";
+    const registerId = document.getElementById("pull-id")?.value.trim();
+    const register = !!document.getElementById("pull-register")?.checked;
     const node = document.getElementById("model-node")?.value;
-    if (!confirm(`确认在节点上拉取 ${model}？`)) return;
+    if (!confirm(`下载 ${name}？`)) return;
     setBusy(true);
     try {
-      const body = { model };
+      const body = { name, tool, register };
+      if (registerId) body.register_id = registerId;
       if (node) body.node = node;
       else body.nodes = "all";
       const data = await api("/api/models/pull", { method: "POST", body: JSON.stringify(body) });
-      showResults(data.results, "models pull");
-      toast(data.result?.rc === 0 ? "拉取完成" : "拉取失败");
+      if (data.results?.length) showResults(data.results, "下载模型");
+      else writeConsoleText(data.result?.stdout || data.result?.stderr || "pull done", { meta: "下载" });
+      if (data.models) renderModels(data.models);
+      toast(data.result?.rc === 0 ? "下载完成" : "下载失败");
+      setView("actions");
     } catch (err) {
+      writeConsoleText(String(err.message || err), { meta: "下载失败" });
       log(String(err.message || err));
+    } finally {
+      setBusy(false);
+    }
+  });
+  document.getElementById("btn-models-pull")?.addEventListener("click", async () => {
+    const model = document.getElementById("model-select")?.value;
+    if (!model) return toast("请选择已登记模型");
+    if (!confirm(`重新拉取 ${model}？`)) return;
+    await runModelsAction("/api/models/pull", "重拉", { model });
+  });
+  document.getElementById("btn-save-secrets")?.addEventListener("click", async () => {
+    const hf = document.getElementById("secret-hf")?.value.trim();
+    const ms = document.getElementById("secret-ms")?.value.trim();
+    if (!hf && !ms) return toast("请至少填一个 Token");
+    setBusy(true);
+    try {
+      let secrets = null;
+      if (hf) {
+        const data = await api("/api/models/secrets", {
+          method: "POST",
+          body: JSON.stringify({ kind: "hf", token: hf }),
+        });
+        secrets = data.secrets;
+      }
+      if (ms) {
+        const data = await api("/api/models/secrets", {
+          method: "POST",
+          body: JSON.stringify({ kind: "modelscope", token: ms }),
+        });
+        secrets = data.secrets;
+      }
+      renderSecretsMeta(secrets);
+      document.getElementById("secret-hf").value = "";
+      document.getElementById("secret-ms").value = "";
+      toast("Token 已保存");
+    } catch (err) {
+      toast(String(err.message || err));
+    } finally {
+      setBusy(false);
+    }
+  });
+  document.getElementById("btn-clear-secrets")?.addEventListener("click", async () => {
+    if (!confirm("清除已保存的 HF / ModelScope Token？")) return;
+    setBusy(true);
+    try {
+      await api("/api/models/secrets", { method: "POST", body: JSON.stringify({ kind: "hf", clear: true }) });
+      const data = await api("/api/models/secrets", {
+        method: "POST",
+        body: JSON.stringify({ kind: "modelscope", clear: true }),
+      });
+      renderSecretsMeta(data.secrets);
+      toast("已清除");
+    } catch (err) {
+      toast(String(err.message || err));
     } finally {
       setBusy(false);
     }
@@ -1785,11 +2019,15 @@ async function boot() {
     const m = (state.models?.models || []).find(
       (x) => x.id === document.getElementById("model-select")?.value
     );
-    if (!m) return;
+    if (!m) return toast("请选择模型");
     if (m.launch?.job) {
       const jobSel = document.getElementById("job-select");
       if (jobSel && [...jobSel.options].some((o) => o.value === m.launch.job)) {
         jobSel.value = m.launch.job;
+      }
+      const quick = document.getElementById("quick-job");
+      if (quick && [...quick.options].some((o) => o.value === m.launch.job)) {
+        quick.value = m.launch.job;
       }
     }
     const input = document.getElementById("job-extra-args");
@@ -1798,7 +2036,7 @@ async function boot() {
       input.dataset.touched = "1";
     }
     setView("workloads");
-    toast("已填入任务页参数");
+    toast("已填入任务页，可直接部署");
   });
 
   document.getElementById("deploy-mode").addEventListener("change", syncDeployMode);
@@ -1824,11 +2062,12 @@ async function boot() {
     setBusy(true);
     try {
       const data = await api("/api/deploy", { method: "POST", body: JSON.stringify(body) });
-      document.getElementById("console").classList.remove("empty");
-      document.getElementById("console").textContent =
-        data.result.stdout || data.result.stderr || "deploy done";
+      writeConsoleText(data.result.stdout || data.result.stderr || "deploy done", {
+        meta: "deploy",
+      });
       await refresh(true);
     } catch (err) {
+      writeConsoleText(String(err.message || err), { meta: "deploy 失败" });
       log(String(err.message || err));
     } finally {
       setBusy(false);
@@ -1878,13 +2117,15 @@ async function boot() {
   });
 
   document.getElementById("btn-clear-console").addEventListener("click", () => {
-    const el = document.getElementById("console");
-    el.classList.add("empty");
-    el.textContent = "已清空";
+    writeConsoleText("已清空。点「跑一键连通」或上方运维卡片可再次产生输出。", {
+      empty: true,
+      meta: "已清空",
+    });
   });
   document.getElementById("btn-clear-log").addEventListener("click", () => {
     document.getElementById("log").textContent = "已清空";
   });
+  document.getElementById("btn-console-connect").addEventListener("click", () => runOneclick("connect"));
 
   window.addEventListener("keydown", (ev) => {
     if (ev.target && ["INPUT", "TEXTAREA", "SELECT"].includes(ev.target.tagName)) return;
@@ -1915,8 +2156,12 @@ async function boot() {
     await refresh(false);
     await loadQuality();
     setView("actions");
+    await seedConsole();
   } catch (err) {
     log(String(err.message || err));
+    writeConsoleText(`初始化失败：${err.message || err}\n\n仍可点「跑一键连通」尝试。`, {
+      meta: "初始化失败",
+    });
   } finally {
     setBusy(false);
   }

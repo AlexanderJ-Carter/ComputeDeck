@@ -16,7 +16,8 @@ fi
 mkdir -p config/local/jobs state snapshots
 [[ -f config/local/cluster.json ]] || cp config/examples/cluster.example.json config/local/cluster.json
 [[ -f config/local/nodes.json ]] || cp config/examples/nodes.example.json config/local/nodes.json
-if [[ ! -f config/local/jobs/shell-job.json ]] && [[ ! -f config/local/jobs/decider.json ]]; then
+if [[ ! -f config/local/jobs/shell-job.json ]]; then
+  # Domain-specific jobs (any name) can be added later under config/local/jobs/
   cp config/examples/shell-job.example.json config/local/jobs/shell-job.json
 fi
 

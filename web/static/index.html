@@ -42,7 +42,7 @@
         <div class="nav-group">
           <span class="nav-label">集群</span>
           <button class="nav-item" data-view="nodes">节点</button>
-          <button class="nav-item" data-view="endpoints">推理池</button>
+          <button class="nav-item" data-view="endpoints">API 端点</button>
           <button class="nav-item" data-view="ops">命令</button>
           <button class="nav-item" data-view="terminal">终端</button>
         </div>
@@ -65,7 +65,7 @@
     <div class="main">
       <header class="topbar">
         <div class="topbar-copy">
-          <p class="eyebrow" id="strategy-line">控制面编排 · 节点执行 · 推理池可观测</p>
+          <p class="eyebrow" id="strategy-line">控制面编排 · 节点执行 · 端点可观测</p>
           <h1 id="view-title">一键运维</h1>
         </div>
         <div class="topbar-actions">
@@ -116,8 +116,7 @@
         </div>
 
         <div class="section-head">
-          <h2>运维动作</h2>
-          <p>九宫格等高；点卡片执行，结果落在下方「最近动作」</p>
+          <h2>运维动作 <span class="tip" tabindex="0" data-tip="点卡片执行；步骤在「最近动作」，详细输出在下方批量输出">?</span></h2>
         </div>
         <div class="action-grid">
           <button class="action-card" data-oneclick="control-bootstrap" data-keep-enabled="1">
@@ -189,9 +188,7 @@
             <div class="panel-h">
               <h2>最近动作</h2>
             </div>
-            <div id="action-steps" class="step-list">
-              <p class="muted">点击上方卡片后显示步骤。</p>
-            </div>
+            <div id="action-steps" class="step-list"></div>
           </div>
           <div class="panel compact">
             <div class="panel-h">
@@ -217,7 +214,6 @@
               <h2>节点详情</h2>
             </div>
             <div class="drawer-body" id="drawer-body">
-              <p class="muted">点选左侧瓦片查看详情 / 隔离 / 终端。<br />任务启停请到「任务」页用「目标节点」下拉框。</p>
             </div>
           </div>
         </div>
@@ -230,7 +226,7 @@
             <span class="meta">写入 config/local/nodes.json · 自动生成 inventory</span>
           </div>
           <div class="form-grid">
-            <input id="add-name" placeholder="名称 · deepseek-6" />
+            <input id="add-name" placeholder="名称 · gpu-worker-1" />
             <input id="add-host" placeholder="地址 · 10.x.x.x" />
             <input id="add-gpus" type="number" value="4" min="1" />
             <input id="add-labels" placeholder="标签 · a100,serving" />
@@ -253,12 +249,12 @@
                 <option value="all">全部节点</option>
               </select>
             </label>
-            <p class="muted tiny" id="job-target-hint">在此下拉框直接选节点；与「集群」页点选同步。</p>
+            <span id="job-target-hint" class="hidden"></span>
             <label class="field">
               <span>启动参数</span>
-              <input id="job-extra-args" placeholder="覆盖 extra_args，空格分隔，如 --base-port 30000" />
+              <input id="job-extra-args" placeholder="覆盖 extra_args，空格分隔" />
             </label>
-            <p class="muted tiny" id="job-args-hint">默认用 job 配置；填写后仅本次生效。</p>
+            <span id="job-args-hint" class="meta"></span>
             <div class="btn-row">
               <button data-job-action="status">状态</button>
               <button data-job-action="start" class="primary">启动</button>
@@ -312,34 +308,59 @@
         <div class="split">
           <div class="panel">
             <div class="panel-h">
-              <h2>模型目录</h2>
+              <h2>下载新模型 <span class="tip" tabindex="0" data-tip="填写 HF / ModelScope 仓库 id，选节点后拉取；可勾选登记到本地目录">?</span></h2>
+            </div>
+            <label class="field"><span>仓库 ID</span><input id="pull-repo" placeholder="org/model-name" data-keep-enabled="1" /></label>
+            <div class="compact-fields">
+              <label class="field">
+                <span>来源</span>
+                <select id="pull-tool" data-keep-enabled="1">
+                  <option value="auto">自动</option>
+                  <option value="huggingface-cli">Hugging Face</option>
+                  <option value="modelscope">ModelScope</option>
+                </select>
+              </label>
+              <label class="field"><span>本地 ID</span><input id="pull-id" placeholder="可选，默认 org-name" data-keep-enabled="1" /></label>
+            </div>
+            <label class="field"><span>目标节点</span><select id="model-node"><option value="">全部节点</option></select></label>
+            <label class="check-row"><input type="checkbox" id="pull-register" checked data-keep-enabled="1" /> 拉取后登记到模型目录</label>
+            <div class="btn-row">
+              <button id="btn-models-download" class="primary" data-keep-enabled="1">开始下载</button>
+              <button id="btn-models-install" class="ghost" data-keep-enabled="1">安装拉取工具</button>
+            </div>
+            <details class="fold">
+              <summary>Token / Key <span id="secrets-meta" class="meta">未配置</span></summary>
+              <label class="field"><span>Hugging Face Token</span><input id="secret-hf" type="password" placeholder="hf_…" autocomplete="off" data-keep-enabled="1" /></label>
+              <label class="field"><span>ModelScope Token</span><input id="secret-ms" type="password" placeholder="ms_…" autocomplete="off" data-keep-enabled="1" /></label>
+              <div class="btn-row">
+                <button id="btn-save-secrets" class="primary tiny" data-keep-enabled="1">保存 Token</button>
+                <button id="btn-clear-secrets" class="ghost tiny" data-keep-enabled="1">清除</button>
+              </div>
+            </details>
+          </div>
+          <div class="panel">
+            <div class="panel-h">
+              <h2>已登记模型 <span class="tip" tabindex="0" data-tip="从目录选择后可校验、重拉、填入任务启动参数">?</span></h2>
               <button id="btn-models-refresh" class="ghost tiny" data-keep-enabled="1">刷新</button>
             </div>
             <label class="field"><span>模型</span><select id="model-select"></select></label>
-            <label class="field"><span>解析节点</span><select id="model-node"><option value="">集群默认 paths</option></select></label>
             <div class="kv"><b>路径</b> <span id="model-path">-</span></div>
             <div class="kv"><b>仓库</b> <span id="model-repo">-</span></div>
             <div class="kv"><b>关联 Job</b> <span id="model-job">-</span></div>
             <div class="kv"><b>启动参数</b> <span id="model-args">-</span></div>
-            <div class="kv"><b>校验规则</b> <span id="model-verify">-</span></div>
-            <div class="kv"><b>默认 paths</b> <pre id="model-defaults-paths" class="snippet tiny-pre"></pre></div>
             <div class="btn-row">
-              <button id="btn-models-deps">检查依赖</button>
-              <button id="btn-models-check" class="primary">检查路径</button>
-              <button id="btn-models-verify">校验模型</button>
-              <button id="btn-models-pull">拉取权重</button>
-              <button id="btn-models-install">安装拉取工具</button>
-              <button id="btn-models-apply-job">填入任务参数</button>
+              <button id="btn-models-deps" class="ghost">依赖</button>
+              <button id="btn-models-check" class="ghost">路径</button>
+              <button id="btn-models-verify">校验</button>
+              <button id="btn-models-pull">重拉</button>
+              <button id="btn-models-apply-job" class="primary">填入任务并部署</button>
             </div>
-            <p class="muted tiny">依赖：节点需 huggingface-cli 或 modelscope（requirements-models-worker.txt）。路径占位见手册 paths；详见 docs/手册.md。</p>
-          </div>
-          <div class="panel">
-            <div class="panel-h"><h2>缓存 / 说明</h2></div>
-            <div id="model-caches" class="list"></div>
-            <h3 class="sub">下载落盘</h3>
-            <p class="muted">有 models[].path → 拉到该目录；否则用 cache / pull.default_cache。pull.tool=auto 时优先 HF，否则 ModelScope。</p>
-            <h3 class="sub">Docker</h3>
-            <p class="muted">Job <code>runtime: docker</code> 见 config/examples/job-docker.example.json。本集群 worker 无 docker 时用 process。</p>
+            <details class="fold">
+              <summary>缓存与 paths</summary>
+              <div id="model-caches" class="list"></div>
+              <pre id="model-defaults-paths" class="snippet tiny-pre"></pre>
+            </details>
+            <span id="model-verify" class="hidden"></span>
           </div>
         </div>
       </section>
@@ -347,7 +368,7 @@
       <section class="view" data-view-panel="endpoints">
         <div class="panel">
           <div class="panel-h">
-            <h2>推理池端点</h2>
+            <h2>API 端点</h2>
             <div class="btn-row">
               <button id="btn-copy-urls" class="ghost tiny">复制 URL</button>
               <button id="btn-api-health-2" class="primary tiny">探测 API</button>
@@ -355,9 +376,14 @@
               <button id="btn-gateway-render" class="ghost tiny" data-keep-enabled="1">写出网关配置</button>
             </div>
           </div>
-          <p class="meta" id="pool-meta">推理 API 端点</p>
+          <div class="panel-h" style="margin-top:0">
+            <span class="meta" id="pool-meta"></span>
+          </div>
           <div id="api-mosaic" class="api-mosaic"></div>
-          <p class="meta" id="gateway-topo" style="margin-top:10px">端口 / Gateway / nginx 拓扑加载中…</p>
+          <details class="fold">
+            <summary>端口 / 网关拓扑</summary>
+            <p class="meta" id="gateway-topo">加载中…</p>
+          </details>
           <div class="panel-h" style="margin-top:14px">
             <h2>负载均衡 / 网关片段</h2>
             <select id="lb-strategy">
@@ -369,10 +395,10 @@
               <option value="python">Python 客户端</option>
               <option value="nginx">nginx upstream</option>
               <option value="curl">curl + Bearer</option>
-              <option value="litellm_notes">LiteLLM / Gateway 说明</option>
+              <option value="gateway_notes">网关说明</option>
             </select>
           </div>
-          <p class="meta" id="lb-meta">探测 API 后生成客户端轮询、nginx 与 Gateway 对接片段</p>
+          <span class="meta" id="lb-meta"></span>
           <pre id="client-snippet" class="snippet"></pre>
         </div>
       </section>
@@ -388,7 +414,7 @@
               <button id="btn-metrics-refresh" class="ghost" data-keep-enabled="1">刷新主机指标</button>
             </div>
           </div>
-          <p class="muted" id="term-status">选择节点后点「连接」，等同于 SSH 进该机交互 shell（支持 vim/top 等）。</p>
+          <span class="meta" id="term-status">未连接</span>
           <div id="term" class="term-host"></div>
         </div>
         <div class="panel">
@@ -420,7 +446,7 @@
             </div>
             <label class="field"><span>目标</span><select id="py-target"></select></label>
             <label class="field"><span>解释器</span><input id="py-bin"
-                value="/tmp/sgl-workspace/dsv4-sglang/bin/python" /></label>
+                value="" placeholder="/usr/bin/python3" /></label>
             <label class="field"><span>脚本</span><input id="py-script" placeholder="/path/script.py" /></label>
             <label class="field"><span>参数</span><input id="py-args" placeholder="--flag" /></label>
             <label class="field"><span>代码 (-c)</span><input id="py-code" placeholder="print(1)" /></label>
@@ -440,10 +466,6 @@
             <h2>上手指南</h2>
             <button id="btn-goto-setup" class="primary tiny" data-keep-enabled="1">打开配置向导</button>
           </div>
-          <p class="muted" style="margin-top:0;margin-bottom:12px;line-height:1.55">
-            完整说明：仓库 <code>docs/手册.md</code>（页面职责、依赖、路径、下模型、腾空）。
-            推荐：连通 → 体检 →（可选）models deps/verify → 部署 Job。
-          </p>
           <div id="guide-steps" class="guide-steps"></div>
         </div>
         <div class="panel">
@@ -476,7 +498,7 @@ gpu-control ui --background</pre>
               <p class="path-line" id="setup-nodes-path">config/local/nodes.json</p>
               <label class="field"><span>SSH 私钥路径</span><input id="ssh-key" placeholder="~/.ssh/id_ed25519" /></label>
               <div class="key-chips" id="ssh-key-chips"></div>
-              <label class="field"><span>用户</span><input id="ssh-user" placeholder="ubuntu / sankuai" /></label>
+              <label class="field"><span>用户</span><input id="ssh-user" placeholder="ubuntu" /></label>
               <label class="field"><span>端口</span><input id="ssh-port" type="number" placeholder="22" /></label>
               <div class="btn-row">
                 <button id="btn-save-ssh" class="primary" data-keep-enabled="1">保存并生成 inventory</button>
@@ -508,7 +530,7 @@ gpu-control ui --background</pre>
                 <button id="btn-save-nodes-json" class="primary tiny" data-keep-enabled="1">保存并生成</button>
               </div>
               <p class="muted" style="margin-top:0">每行：<code>名称 地址 [GPU数] [标签]</code>，例如
-                <code>deepseek-1 10.0.0.1 4 a100,serving</code></p>
+                <code>gpu-1 10.0.0.1 4 a100,serving</code></p>
               <textarea id="nodes-editor" spellcheck="false"></textarea>
             </div>
 
@@ -524,7 +546,7 @@ gpu-control ui --background</pre>
               <label class="field"><span>每节点 GPU</span><input id="job-gpus" type="number" /></label>
               <label class="field"><span>Python 路径</span><input id="job-python" /></label>
               <label class="field"><span>脚本路径</span><input id="job-script" /></label>
-              <label class="field"><span>额外参数（空格分隔）</span><input id="job-extra" placeholder="--base-port 30000" /></label>
+              <label class="field"><span>额外参数（空格分隔）</span><input id="job-extra" placeholder="--flag value" /></label>
             </div>
           </div>
         </div>
@@ -554,19 +576,20 @@ gpu-control ui --background</pre>
         </div>
       </section>
 
-      <section class="console-wrap panel">
+      <section class="console-wrap panel" id="batch-console-wrap">
         <div class="panel-h">
           <h2>批量输出</h2>
           <div class="btn-row">
+            <span class="meta" id="console-meta">等待动作</span>
             <span class="meta" id="busy-flag"></span>
+            <button type="button" class="ghost tiny" id="btn-console-connect" data-keep-enabled="1">跑一键连通</button>
             <button id="btn-clear-console" class="ghost tiny" data-keep-enabled="1">清空输出</button>
             <button id="btn-clear-log" class="ghost tiny" data-keep-enabled="1">清空日志</button>
           </div>
         </div>
-        <p class="muted" style="margin:0 0 8px">这里显示「命令 / 一键运维」的结构化结果。要真正进节点 shell，请用左侧「终端」。</p>
         <div class="console-split">
-          <div id="console" class="console empty">批量命令的 stdout 会出现在这里。</div>
-          <div id="log" class="log">就绪。界面与 CLI 共用同一控制面。</div>
+          <div id="console" class="console empty">加载中…</div>
+          <div id="log" class="log">就绪</div>
         </div>
       </section>
     </div>

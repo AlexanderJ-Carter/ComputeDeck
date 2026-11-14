@@ -5,10 +5,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
+from pathlib import Path
 
 import _bootstrap  # noqa: F401
-from paths import INVENTORY_FILE, STATE_DIR, expand_path, nodes_file
+from paths import INVENTORY_FILE, STATE_DIR, cluster_file, expand_path, nodes_file
 from node_paths import default_paths, inventory_path_kv, node_paths
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+from endpoints_util import resolve_node_ports  # noqa: E402
 
 
 def _control_meta(data: dict) -> dict | None:
@@ -42,10 +47,16 @@ def main() -> int:
                 "",
                 "[control_plane:vars]",
                 "ansible_connection=local",
-                f"ansible_user={defaults.get('ansible_user', 'sankuai')}",
+                f"ansible_user={defaults.get('ansible_user', 'root')}",
                 "",
             ]
         )
+
+    cluster = {}
+    cluster_path = cluster_file()
+    if cluster_path.is_file():
+        cluster = json.loads(cluster_path.read_text(encoding="utf-8"))
+    api = cluster.get("api") or {}
 
     lines.append("[gpu_workers]")
     for name, meta in sorted(nodes.items()):
@@ -54,8 +65,12 @@ def main() -> int:
         host = meta.get("ansible_host", "")
         gpus = meta.get("gpus_per_node", defaults.get("gpus_per_node", 4))
         role = meta.get("role") or defaults.get("role") or "serving"
+        base_port, ports = resolve_node_ports(meta or {}, defaults=defaults, api=api)
         path_kv = inventory_path_kv(node_paths(name, data))
-        line = f"{name} ansible_host={host} gpus_per_node={gpus} node_role={role}"
+        line = (
+            f"{name} ansible_host={host} gpus_per_node={gpus} "
+            f"ports_per_node={len(ports)} base_port={base_port} node_role={role}"
+        )
         if path_kv:
             line = f"{line} {path_kv}"
         lines.append(line)

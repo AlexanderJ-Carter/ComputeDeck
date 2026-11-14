@@ -14,13 +14,18 @@
     "base_port": 8000,
     "ports_per_node": 1,
     "health_path": "/health",
+    "sample_path": "/health",
+    "paths": ["/health"],
     "auth_header": "Authorization",
+    "auth_env": "INFERENCE_API_KEY",
     "api_key_file": "${GPU_CONTROL_API_KEY_FILE}"
   },
   "gateway": {
-    "litellm_port": 4000,
-    "litellm_dir": "${GPU_CONTROL_GATEWAY_DIR}",
-    "vllm_port": 8000,
+    "openai_proxy_port": 4000,
+    "openai_proxy_dir": "${GPU_CONTROL_GATEWAY_DIR}",
+    "openai_proxy_role": "optional OpenAI-compatible proxy (LiteLLM 等)",
+    "extra_http_port": 8080,
+    "extra_http_role": "optional extra HTTP service",
     "nginx_listen": 18080
   },
   "watchdog": {

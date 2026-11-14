@@ -4,8 +4,9 @@
   gather_facts: false
 
   vars:
-    base_port: 30000
-    ports_per_node: 4
+    # Cluster-wide fallbacks; inventory may set per-host base_port / ports_per_node
+    default_base_port: 8000
+    default_ports_per_node: 1
     api_key_file: ""
     health_path: /health
     result_dir: "{{ playbook_dir }}/../state/endpoint_probe"
@@ -25,13 +26,13 @@
           - -c
           - |
             import json, os, time, urllib.request
-            base={{ base_port }}
-            n={{ ports_per_node }}
+            base=int({{ base_port | default(default_base_port) }})
+            n=int({{ ports_per_node | default(gpus_per_node) | default(default_ports_per_node) }})
             path="{{ health_path }}"
             key_file="{{ api_key_file }}"
             token=open(key_file).read().strip() if key_file and os.path.isfile(key_file) else ""
             out=[]
-            for i in range(n):
+            for i in range(max(1, n)):
               port=base+i
               url=f"http://127.0.0.1:{port}{path}"
               t0=time.time()
@@ -64,6 +65,8 @@
           {{ {
             'node': inventory_hostname,
             'host': hostvars[inventory_hostname].ansible_host | default(''),
+            'base_port': (base_port | default(default_base_port) | int),
+            'ports_per_node': (ports_per_node | default(gpus_per_node) | default(default_ports_per_node) | int),
             'results': (probe_raw.stdout | default('[]') | from_json)
           } | to_nice_json }}
       delegate_to: localhost

@@ -4,30 +4,31 @@
     {
       "id": "hf-hub",
       "path": "${paths.cache}",
-      "note": "HF / 共享权重缓存根"
+      "note": "共享权重缓存根"
     }
   ],
   "models": [
     {
-      "id": "decider-2b",
-      "repo": "Mapika/decider-2b",
-      "path": "${paths.model_root}/Mapika/decider-2b",
+      "id": "example-model",
+      "repo": "org/model-name",
+      "path": "${paths.cache}/org/model-name",
       "cache": "hf-hub",
-      "note": "示例权重目录",
+      "note": "登记后可用 models pull / verify；launch 可选",
       "launch": {
-        "job": "decider",
+        "job": "shell-job",
         "runtime": "process",
-        "extra_args": ["--base-port", "30000"]
+        "extra_args": []
       },
       "verify": {
         "expect_files": ["config.json"],
-        "min_bytes": 1000000
+        "min_bytes": 1000
       }
     }
   ],
   "pull": {
     "tool": "auto",
     "default_cache": "hf-hub",
-    "note": "auto = 优先 huggingface-cli，否则 modelscope"
+    "hf_token_file": "config/local/secrets/hf_token",
+    "modelscope_token_file": "config/local/secrets/modelscope_token"
   }
 }

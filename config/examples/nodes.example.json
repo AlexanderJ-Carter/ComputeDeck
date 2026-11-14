@@ -27,11 +27,13 @@
       "gpus_per_node": 4,
       "labels": ["a100", "serving"],
       "role": "serving",
-      "note": "与 defaults.paths 一致时可省略 paths"
+      "note": "端口默认跟 gpus_per_node；也可写 ports_per_node / base_port"
     },
     "gpu-2": {
       "ansible_host": "10.0.0.2",
-      "gpus_per_node": 4,
+      "gpus_per_node": 8,
+      "ports_per_node": 8,
+      "base_port": 9000,
       "labels": ["a100", "serving"],
       "role": "serving",
       "paths": {
@@ -39,7 +41,7 @@
         "model_root": "/mnt/shared/models",
         "cache": "/mnt/shared/hf-cache"
       },
-      "note": "目录与其它节点不同时，只覆盖差异项"
+      "note": "8 卡异构示例：自定义 base_port=9000 → 9000–9007"
     }
   }
 }

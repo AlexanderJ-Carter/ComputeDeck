@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Render gateway artifacts (nginx / LiteLLM notes / curl) from the inference pool.
+"""Render gateway artifacts (nginx / curl / client notes) from the endpoint catalog.
 
-Decider 池（30000-30003）是带 Bearer 鉴权的专用 API（/decide、/v1/systemone），
-不是 OpenAI Chat Completions。LiteLLM(:4000) 面向 OpenAI 兼容后端；本脚本对
-Decider 主推 nginx 上游 + 客户端轮询，并对 Gateway 目录给出对接说明。
+All service-specific paths and auth come from ``cluster.api`` / ``cluster.gateway``.
+The control plane does not proxy inference traffic.
 """
 
 from __future__ import annotations
@@ -20,6 +19,8 @@ from paths import PROJECT_DIR, STATE_DIR, cluster_file, expand_path
 ENDPOINTS_FILE = STATE_DIR / "endpoints.json"
 HEALTH_FILE = STATE_DIR / "endpoint_health.json"
 OUT_DIR = STATE_DIR / "gateway"
+
+DEFAULT_API_PATHS = ["/health"]
 
 
 def _load(path: Path, default):
@@ -42,25 +43,63 @@ def _healthy_urls(catalog: dict, health: dict) -> list[dict]:
     return healthy or rows
 
 
+def _api_paths(api: dict) -> list[str]:
+    raw = api.get("paths") or api.get("probe_paths") or DEFAULT_API_PATHS
+    paths = [str(p) for p in raw if str(p).startswith("/")]
+    return paths or list(DEFAULT_API_PATHS)
+
+
+def _auth_line(api: dict) -> str | None:
+    header = (api.get("auth_header") or "").strip()
+    if not header:
+        return None
+    if header.lower() == "authorization":
+        return "Authorization: Bearer <api_key_file>"
+    return f"{header}: <token>"
+
+
 def build_topology(cluster: dict, catalog: dict, health: dict) -> dict:
     api = cluster.get("api") or {}
-    base = int(api.get("base_port", 30000))
-    count = int(api.get("ports_per_node", 4))
+    defaults = catalog.get("api_defaults") or {}
+    base = int(defaults.get("base_port") or api.get("base_port", 8000))
+    count = int(defaults.get("ports_per_node") or api.get("ports_per_node", 1))
+    by_node = catalog.get("by_node") or {}
     key_file = api.get("api_key_file") or catalog.get("api_key_file")
     if key_file:
         key_file = str(expand_path(str(key_file)))
     gateway = cluster.get("gateway") or {}
-    litellm_dir = expand_path(str(gateway.get("litellm_dir") or "")) if gateway.get("litellm_dir") else None
+    proxy_dir_raw = gateway.get("openai_proxy_dir") or gateway.get("litellm_dir")
+    proxy_dir = expand_path(str(proxy_dir_raw)) if proxy_dir_raw else None
+    ui_port = int((cluster.get("control") or {}).get("ui_port") or 8787)
+    node_ranges = {
+        name: {
+            "base_port": info.get("base_port"),
+            "ports_per_node": info.get("ports_per_node"),
+            "ports": info.get("ports"),
+            "range": (
+                f"{min(info.get('ports') or [base])}-{max(info.get('ports') or [base])}"
+                if info.get("ports")
+                else None
+            ),
+        }
+        for name, info in by_node.items()
+    }
+    auth = _auth_line(api)
     return {
         "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "control_ui": "http://127.0.0.1:8787",
+        "control_ui": f"http://127.0.0.1:{ui_port}",
         "inference_pool": {
             "job": catalog.get("job") or cluster.get("default_job"),
             "base_port": base,
             "ports_per_node": count,
             "port_range": list(range(base, base + count)),
-            "paths": ["/health", "/decide", "/v1/systemone", "/v1/models", "/stats"],
-            "auth": "Authorization: Bearer <api_key_file>",
+            "by_node": node_ranges,
+            "paths": _api_paths(api),
+            "health_path": api.get("health_path") or "/health",
+            "sample_path": api.get("sample_path") or (api.get("health_path") or "/health"),
+            "auth": auth,
+            "auth_header": api.get("auth_header") or None,
+            "auth_env": api.get("auth_env") or "INFERENCE_API_KEY",
             "api_key_file": key_file,
             "endpoint_count": catalog.get("count") or len(catalog.get("endpoints") or []),
             "health": {
@@ -72,22 +111,25 @@ def build_topology(cluster: dict, catalog: dict, health: dict) -> dict:
             },
         },
         "local_services": {
-            "gpu_control_ui": {"port": 8787, "role": "控制面 Web"},
-            "litellm_gateway": {
-                "port": int(gateway.get("litellm_port") or 4000),
-                "role": "OpenAI 兼容统一代理（AgentSociety 等）",
-                "dir": str(litellm_dir) if litellm_dir else None,
-                "note": "默认代理云厂商 + 可选本地 vLLM(:8000)；不直接替代 Decider 池",
+            "gpu_control_ui": {"port": ui_port, "role": "control-plane Web"},
+            "openai_compat_proxy": {
+                "port": int(
+                    gateway.get("openai_proxy_port")
+                    or gateway.get("litellm_port")
+                    or 0
+                )
+                or None,
+                "role": gateway.get("openai_proxy_role") or "optional OpenAI-compatible proxy",
+                "dir": str(proxy_dir) if proxy_dir else None,
             },
-            "legacy_vllm": {
-                "port": int(gateway.get("vllm_port") or 8000),
-                "role": "历史 DeepSeek/vLLM OpenAI 兼容入口",
-                "note": "与 Decider 30000-30003 不是同一服务",
+            "extra_http": {
+                "port": int(gateway.get("extra_http_port") or gateway.get("vllm_port") or 0) or None,
+                "role": gateway.get("extra_http_role") or "optional extra HTTP service",
             },
             "nginx": {
-                "role": "可选入口 LB（本机未必安装）",
+                "role": "optional edge LB (may be absent on control host)",
                 "installed": bool(shutil.which("nginx")),
-                "generated": str(OUT_DIR / "nginx-decider.conf"),
+                "generated": str(OUT_DIR / "nginx-inference-pool.conf"),
             },
         },
     }
@@ -99,11 +141,11 @@ def render_nginx(upstreams: list[dict], *, listen: int = 18080) -> str:
         for ep in upstreams
         if ep.get("host") and ep.get("port") is not None
     )
-    return f"""# Generated by gpu-control gateway render — do not edit by hand.
-# Decider pool LB. Health checks require Bearer token (see map.json api_key_file).
-# Install: copy to /etc/nginx/conf.d/ or include from nginx.conf, then nginx -t && reload.
+    return f"""# Generated by gpu-control — do not edit by hand.
+# Inference pool upstream. Forward Authorization if your API needs it.
+# Install: include from nginx.conf, then nginx -t && reload.
 
-upstream decider_pool {{
+upstream inference_pool {{
     least_conn;
 {servers}
     keepalive 32;
@@ -121,55 +163,66 @@ server {{
         proxy_set_header Authorization $http_authorization;
         proxy_connect_timeout 2s;
         proxy_read_timeout 300s;
-        proxy_pass http://decider_pool;
+        proxy_pass http://inference_pool;
     }}
 }}
 """
 
 
-def render_curl(upstreams: list[dict], key_file: str | None) -> str:
-    first = upstreams[0]["url"] if upstreams else "http://127.0.0.1:30000"
-    key_expr = f'$(cat {key_file})' if key_file else "$DECIDER_API_KEY"
-    return f"""# Decider 鉴权探测 / 调用示例（密钥来自文件，勿回显）
-KEY={key_expr}
-curl -sS -H "Authorization: Bearer $KEY" {first}/health
-curl -sS -H "Authorization: Bearer $KEY" {first}/v1/models
+def render_curl(upstreams: list[dict], pool: dict) -> str:
+    first = upstreams[0]["url"] if upstreams else f"http://127.0.0.1:{pool.get('base_port', 8000)}"
+    health = pool.get("health_path") or "/health"
+    sample = pool.get("sample_path") or health
+    key_file = pool.get("api_key_file")
+    env_name = pool.get("auth_env") or "INFERENCE_API_KEY"
+    key_expr = f"$(cat {key_file})" if key_file else f"${env_name}"
+    auth_header = pool.get("auth_header")
+    lines = [
+        "# Endpoint probe / call examples (do not echo secrets)",
+        f"KEY={key_expr}",
+        f"BASE={first}",
+    ]
+    if auth_header:
+        lines.append(f'curl -sS -H "{auth_header}: Bearer $KEY" "$BASE{health}"')
+        if sample != health:
+            lines.append(f'curl -sS -H "{auth_header}: Bearer $KEY" "$BASE{sample}"')
+    else:
+        lines.append(f'curl -sS "$BASE{health}"')
+        if sample != health:
+            lines.append(f'curl -sS "$BASE{sample}"')
+    return "\n".join(lines) + "\n"
 
-# 决策接口
-curl -sS -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \\
-  {first}/decide -d '{{"context":"...","schema":{{}}}}'
-"""
 
-
-def render_litellm_notes(topology: dict, upstreams: list[dict]) -> str:
+def render_gateway_notes(topology: dict, upstreams: list[dict]) -> str:
     local = topology["local_services"]
+    pool = topology["inference_pool"]
     urls = [u["url"] for u in upstreams[:8]]
-    return f"""# Gateway / LiteLLM 对接说明（由 gpu-control 生成）
+    proxy = local.get("openai_compat_proxy") or {}
+    extra = local.get("extra_http") or {}
+    return f"""# Gateway notes (generated by gpu-control)
 #
-# 两套入口不要混用：
-# 1) LiteLLM  :{local['litellm_gateway']['port']}  → OpenAI 兼容（云模型 / 可选本地 vLLM :{local['legacy_vllm']['port']}）
-# 2) Decider 池 :{topology['inference_pool']['port_range']} × N 节点 → /decide · /v1/systemone（Bearer）
+# Control plane does not proxy inference traffic.
+# - Endpoint pool: ports={pool.get('port_range')} endpoints={pool.get('endpoint_count')}
+# - Paths: {', '.join(pool.get('paths') or [])}
+# - Auth: {pool.get('auth') or '(none)'}
 #
-# 当前健康上游（截断）:
-{chr(10).join('#  - ' + u for u in urls) or '#  (无)'}
+# Healthy upstreams (truncated):
+{chr(10).join('#  - ' + u for u in urls) or '#  (none)'}
 #
-# 推荐：
-# - AgentSociety / 通用 Chat → Gateway/start_litellm.sh（改 litellm_config.yaml 的 api_base）
-# - Decider 业务流量 → nginx-decider.conf 或客户端轮询（gpu-control endpoints / UI 负载计划）
+# Optional local services from cluster.gateway:
+# - OpenAI-compatible proxy :{proxy.get('port') or '-'} ({proxy.get('role')})
+# - Extra HTTP :{extra.get('port') or '-'} ({extra.get('role')})
 #
-# 若要把「某个 OpenAI 兼容推理」挂进 LiteLLM，在 litellm_config.yaml 增加：
-# - model_name: my-local
-#   litellm_params:
-#     model: openai/<served-model-name>
-#     api_base: http://<host>:<port>/v1
-#     api_key: os.environ/DECIDER_API_KEY   # 或对应密钥
+# Wire an OpenAI-compatible backend into your proxy config, e.g.:
+#   api_base: http://<host>:<port>/v1
+#   api_key:  os.environ/{pool.get('auth_env') or 'INFERENCE_API_KEY'}
 """
 
 
 def render_python_client(upstreams: list[dict]) -> str:
     urls = [u["url"] for u in upstreams if u.get("url")]
     return (
-        "# 健康优先客户端轮询（控制面不代理流量）\n"
+        "# Client-side endpoint list (control plane does not proxy traffic)\n"
         f"ENDPOINTS = {json.dumps(urls, ensure_ascii=False, indent=2)}\n"
         "\n"
         "def pick(i):\n"
@@ -177,21 +230,24 @@ def render_python_client(upstreams: list[dict]) -> str:
     )
 
 
-def build_payload(*, listen: int = 18080) -> dict:
+def build_payload(*, listen: int | None = None) -> dict:
     cluster = _load(cluster_file(), {})
     catalog = _load(ENDPOINTS_FILE, {"endpoints": [], "urls": []})
     health = _load(HEALTH_FILE, {})
     upstreams = _healthy_urls(catalog, health)
     topology = build_topology(cluster, catalog, health)
-    key_file = topology["inference_pool"].get("api_key_file")
+    pool = topology["inference_pool"]
+    listen_port = int(listen or (cluster.get("gateway") or {}).get("nginx_listen") or 18080)
     return {
         "topology": topology,
         "upstreams": upstreams,
         "snippets": {
             "python": render_python_client(upstreams),
-            "nginx": render_nginx(upstreams, listen=listen),
-            "curl": render_curl(upstreams, key_file),
-            "litellm_notes": render_litellm_notes(topology, upstreams),
+            "nginx": render_nginx(upstreams, listen=listen_port),
+            "curl": render_curl(upstreams, pool),
+            "gateway_notes": render_gateway_notes(topology, upstreams),
+            # backward-compatible alias for older UI selections
+            "litellm_notes": render_gateway_notes(topology, upstreams),
         },
     }
 
@@ -200,9 +256,9 @@ def write_artifacts(payload: dict) -> dict[str, str]:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     paths = {
         "map": OUT_DIR / "map.json",
-        "nginx": OUT_DIR / "nginx-decider.conf",
+        "nginx": OUT_DIR / "nginx-inference-pool.conf",
         "curl": OUT_DIR / "curl-examples.sh",
-        "litellm_notes": OUT_DIR / "LITELLM.md",
+        "gateway_notes": OUT_DIR / "GATEWAY.md",
         "python": OUT_DIR / "client_endpoints.py",
     }
     paths["map"].write_text(
@@ -216,15 +272,15 @@ def write_artifacts(payload: dict) -> dict[str, str]:
     )
     paths["nginx"].write_text(payload["snippets"]["nginx"], encoding="utf-8")
     paths["curl"].write_text(payload["snippets"]["curl"], encoding="utf-8")
-    paths["litellm_notes"].write_text(payload["snippets"]["litellm_notes"], encoding="utf-8")
+    paths["gateway_notes"].write_text(payload["snippets"]["gateway_notes"], encoding="utf-8")
     paths["python"].write_text(payload["snippets"]["python"], encoding="utf-8")
     return {k: str(v) for k, v in paths.items()}
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--write", action="store_true", help=f"写入 {OUT_DIR}")
-    parser.add_argument("--listen", type=int, default=18080, help="nginx listen 端口")
+    parser.add_argument("--write", action="store_true", help=f"write under {OUT_DIR}")
+    parser.add_argument("--listen", type=int, default=None, help="nginx listen port")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
@@ -246,7 +302,7 @@ def main() -> int:
     else:
         topo = payload["topology"]
         pool = topo["inference_pool"]
-        print(f"inference ports {pool['port_range']} × endpoints={pool['endpoint_count']}")
+        print(f"ports {pool['port_range']} · endpoints={pool['endpoint_count']}")
         print(f"health {pool['health'].get('ok')}/{pool['health'].get('total')} · key={pool.get('api_key_file')}")
         print(f"nginx installed={topo['local_services']['nginx']['installed']}")
         print(f"upstreams={len(payload['upstreams'])}")

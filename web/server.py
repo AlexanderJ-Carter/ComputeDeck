@@ -41,12 +41,13 @@ from paths import (  # noqa: E402
 
 from node_paths import default_paths, node_paths  # noqa: E402
 from jobs_util import default_job_name  # noqa: E402
+from api_catalog import catalog_payload, openapi_payload  # noqa: E402
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 from render_gateway import (  # noqa: E402
     build_payload as build_gateway_payload,
     render_curl,
-    render_litellm_notes,
+    render_gateway_notes,
     render_nginx,
     render_python_client,
     write_artifacts as write_gateway_artifacts,
@@ -56,6 +57,9 @@ from model_ops import (  # noqa: E402
     load_models,
     model_entries,
     models_file,
+    save_models,
+    secrets_status,
+    token_file,
 )
 from terminal import open_shell, pump_channel  # noqa: E402
 from ws import (  # noqa: E402
@@ -110,8 +114,8 @@ EXEC_PRESETS = {
         "command": "df -h / /tmp 2>/dev/null; df -h | head -20",
     },
     "model-procs": {
-        "label": "模型进程",
-        "command": "pgrep -af 'start_model|sglang|python' | head -40 || true",
+        "label": "Python / Job 进程",
+        "command": "pgrep -af 'python|torch|uvicorn|gunicorn' | head -40 || true",
     },
     "ports": {
         "label": "监听端口",
@@ -202,6 +206,7 @@ def build_models_payload(node: str | None = None) -> dict:
         "caches": cache_entries(data, node=node),
         "models": model_entries(data, node=node),
         "pull": data.get("pull") or {},
+        "secrets": secrets_status(),
     }
 
 
@@ -299,13 +304,15 @@ def _build_gateway_payload(upstreams: list[dict] | None = None) -> dict:
         })
     if not cleaned:
         return payload
-    key_file = (payload.get("topology") or {}).get("inference_pool", {}).get("api_key_file")
+    pool = (payload.get("topology") or {}).get("inference_pool") or {}
     payload["upstreams"] = cleaned
+    notes = render_gateway_notes(payload["topology"], cleaned)
     payload["snippets"] = {
         "python": render_python_client(cleaned),
         "nginx": render_nginx(cleaned),
-        "curl": render_curl(cleaned, key_file),
-        "litellm_notes": render_litellm_notes(payload["topology"], cleaned),
+        "curl": render_curl(cleaned, pool),
+        "gateway_notes": notes,
+        "litellm_notes": notes,
     }
     return payload
 
@@ -496,7 +503,7 @@ SETUP_GUIDE = [
         "body": "复制模板到 config/local/jobs/；路径用 ${paths.*}。",
         "cli": [
             "cp config/examples/shell-job.example.json config/local/jobs/myjob.json",
-            "# 按需改 python/script/extra_args；decider 只是领域示例之一",
+            "# edit python/script/extra_args for your workload",
             "gpu-control status myjob --nodes all",
         ],
     },
@@ -1125,6 +1132,14 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"ok": True, "service": "gpu-control-ui", "version": UI_VERSION})
             return
 
+        if path in {"/api", "/api/"}:
+            self._json(200, catalog_payload())
+            return
+
+        if path == "/api/openapi.json":
+            self._json(200, openapi_payload())
+            return
+
         if path == "/api/doctor":
             result = run_cli(["doctor", "--json"], timeout=30)
             try:
@@ -1304,19 +1319,60 @@ class Handler(BaseHTTPRequestHandler):
                 args.extend(["--name", body["name"]])
             if body.get("cache"):
                 args.extend(["--cache", body["cache"]])
+            if body.get("tool"):
+                args.extend(["--tool", str(body["tool"])])
+            if body.get("register"):
+                args.append("--register")
+            if body.get("register_id") or body.get("id"):
+                args.extend(["--register-id", str(body.get("register_id") or body.get("id"))])
             if body.get("node"):
                 args.extend(["--node", body["node"]])
             elif body.get("nodes"):
                 args.extend(["--nodes", body["nodes"]])
             if not body.get("model") and not body.get("name"):
-                self._json(400, {"error": "model 或 name 必填"})
+                self._json(400, {"error": "填写仓库 id（name）或选择已登记 model"})
                 return
             with _action_lock:
                 result = run_cli(args, timeout=int(body.get("timeout") or 3600))
             self._json(
                 200 if result["rc"] == 0 else 500,
-                {"result": result, "results": collect_exec_results()},
+                {
+                    "result": result,
+                    "results": collect_exec_results(),
+                    "models": build_models_payload(body.get("node")),
+                },
             )
+            return
+
+        if path == "/api/models/secrets":
+            kind = (body.get("kind") or "").strip().lower()
+            token = (body.get("token") or "").strip()
+            clear = bool(body.get("clear"))
+            if kind not in {"hf", "huggingface", "modelscope", "ms"}:
+                self._json(400, {"error": "kind 需为 hf 或 modelscope"})
+                return
+            path_obj = token_file("hf" if kind in {"hf", "huggingface"} else "modelscope")
+            if clear:
+                if path_obj.is_file():
+                    path_obj.unlink()
+                self._json(200, {"ok": True, "cleared": True, "secrets": secrets_status()})
+                return
+            if not token:
+                self._json(400, {"error": "token 必填（或 clear=true）"})
+                return
+            path_obj.parent.mkdir(parents=True, exist_ok=True)
+            path_obj.write_text(token + "\n", encoding="utf-8")
+            path_obj.chmod(0o600)
+            # keep models.json pointers
+            data = load_models()
+            pull = dict(data.get("pull") or {})
+            if kind in {"hf", "huggingface"}:
+                pull["hf_token_file"] = str(path_obj)
+            else:
+                pull["modelscope_token_file"] = str(path_obj)
+            data["pull"] = pull
+            save_models(data)
+            self._json(200, {"ok": True, "path": str(path_obj), "secrets": secrets_status()})
             return
 
         if path == "/api/deploy":

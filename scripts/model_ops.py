@@ -26,11 +26,64 @@ def models_file() -> Path:
     return resolve_config("models.json")
 
 
+def secrets_dir() -> Path:
+    path = LOCAL_DIR / "secrets"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def token_file(kind: str) -> Path:
+    mapping = {
+        "hf": secrets_dir() / "hf_token",
+        "huggingface": secrets_dir() / "hf_token",
+        "modelscope": secrets_dir() / "modelscope_token",
+        "ms": secrets_dir() / "modelscope_token",
+    }
+    if kind not in mapping:
+        raise ValueError(f"unknown token kind: {kind}")
+    return mapping[kind]
+
+
 def load_models() -> dict:
     path = models_file()
     if not path.is_file():
         return {"caches": [], "models": [], "pull": {}}
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def save_models(data: dict) -> Path:
+    path = models_file() if models_file().is_file() else (LOCAL_DIR / "models.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return path
+
+
+def resolve_secret_path(raw: str | None, kind: str) -> Path:
+    if raw:
+        expanded = expand_path(str(raw))
+        path = Path(expanded)
+        if not path.is_absolute():
+            path = PROJECT_DIR / path
+        return path
+    return token_file(kind)
+
+
+def secrets_status() -> dict:
+    pull = load_models().get("pull") or {}
+    hf = resolve_secret_path(pull.get("hf_token_file"), "hf")
+    ms = resolve_secret_path(pull.get("modelscope_token_file"), "modelscope")
+    return {
+        "hf_token_file": str(hf),
+        "hf_configured": hf.is_file() and bool(hf.read_text(encoding="utf-8").strip()),
+        "modelscope_token_file": str(ms),
+        "modelscope_configured": ms.is_file() and bool(ms.read_text(encoding="utf-8").strip()),
+    }
+
+
+def resolve_token_files(pull: dict) -> tuple[Path | None, Path | None]:
+    hf = resolve_secret_path(pull.get("hf_token_file"), "hf")
+    ms = resolve_secret_path(pull.get("modelscope_token_file"), "modelscope")
+    return (hf if hf.is_file() else None, ms if ms.is_file() else None)
 
 
 def cache_entries(data: dict, *, node: str | None = None) -> list[dict]:
@@ -317,6 +370,56 @@ def cmd_install_tools(args: argparse.Namespace) -> int:
     return int(result["rc"] or 1)
 
 
+def build_token_exports(pull: dict) -> str:
+    """Build shell exports that read token files on the shared filesystem."""
+    hf_path, ms_path = resolve_token_files(pull)
+    parts = []
+    if hf_path:
+        q = shlex.quote(str(hf_path))
+        parts.append(
+            f"if [ -f {q} ]; then "
+            f"export HF_TOKEN=$(tr -d '\\n' < {q}); "
+            f"export HUGGING_FACE_HUB_TOKEN=$HF_TOKEN; fi"
+        )
+    if ms_path:
+        q = shlex.quote(str(ms_path))
+        parts.append(
+            f"if [ -f {q} ]; then "
+            f"export MODELSCOPE_API_TOKEN=$(tr -d '\\n' < {q}); fi"
+        )
+    return "; ".join(parts)
+
+
+def register_model(
+    *,
+    model_id: str,
+    repo: str,
+    path: str,
+    cache: str | None = None,
+    tool: str | None = None,
+) -> Path:
+    data = load_models()
+    models = list(data.get("models") or [])
+    entry = {
+        "id": model_id,
+        "repo": repo,
+        "path": path,
+        "cache": cache or (data.get("pull") or {}).get("default_cache") or "",
+        "note": f"pulled via {tool or 'auto'}",
+        "verify": {"expect_files": ["config.json"], "min_bytes": 1000},
+    }
+    replaced = False
+    for i, item in enumerate(models):
+        if item.get("id") == model_id:
+            models[i] = {**item, **entry}
+            replaced = True
+            break
+    if not replaced:
+        models.append(entry)
+    data["models"] = models
+    return save_models(data)
+
+
 def cmd_pull(args: argparse.Namespace) -> int:
     data = load_models()
     pull = data.get("pull") or {}
@@ -344,8 +447,11 @@ def cmd_pull(args: argparse.Namespace) -> int:
         if not cache_id or cache_id not in caches:
             print("需要 --cache / pull.default_cache，或模型声明 path")
             return 1
-        target = caches[cache_id]["path"]
+        # org/name → cache/org/name
+        target = str(Path(caches[cache_id]["path"]) / repo)
 
+    token_exports = build_token_exports(pull)
+    prefix = f"{token_exports}; " if token_exports else ""
     dest_q = shlex.quote(target)
     repo_q = shlex.quote(repo)
     py = shlex.quote(resolve_python_for_node(args.node))
@@ -355,25 +461,25 @@ def cmd_pull(args: argparse.Namespace) -> int:
     )
     if tool == "huggingface-cli":
         remote = (
-            f"mkdir -p {dest_q} && "
+            f"{prefix}mkdir -p {dest_q} && "
             f"if command -v huggingface-cli >/dev/null 2>&1; then "
-            f"HF_HUB_CACHE={dest_q} huggingface-cli download {repo_q}; "
+            f"huggingface-cli download {repo_q} --local-dir {dest_q}; "
             f"elif command -v hf >/dev/null 2>&1; then "
             f"hf download {repo_q} --local-dir {dest_q}; "
             f"else {hf_py}; fi"
         )
     elif tool == "modelscope":
         remote = (
-            f"mkdir -p {dest_q} && "
+            f"{prefix}mkdir -p {dest_q} && "
             f"command -v modelscope >/dev/null || "
             f"{{ echo '缺少 modelscope；先: gpu-control models install-tools'; exit 127; }}; "
             f"modelscope download --model {repo_q} --local_dir {dest_q}"
         )
     else:
         remote = (
-            f"mkdir -p {dest_q} && "
+            f"{prefix}mkdir -p {dest_q} && "
             f"if command -v huggingface-cli >/dev/null 2>&1; then "
-            f"HF_HUB_CACHE={dest_q} huggingface-cli download {repo_q}; "
+            f"huggingface-cli download {repo_q} --local-dir {dest_q}; "
             f"elif command -v hf >/dev/null 2>&1; then "
             f"hf download {repo_q} --local-dir {dest_q}; "
             f"elif {py} -c 'import huggingface_hub' >/dev/null 2>&1; then "
@@ -383,12 +489,29 @@ def cmd_pull(args: argparse.Namespace) -> int:
             f"else echo '需要 huggingface_hub 或 modelscope；"
             f"运行: gpu-control models install-tools'; exit 127; fi"
         )
+    print(f"pull repo={repo} dest={target} tool={tool}")
     result = run_cli(["exec", "--quiet", *exec_limit(args), "--", remote], timeout=args.timeout)
     rows = collect_exec()
-    if rows:
-        return print_exec_rows(rows)
-    print(result["stdout"] or result["stderr"])
-    return int(result["rc"] or 1)
+    rc = print_exec_rows(rows) if rows else int(result["rc"] or 1)
+    if not rows:
+        print(result["stdout"] or result["stderr"])
+    if rc == 0 and getattr(args, "register", False):
+        model_id = (getattr(args, "register_id", None) or repo.replace("/", "-")).strip()
+        path_value = target
+        if cache_id and cache_id in caches:
+            root = caches[cache_id]["path"].rstrip("/")
+            if target == root or target.startswith(root + "/"):
+                rel = target[len(root) :].lstrip("/") or repo
+                path_value = f"${{paths.cache}}/{rel}"
+        out = register_model(
+            model_id=model_id,
+            repo=repo,
+            path=path_value,
+            cache=cache_id,
+            tool=tool,
+        )
+        print(f"registered model id={model_id} → {out}")
+    return rc
 
 
 def cmd_paths(args: argparse.Namespace) -> int:
@@ -433,10 +556,12 @@ def main() -> int:
     p_install.set_defaults(func=cmd_install_tools)
 
     p_pull = sub.add_parser("pull", help="在节点上拉取模型权重")
-    p_pull.add_argument("--name", help="仓库 id")
+    p_pull.add_argument("--name", help="仓库 id，如 org/name")
     p_pull.add_argument("--model", help="models[].id")
     p_pull.add_argument("--cache", help="caches[].id")
     p_pull.add_argument("--tool", choices=["auto", "huggingface-cli", "modelscope"])
+    p_pull.add_argument("--register", action="store_true", help="成功后写入 models.json")
+    p_pull.add_argument("--register-id", help="登记用的本地 id，默认 repo 去斜杠")
     p_pull.add_argument("--node")
     p_pull.add_argument("--nodes", default="all")
     p_pull.add_argument("--timeout", type=int, default=3600)
