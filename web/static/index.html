@@ -284,19 +284,27 @@
               <button id="btn-copy-urls" class="ghost tiny">复制 URL</button>
               <button id="btn-api-health-2" class="primary tiny">探测 API</button>
               <button id="btn-lb-refresh" class="ghost tiny" data-keep-enabled="1">刷新负载计划</button>
+              <button id="btn-gateway-render" class="ghost tiny" data-keep-enabled="1">写出网关配置</button>
             </div>
           </div>
           <p class="meta" id="pool-meta">推理 API 端点</p>
           <div id="api-mosaic" class="api-mosaic"></div>
+          <p class="meta" id="gateway-topo" style="margin-top:10px">端口 / Gateway / nginx 拓扑加载中…</p>
           <div class="panel-h" style="margin-top:14px">
-            <h2>负载均衡建议</h2>
+            <h2>负载均衡 / 网关片段</h2>
             <select id="lb-strategy">
               <option value="least_latency">健康优先 · 低延迟</option>
               <option value="round_robin">健康列表轮询</option>
               <option value="by_node">按节点排序</option>
             </select>
+            <select id="snippet-kind">
+              <option value="python">Python 客户端</option>
+              <option value="nginx">nginx upstream</option>
+              <option value="curl">curl + Bearer</option>
+              <option value="litellm_notes">LiteLLM / Gateway 说明</option>
+            </select>
           </div>
-          <p class="meta" id="lb-meta">探测 API 后生成客户端轮询顺序</p>
+          <p class="meta" id="lb-meta">探测 API 后生成客户端轮询、nginx 与 Gateway 对接片段</p>
           <pre id="client-snippet" class="snippet"></pre>
         </div>
       </section>

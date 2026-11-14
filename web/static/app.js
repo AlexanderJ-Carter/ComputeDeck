@@ -7,6 +7,7 @@ const state = {
   view: "actions",
   quality: null,
   refreshInFlight: false,
+  lb: null,
 };
 
 const VIEW_TITLE = {
@@ -186,6 +187,32 @@ function renderPresets(presets) {
   });
 }
 
+function activeSnippet(lb) {
+  const kind = document.getElementById("snippet-kind")?.value || "python";
+  const snippets = (lb && lb.snippets) || {};
+  if (snippets[kind]) return snippets[kind];
+  if (kind === "python") return (lb && lb.snippet) || "";
+  return snippets.python || (lb && lb.snippet) || "";
+}
+
+function renderGatewayTopo(lb) {
+  const el = document.getElementById("gateway-topo");
+  if (!el) return;
+  const topo = (lb && lb.topology) || {};
+  const pool = topo.inference_pool || {};
+  const local = topo.local_services || {};
+  const ports = (pool.port_range || []).join("-");
+  const nginx = local.nginx || {};
+  const litellm = local.litellm_gateway || {};
+  const vllm = local.legacy_vllm || {};
+  el.textContent = [
+    `Decider 池端口 ${ports || "30000-30003"} · 鉴权 Bearer · 路径 /health /decide /v1/systemone`,
+    `LiteLLM Gateway :${litellm.port || 4000}（OpenAI 兼容，非 Decider 替代）`,
+    `历史 vLLM :${vllm.port || 8000}`,
+    `nginx ${nginx.installed ? "已安装" : "未安装"} · 可生成 conf → state/gateway/`,
+  ].join(" · ");
+}
+
 function renderPool(overview) {
   const endpoints = (overview.endpoints && overview.endpoints.endpoints) || [];
   const health = overview.endpoint_health || {};
@@ -208,10 +235,12 @@ function renderPool(overview) {
     : '<div class="meta">暂无端点</div>';
   document.getElementById("pool-meta").textContent = health.generated_at
     ? `上次探测 ${health.generated_at} · ${health.ok_count}/${health.total} 正常 · 模式=${health.mode || "-"}`
-    : "对各节点本地探测 /health";
+    : "对各节点本地探测 /health（需 api_key_file）";
   const lb = overview.lb;
-  if (lb && lb.snippet) {
-    document.getElementById("client-snippet").textContent = lb.snippet;
+  state.lb = lb || null;
+  renderGatewayTopo(lb);
+  if (lb) {
+    document.getElementById("client-snippet").textContent = activeSnippet(lb);
     document.getElementById("lb-meta").textContent =
       `策略 ${lb.strategy} · 健康 ${lb.healthy}/${lb.total}` +
       (lb.health_at ? ` · ${lb.health_at}` : "");
@@ -382,12 +411,32 @@ async function refreshLb() {
   const strategy = document.getElementById("lb-strategy").value || "least_latency";
   try {
     const data = await api(`/api/endpoints/lb?strategy=${encodeURIComponent(strategy)}`);
-    document.getElementById("client-snippet").textContent = data.snippet || "";
+    state.lb = data;
+    renderGatewayTopo(data);
+    document.getElementById("client-snippet").textContent = activeSnippet(data);
     document.getElementById("lb-meta").textContent =
-      `策略 ${data.strategy} · 健康 ${data.healthy}/${data.total}`;
+      `策略 ${data.strategy} · 健康 ${data.healthy}/${data.total}` +
+      (data.health_at ? ` · ${data.health_at}` : "");
     toast("负载计划已更新");
   } catch (err) {
     log(String(err.message || err));
+  }
+}
+
+async function renderGatewayFiles() {
+  setBusy(true);
+  try {
+    const data = await api("/api/gateway/render", { method: "POST", body: "{}" });
+    state.lb = { ...(state.lb || {}), snippets: data.snippets, topology: data.topology };
+    renderGatewayTopo(state.lb);
+    document.getElementById("client-snippet").textContent = activeSnippet(state.lb);
+    const written = data.written || {};
+    toast(`已写出 ${Object.keys(written).length} 个网关文件 → state/gateway/`);
+    log(Object.entries(written).map(([k, v]) => `${k}: ${v}`).join("\n") || "gateway rendered");
+  } catch (err) {
+    toast(String(err.message || err));
+  } finally {
+    setBusy(false);
   }
 }
 
@@ -1355,6 +1404,10 @@ async function boot() {
   document.getElementById("btn-metrics-refresh").addEventListener("click", refreshMetrics);
   document.getElementById("btn-lb-refresh").addEventListener("click", refreshLb);
   document.getElementById("lb-strategy").addEventListener("change", refreshLb);
+  document.getElementById("snippet-kind").addEventListener("change", () => {
+    document.getElementById("client-snippet").textContent = activeSnippet(state.lb);
+  });
+  document.getElementById("btn-gateway-render").addEventListener("click", renderGatewayFiles);
   document.getElementById("btn-save-ssh").addEventListener("click", saveSsh);
   document.getElementById("btn-test-ssh").addEventListener("click", testSsh);
   document.getElementById("btn-render").addEventListener("click", async () => {

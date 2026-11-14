@@ -11,7 +11,7 @@
 |------|------|----------|
 | **Core** | 节点清单、GPU/主机指标、远程命令、**交互终端**、腾空/隔离、lease、doctor、配置向导 | 是 |
 | **Workloads** | `jobs/*.json` 注册任意启停脚本（推理 / 评测 / 预处理…） | 按需 |
-| **Module: inference** | endpoints、health、deploy | 按需 |
+| **Module: inference** | endpoints、health、deploy、gateway（nginx/LiteLLM 产物） | 按需 |
 | **Module: models** | 缓存检查、权重拉取（`models.json`） | 按需 |
 
 设计说明见 [docs/架构.md](docs/架构.md)，操作见 [docs/指南.md](docs/指南.md)。
@@ -44,8 +44,10 @@ gpu-control deploy <job> --gpus 4
 
 # 可选模块
 gpu-control health
+gpu-control gateway               # nginx / curl / LiteLLM 对接说明
 gpu-control models check
 ```
+
 
 ## 仓库布局
 

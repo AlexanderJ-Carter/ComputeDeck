@@ -26,6 +26,7 @@ from paths import (  # noqa: E402
     LOCAL_JOBS_DIR,
     PROJECT_DIR,
     RESOURCES_FILE,
+    SCRIPTS_DIR,
     STATE_DIR,
     VERSION_FILE,
     VENV_PYTHON,
@@ -36,6 +37,16 @@ from paths import (  # noqa: E402
     job_file,
     list_job_files,
     nodes_file,
+)
+
+sys.path.insert(0, str(SCRIPTS_DIR))
+from render_gateway import (  # noqa: E402
+    build_payload as build_gateway_payload,
+    render_curl,
+    render_litellm_notes,
+    render_nginx,
+    render_python_client,
+    write_artifacts as write_gateway_artifacts,
 )
 from terminal import open_shell, pump_channel  # noqa: E402
 from ws import (  # noqa: E402
@@ -210,6 +221,7 @@ def build_lb_plan(strategy: str = "least_latency") -> dict:
         "def pick(i):\n"
         "    return ENDPOINTS[i % len(ENDPOINTS)] if ENDPOINTS else None\n"
     )
+    gateway = _build_gateway_payload(ordered if healthy else ranked)
     return {
         "strategy": strategy,
         "healthy": len(healthy),
@@ -217,8 +229,51 @@ def build_lb_plan(strategy: str = "least_latency") -> dict:
         "urls": urls,
         "ordered": ordered,
         "snippet": snippet,
+        "snippets": gateway.get("snippets") or {"python": snippet},
+        "topology": gateway.get("topology"),
         "health_at": health.get("generated_at"),
     }
+
+
+def _host_port_from_url(url: str) -> tuple[str | None, int | None]:
+    rest = url.split("://", 1)[-1]
+    host, _, port_s = rest.rpartition(":")
+    if not host or not port_s.isdigit():
+        return None, None
+    return host, int(port_s)
+
+
+def _build_gateway_payload(upstreams: list[dict] | None = None) -> dict:
+    """Load or render gateway map/snippets for UI and /api/gateway."""
+    payload = build_gateway_payload()
+    if upstreams is None:
+        return payload
+    cleaned = []
+    for u in upstreams:
+        url = u.get("url")
+        if not url:
+            continue
+        host, port = _host_port_from_url(url)
+        cleaned.append({
+            "node": u.get("node"),
+            "host": host or u.get("host"),
+            "gpu": u.get("gpu"),
+            "port": port if port is not None else u.get("port"),
+            "url": url,
+            "ok": u.get("ok"),
+            "latency_ms": u.get("latency_ms"),
+        })
+    if not cleaned:
+        return payload
+    key_file = (payload.get("topology") or {}).get("inference_pool", {}).get("api_key_file")
+    payload["upstreams"] = cleaned
+    payload["snippets"] = {
+        "python": render_python_client(cleaned),
+        "nginx": render_nginx(cleaned),
+        "curl": render_curl(cleaned, key_file),
+        "litellm_notes": render_litellm_notes(payload["topology"], cleaned),
+    }
+    return payload
 
 
 def state_fingerprint() -> str:
@@ -1090,6 +1145,10 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, build_lb_plan(strategy))
             return
 
+        if path == "/api/gateway":
+            self._json(200, _build_gateway_payload())
+            return
+
         if path == "/api/setup/guide":
             self._json(200, {"guide": SETUP_GUIDE})
             return
@@ -1254,6 +1313,12 @@ class Handler(BaseHTTPRequestHandler):
                 200,
                 {"result": result, "health": health, "overview": build_overview()},
             )
+            return
+
+        if path == "/api/gateway/render":
+            payload = _build_gateway_payload()
+            written = write_gateway_artifacts(payload)
+            self._json(200, {**payload, "written": written})
             return
 
         if path == "/api/free":

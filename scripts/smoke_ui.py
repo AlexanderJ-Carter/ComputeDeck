@@ -114,6 +114,7 @@ def main() -> int:
         "/api/quality",
         "/api/metrics",
         "/api/endpoints/lb?strategy=least_latency",
+        "/api/gateway",
         "/api/jobs",
         "/api/leases",
         "/api/queue",
@@ -160,6 +161,11 @@ def main() -> int:
         report("test-ssh", status == 200 and payload.get("ok") is True)
         status, payload = post("/api/metrics/refresh", {})
         report("metrics refresh", status == 200 and int((payload.get("metrics") or {}).get("ok_count") or 0) >= 1)
+        status, payload = post("/api/gateway/render", {})
+        report(
+            "gateway render",
+            status == 200 and "nginx" in (payload.get("snippets") or {}) and bool(payload.get("written")),
+        )
         check_ws_terminal(node)
     except Exception as exc:  # noqa: BLE001
         report("节点相关验收", False, str(exc))

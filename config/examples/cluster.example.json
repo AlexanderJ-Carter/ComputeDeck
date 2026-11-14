@@ -10,6 +10,12 @@
     "auth_header": "Authorization",
     "api_key_file": "${GPU_CONTROL_API_KEY_FILE}"
   },
+  "gateway": {
+    "litellm_port": 4000,
+    "litellm_dir": "${GPU_CONTROL_GATEWAY_DIR}",
+    "vllm_port": 8000,
+    "nginx_listen": 18080
+  },
   "watchdog": {
     "enabled": true,
     "jobs": ["decider"],

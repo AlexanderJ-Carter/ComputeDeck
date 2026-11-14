@@ -789,6 +789,15 @@ def cmd_endpoints(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_gateway(args: argparse.Namespace) -> int:
+    """Render nginx / curl / LiteLLM notes for the inference pool."""
+    run_python_capture("render_endpoints.py", "--write")
+    cmd = ["--write", "--listen", str(args.listen)]
+    if args.json:
+        cmd.append("--json")
+    return run_python("render_gateway.py", *cmd).returncode
+
+
 def cmd_health(args: argparse.Namespace) -> int:
     """Probe inference endpoints (default: local curl via Ansible on each node)."""
     run_python_capture("render_endpoints.py", "--write")
@@ -1242,6 +1251,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_endpoints = sub.add_parser("endpoints", help="列出推理池 API 端点（16 路）")
     p_endpoints.add_argument("--json", action="store_true")
     p_endpoints.set_defaults(func=cmd_endpoints)
+
+    p_gateway = sub.add_parser(
+        "gateway",
+        help="渲染网关产物：nginx 上游 / curl 示例 / LiteLLM 对接说明",
+    )
+    p_gateway.add_argument("--listen", type=int, default=18080, help="nginx listen 端口")
+    p_gateway.add_argument("--json", action="store_true")
+    p_gateway.set_defaults(func=cmd_gateway)
 
     p_health = sub.add_parser("health", help="探测全部推理 API 健康（默认各节点本地探测）")
     p_health.add_argument("--mode", choices=["local", "direct"], default="local")
