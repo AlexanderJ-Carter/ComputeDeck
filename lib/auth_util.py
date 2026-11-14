@@ -8,7 +8,8 @@
     单管理员密码（scrypt）+ 签名 HttpOnly Session Cookie；
     可选长期 API Bearer Token（MCP / 脚本）。
 ``oidc``
-    预留：配置 ``control.auth.oidc``，尚未实现。
+    OpenID Connect 授权码 + PKCE；浏览器走 IdP，API 仍可用 Bearer。
+    可选 ``oidc.allow_password_fallback`` 同时保留密码登录。
 
 密钥目录：``config/local/secrets/``（gitignore）。
 """
@@ -35,6 +36,8 @@ AUTH_PUBLIC_PATHS = frozenset({
     "/api/auth/status",
     "/api/auth/login",
     "/api/auth/logout",
+    "/api/auth/oidc/login",
+    "/api/auth/oidc/callback",
 })
 # 目录 / OpenAPI / 文档页保持可达，便于 Agent 发现鉴权要求。
 AUTH_DISCOVERY_PATHS = frozenset({
@@ -297,6 +300,38 @@ def extract_bearer(authorization: str | None) -> str | None:
     return rest.strip()
 
 
+def _ui_base_from_cluster(cluster: dict | None = None) -> str:
+    if cluster is None:
+        path = cluster_file()
+        cluster = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    control = cluster.get("control") or {}
+    host = str(control.get("host") or "").strip()
+    port = int(control.get("ui_port") or 8787)
+    if not host:
+        return ""
+    scheme = "https" if os.environ.get("GPU_CONTROL_UI_SECURE", "").lower() in {"1", "true", "yes"} else "http"
+    if (scheme == "https" and port == 443) or (scheme == "http" and port == 80):
+        return f"{scheme}://{host}"
+    return f"{scheme}://{host}:{port}"
+
+
+def oidc_config(cfg: AuthConfig | None = None, *, cluster: dict | None = None) -> dict[str, Any]:
+    """规范化后的 OIDC 配置。"""
+    from oidc_util import normalize_oidc
+
+    cfg = cfg or load_auth_config(cluster)
+    return normalize_oidc(cfg.oidc, ui_base=_ui_base_from_cluster(cluster))
+
+
+def password_login_allowed(cfg: AuthConfig | None = None) -> bool:
+    cfg = cfg or load_auth_config()
+    if cfg.mode == "password":
+        return True
+    if cfg.mode == "oidc":
+        return bool((cfg.oidc or {}).get("allow_password_fallback")) and password_configured(cfg)
+    return False
+
+
 def authenticate_http(
     *,
     path: str,
@@ -311,9 +346,6 @@ def authenticate_http(
     cfg = cfg or load_auth_config()
     if not cfg.enabled:
         return AuthPrincipal(subject="anonymous", method="none", mode="none"), None
-
-    if cfg.mode == "oidc":
-        return None, "oidc auth is not implemented yet; set control.auth.mode to password or none"
 
     if path in AUTH_PUBLIC_PATHS or path in AUTH_DISCOVERY_PATHS:
         return AuthPrincipal(subject="public", method="none", mode=cfg.mode), None
@@ -343,7 +375,7 @@ def authenticate_http(
 
 def try_login(password: str, *, cfg: AuthConfig | None = None) -> AuthPrincipal | None:
     cfg = cfg or load_auth_config()
-    if cfg.mode != "password":
+    if not password_login_allowed(cfg):
         return None
     if not password_configured(cfg):
         return None
@@ -355,6 +387,10 @@ def try_login(password: str, *, cfg: AuthConfig | None = None) -> AuthPrincipal 
 
 def auth_status_payload(*, cfg: AuthConfig | None = None, principal: AuthPrincipal | None = None) -> dict:
     cfg = cfg or load_auth_config()
+    from oidc_util import oidc_ready
+
+    oidc_cfg = oidc_config(cfg)
+    ready = oidc_ready(oidc_cfg)
     authed = (not cfg.enabled) or bool(
         principal and principal.method in {"session", "bearer"}
     )
@@ -366,16 +402,25 @@ def auth_status_payload(*, cfg: AuthConfig | None = None, principal: AuthPrincip
         "enabled": cfg.enabled,
         "authenticated": authed,
         "password_configured": password_configured(cfg),
+        "password_login": password_login_allowed(cfg),
         "api_token_configured": token_ok,
         "session_ttl_hours": cfg.session_ttl_hours,
-        "oidc_ready": bool((cfg.oidc or {}).get("issuer") and (cfg.oidc or {}).get("client_id")),
+        "oidc_ready": ready,
+        "oidc": {
+            "ready": ready,
+            "issuer": oidc_cfg.get("issuer") or "",
+            "client_id": oidc_cfg.get("client_id") or "",
+            "redirect_uri": oidc_cfg.get("redirect_uri") or "",
+            "login_url": "/api/auth/oidc/login",
+            "allow_password_fallback": bool(oidc_cfg.get("allow_password_fallback")),
+        },
         "principal": (
             {"subject": principal.subject, "method": principal.method}
             if principal and principal.method in {"session", "bearer"}
             else None
         ),
         "login_path": "/api/auth/login",
-        "supports": ["none", "password", "oidc(planned)", "webauthn(planned)"],
+        "supports": ["none", "password", "oidc"],
     }
 
 
@@ -413,7 +458,22 @@ def doctor_auth_notes(cluster: dict | None = None) -> tuple[list[str], list[str]
         else:
             notes.append("no API token yet (optional: gpu-control auth issue-token)")
     elif cfg.mode == "oidc":
-        issues.append("auth mode=oidc is reserved but not implemented; use password for now")
+        from oidc_util import oidc_ready, probe_oidc
+
+        oc = oidc_config(cfg)
+        if not oidc_ready(oc):
+            issues.append(
+                "auth mode=oidc 但缺少 issuer/client_id/redirect；"
+                "见 cluster.control.auth.oidc"
+            )
+        else:
+            probe = probe_oidc(oc)
+            if not probe.get("ready"):
+                issues.append("OIDC discovery 失败: " + "; ".join(probe.get("reasons") or []))
+            else:
+                notes.append(f"OIDC issuer={oc.get('issuer')} client_id={oc.get('client_id')}")
+            if oc.get("allow_password_fallback") and password_configured(cfg):
+                notes.append("OIDC 允许密码回落登录")
     return issues, notes
 
 

@@ -60,12 +60,15 @@ from auth_util import (  # noqa: E402
     extract_bearer,
     issue_session,
     load_auth_config,
+    oidc_config,
     parse_cookies,
+    password_login_allowed,
     session_cookie_header,
     try_login,
     verify_api_token,
     verify_session,
 )
+from oidc_util import OidcError, begin_login, finish_login  # noqa: E402
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 from render_gateway import (  # noqa: E402
@@ -74,6 +77,18 @@ from render_gateway import (  # noqa: E402
     write_artifacts as write_gateway_artifacts,
 )
 from gateway_ops import status_payload as gateway_status_payload  # noqa: E402
+
+
+def _gateway_status_fresh() -> dict:
+    """每次走 CLI，避免长驻 UI 持有过期 gateway_ops。"""
+    result = run_cli(["gateway", "status"], timeout=20, log=False)
+    try:
+        payload = json.loads(result.get("stdout") or "{}")
+        if isinstance(payload, dict) and payload.get("ok") is not None:
+            return payload
+    except json.JSONDecodeError:
+        pass
+    return gateway_status_payload()
 from model_ops import (  # noqa: E402
     cache_entries,
     load_models,
@@ -517,7 +532,7 @@ def build_overview(*, light: bool = False) -> dict:
         "leases": leases,
         "jobs": jobs,
         "toolkits": _toolkit_overview(load_toolkit_state()),
-        "ingress": gateway_status_payload(),
+        "ingress": _gateway_status_fresh(),
         "queue": queue,
         "cordoned": cordoned,
         "endpoint_health": endpoint_health,
@@ -1124,6 +1139,12 @@ class Handler(BaseHTTPRequestHandler):
             extra_headers=extra_headers,
         )
 
+    def _redirect(self, location: str, *, extra_headers: dict | None = None) -> None:
+        headers = {"Location": location}
+        if extra_headers:
+            headers.update(extra_headers)
+        self._send(302, b"", "text/plain; charset=utf-8", extra_headers=headers)
+
     def _auth_gate(self, path: str, query: str = "") -> bool:
         """Return True if request may proceed; False if 401 already sent."""
         principal, err = authenticate_http(path=path, headers=self.headers, query=query)
@@ -1266,6 +1287,54 @@ class Handler(BaseHTTPRequestHandler):
                 if bearer and verify_api_token(bearer, cfg=cfg):
                     real = AuthPrincipal(subject="api-token", method="bearer", mode=cfg.mode)
             self._json(200, auth_status_payload(cfg=cfg, principal=real))
+            return
+
+        if path == "/api/auth/oidc/login":
+            cfg = load_auth_config()
+            if cfg.mode != "oidc":
+                self._json(400, {"ok": False, "error": "当前 control.auth.mode 不是 oidc"})
+                return
+            try:
+                started = begin_login(oidc_config(cfg))
+            except OidcError as exc:
+                self._json(400, {"ok": False, "error": str(exc)})
+                return
+            self._redirect(started["authorize_url"])
+            return
+
+        if path == "/api/auth/oidc/callback":
+            cfg = load_auth_config()
+            qs = parse_qs(parsed.query)
+            err = (qs.get("error") or [None])[0]
+            if err:
+                desc = (qs.get("error_description") or [err])[0]
+                self._send(
+                    400,
+                    f"OIDC 登录失败: {desc}".encode("utf-8"),
+                    "text/plain; charset=utf-8",
+                )
+                return
+            code = (qs.get("code") or [None])[0]
+            state = (qs.get("state") or [None])[0]
+            if not code or not state:
+                self._json(400, {"ok": False, "error": "缺少 code/state"})
+                return
+            try:
+                identity = finish_login(oidc_config(cfg), code=str(code), state=str(state))
+            except OidcError as exc:
+                self._send(
+                    401,
+                    f"OIDC 回调失败: {exc}".encode("utf-8"),
+                    "text/plain; charset=utf-8",
+                )
+                return
+            token = issue_session(subject=str(identity["subject"]), cfg=cfg)
+            self._redirect(
+                "/",
+                extra_headers={
+                    "Set-Cookie": session_cookie_header(token, ttl_hours=cfg.session_ttl_hours),
+                },
+            )
             return
 
         if path == "/api/auth/me":
@@ -1470,7 +1539,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/gateway/status":
-            self._json(200, gateway_status_payload())
+            self._json(200, _gateway_status_fresh())
             return
 
         if path == "/api/setup/guide":
@@ -1506,8 +1575,15 @@ class Handler(BaseHTTPRequestHandler):
             if cfg.mode == "none":
                 self._json(200, {"ok": True, "auth": auth_status_payload(cfg=cfg)})
                 return
-            if cfg.mode != "password":
-                self._json(501, {"ok": False, "error": f"login not supported for mode={cfg.mode}"})
+            if not password_login_allowed(cfg):
+                self._json(
+                    501,
+                    {
+                        "ok": False,
+                        "error": f"密码登录不可用（mode={cfg.mode}）；请用 OIDC 或开启 allow_password_fallback",
+                        "auth": auth_status_payload(cfg=cfg),
+                    },
+                )
                 return
             password = str(body.get("password") or "")
             principal = try_login(password, cfg=cfg)

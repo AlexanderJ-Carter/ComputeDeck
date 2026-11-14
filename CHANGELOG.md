@@ -10,6 +10,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- OIDC 第三方登录：授权码 + PKCE · `/api/auth/oidc/login|callback` · `gpu-control auth oidc-check`
+- 入口 HTTPS / 域名 / CA：`ingress.domain` · `ingress.tls.*`；Edge 可包装 TLS；nginx 产物带 ssl 段
+- 首页「状态面板」数据看板：GPU / API / Edge / TLS / 域名 / 工具栈
+- 配置向导可填域名与证书路径
+
+### Fixed
+
+- 配套设施角色规整：Edge 主入口 / nginx 不必装（kind=edge）/ LiteLLM 可选·就绪；看板不再全是「未装」
+- `gpu-control gateway ensure`：按 ingress 拉起主入口；禁止在 worker 上误启 Edge
+- Edge 判活增加端口探测；`/api/gateway/status` 走 CLI 避免 UI 持旧模块
+- 看板顶部布局：健康+GPU 并排，操作条横铺
+
 <!-- 下一版本条目写在这里；发版时整段挪到新版本节 -->
 
 ---

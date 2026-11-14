@@ -312,11 +312,32 @@ async function refreshAuthStatus() {
   const logout = document.getElementById("btn-logout");
   if (logout) logout.hidden = !(data.enabled && data.authenticated);
   const hint = document.getElementById("auth-hint");
-  if (hint && data.enabled) {
-    hint.textContent = data.password_configured
-      ? `模式 ${data.mode} · 会话 ${data.session_ttl_hours || 168}h`
-      : "已启用鉴权，但尚未设置密码（gpu-control auth set-password）";
+  const oidcBox = document.getElementById("auth-oidc-box");
+  const pwBox = document.getElementById("auth-password-box");
+  const oidcMeta = document.getElementById("auth-oidc-meta");
+  const oidcReady = !!(data.oidc_ready || (data.oidc && data.oidc.ready));
+  const showOidc = data.mode === "oidc" && oidcReady;
+  const showPassword = !!data.password_login || data.mode === "password";
+  if (oidcBox) oidcBox.hidden = !showOidc;
+  if (pwBox) pwBox.hidden = !showPassword;
+  if (oidcMeta && data.oidc) {
+    oidcMeta.textContent = data.oidc.issuer
+      ? `IdP · ${data.oidc.issuer}`
+      : "OpenID Connect";
   }
+  if (hint && data.enabled) {
+    if (data.mode === "oidc") {
+      hint.textContent = oidcReady
+        ? `模式 OIDC · 会话 ${data.session_ttl_hours || 168}h`
+        : "模式 OIDC，但尚未配齐 issuer/client_id（见 cluster.control.auth.oidc）";
+    } else {
+      hint.textContent = data.password_configured
+        ? `模式 ${data.mode} · 会话 ${data.session_ttl_hours || 168}h`
+        : "已启用鉴权，但尚未设置密码（gpu-control auth set-password）";
+    }
+  }
+  const pwInput = document.getElementById("auth-password");
+  if (pwInput) pwInput.required = showPassword && !showOidc;
   return data;
 }
 
@@ -325,6 +346,11 @@ async function submitLogin(ev) {
   const errEl = document.getElementById("auth-error");
   const password = document.getElementById("auth-password").value;
   errEl.hidden = true;
+  if (!password) {
+    errEl.textContent = "请输入密码，或使用 OIDC 登录";
+    errEl.hidden = false;
+    return;
+  }
   try {
     const data = await api("/api/auth/login", {
       method: "POST",
@@ -466,7 +492,8 @@ function renderGatewayTopo(lb, endpointsCatalog) {
   if (ai.routing_strategy) bits.push(`route=${ai.routing_strategy}`);
   if (proxy.port) bits.push(`AI Gateway :${proxy.port}`);
   if (extra.port) bits.push(`extra :${extra.port}`);
-  bits.push(`nginx ${nginx.installed ? "已装" : "未装"}`);
+  if (nginx.installed) bits.push("nginx 已装");
+  else bits.push(nginx.status_label || "nginx 不必装（Edge）");
   el.textContent = bits.join(" · ");
 }
 
@@ -730,11 +757,18 @@ function renderIngressMeta(status) {
   const settings = (edge.status && edge.status.settings) || {};
   el.textContent = [
     `对外入口 ${status.public_base_url || "-"}`,
-    `edge ${edge.running ? "运行中" : "未运行"}${edge.pid ? " pid=" + edge.pid : ""}`,
+    `主入口 ${status.preferred || "edge"}`,
+    `edge ${edge.running ? "运行中" : "应启动"}${edge.pid ? " pid=" + edge.pid : ""}`,
     settings.strategy ? `LB ${settings.strategy}` : null,
     pool.upstream_count != null ? `上游 ${pool.available ?? "?"}/${pool.upstream_count}` : null,
-    `litellm ${ll.running ? "运行中" : "未运行"}`,
-    `nginx ${status.nginx && status.nginx.binary ? "已装" : "未装（可用内置 edge）"}`,
+    `litellm ${ll.running ? "运行中" : ll.ready ? "可选·就绪" : "可选·未配"}`,
+    `nginx ${
+      status.nginx && status.nginx.binary
+        ? "已装"
+        : status.nginx && status.nginx.needed
+          ? "未装"
+          : "不必装"
+    }`,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -1518,6 +1552,85 @@ async function runToolkit(action, extra = {}) {
   }
 }
 
+function renderStatusBoard(data) {
+  const root = document.getElementById("dash-board");
+  if (!root) return;
+  const summary = data.summary || {};
+  const free = Number(summary.gpus_free || 0);
+  const used = Number(summary.gpus_used || 0);
+  const total = Number(summary.gpus_total || free + used) || 0;
+  const usedPct = total ? Math.round((used / total) * 100) : 0;
+  const apiOk = summary.api_ok;
+  const apiTotal = summary.api_total;
+  const apiPct = apiTotal ? Math.round((Number(apiOk || 0) / apiTotal) * 100) : 0;
+  const ingress = data.ingress || state.ingress || {};
+  const edge = ingress.edge || {};
+  const tls = ingress.tls || {};
+  const domain = ingress.domain || (ingress.domains || [])[0] || "";
+  const tk = data.toolkits || {};
+  const tkSum = tk.summary || {};
+  const cards = [
+    {
+      label: "GPU 占用",
+      value: total ? `${usedPct}%` : "-",
+      hint: total ? `${used}/${total} · 空闲 ${free}` : "暂无数据",
+      tone: usedPct >= 90 ? "warn" : "ok",
+      meter: usedPct,
+    },
+    {
+      label: "API 健康",
+      value: apiTotal != null ? `${apiOk ?? 0}/${apiTotal}` : "-",
+      hint: apiTotal != null ? `${apiPct}%` : "尚未探测",
+      tone: apiTotal && apiOk === apiTotal ? "ok" : apiTotal ? "warn" : "",
+      meter: apiPct,
+    },
+    {
+      label: "Edge 入口",
+      value: edge.running ? "运行中" : "应启动",
+      hint: edge.listen || ingress.public_base_url || "-",
+      tone: edge.running ? "ok" : "bad",
+    },
+    {
+      label: "HTTPS / TLS",
+      value: tls.label || (tls.enabled ? "已启用" : "未启用"),
+      hint: tls.ready ? tls.not_after || "证书就绪" : tls.enabled ? (tls.reasons || []).join("；") || "缺证书" : "HTTP 明文",
+      tone: tls.enabled && !tls.ready ? "warn" : tls.ready ? "ok" : "",
+    },
+    {
+      label: "域名",
+      value: domain || "未配置",
+      hint: ingress.public_base_url || "-",
+      tone: domain ? "ok" : "",
+    },
+    {
+      label: "工具栈",
+      value: tkSum.total ? `${tkSum.ok ?? 0}/${tkSum.total}` : "未探测",
+      hint: tk.generated_at ? `探测于 ${tk.generated_at}` : "LLaMA-Factory / DeepSpeed",
+      tone: tkSum.total && tkSum.ok === tkSum.total ? "ok" : "",
+    },
+  ];
+  root.innerHTML = cards
+    .map((c) => {
+      const meter = c.meter != null
+        ? `<span class="meter"><i style="width:${Math.max(0, Math.min(100, c.meter))}%"></i></span>`
+        : "";
+      return `<div class="dash-metric ${c.tone || ""}">
+        <span class="label">${escapeHtml(c.label)}</span>
+        <span class="value">${escapeHtml(String(c.value))}</span>
+        <span class="hint" title="${escapeHtml(c.hint || "")}">${escapeHtml(c.hint || "")}</span>
+        ${meter}
+      </div>`;
+    })
+    .join("");
+  const at = document.getElementById("dash-board-at");
+  if (at) at.textContent = data.generated_at || "实时总览";
+  const urlEl = document.getElementById("dash-ingress-url");
+  if (urlEl) {
+    const url = ingress.public_base_url || edge.url || "";
+    urlEl.textContent = url ? `对外 ${url}` : "对外 URL 未配置";
+  }
+}
+
 function renderDashboard(data) {
   const summary = data.summary || {};
   const free = Number(summary.gpus_free || 0);
@@ -1528,6 +1641,7 @@ function renderDashboard(data) {
   if (bar) bar.style.width = `${usedPct}%`;
   const meta = document.getElementById("dash-gpu-meta");
   if (meta) meta.textContent = total ? `${used}/${total} 占用 · ${free} 空闲 · ${usedPct}%` : "暂无 GPU 数据";
+  renderStatusBoard(data);
 
   const strip = document.getElementById("dash-node-strip");
   if (strip) {
@@ -1660,56 +1774,84 @@ function renderDashGateway(status) {
   const settings = (edge.status && edge.status.settings) || {};
   const publicUrl = status.public_base_url || edge.url || "";
   const healthz = edge.healthz || (publicUrl ? `${publicUrl}/_gpu_control/health` : "");
-  const rows = [
-    {
-      name: "Edge",
-      on: !!edge.running,
-      detail: [
-        edge.listen ? `listen ${edge.listen}` : null,
-        settings.strategy ? `LB ${settings.strategy}` : null,
-        pool.upstream_count != null ? `上游 ${pool.available ?? "?"}/${pool.upstream_count}` : null,
-        edge.pid ? `pid ${edge.pid}` : null,
-      ]
-        .filter(Boolean)
-        .join(" · "),
-      links: [
-        publicUrl ? { href: publicUrl, label: publicUrl } : null,
-        healthz ? { href: healthz, label: "health" } : null,
-      ].filter(Boolean),
-    },
-    {
-      name: "LiteLLM",
-      on: !!ll.running,
-      detail: [
-        ll.port ? `:${ll.port}` : null,
-        ll.pid ? `pid ${ll.pid}` : null,
-        ll.dir ? `dir ${ll.dir}` : "未配置 openai_proxy_dir",
-      ]
-        .filter(Boolean)
-        .join(" · "),
-      links: ll.url ? [{ href: ll.url, label: ll.url }] : [],
-    },
-    {
-      name: "nginx",
-      on: !!nginx.binary,
-      detail: nginx.binary
-        ? `已安装 · listen ${nginx.listen ?? "-"} · ${nginx.artifact || ""}`
-        : "未安装（可用内置 Edge）",
-      links: [],
-    },
-  ];
+  const companions = Array.isArray(status.companions) ? status.companions : null;
+  const rows = companions
+    ? companions.map((c) => {
+        const links = [];
+        if (c.id === "edge") {
+          if (publicUrl) links.push({ href: publicUrl, label: publicUrl });
+          if (healthz) links.push({ href: healthz, label: "health" });
+        } else if (c.id === "litellm" && ll.url && ll.running) {
+          links.push({ href: ll.url, label: ll.url });
+        }
+        let detail = c.detail || "";
+        if (c.id === "edge") {
+          const extra = [
+            settings.strategy ? `LB ${settings.strategy}` : null,
+            pool.upstream_count != null ? `上游 ${pool.available ?? "?"}/${pool.upstream_count}` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ");
+          if (extra) detail = detail ? `${detail} · ${extra}` : extra;
+        }
+        if (c.id === "litellm" && detail.includes("/")) {
+          detail = detail.replace(/\/opt\/[^\s·]+/g, (p) => {
+            const parts = p.split("/").filter(Boolean);
+            return parts.length > 2 ? `…/${parts.slice(-2).join("/")}` : p;
+          });
+        }
+        return {
+          name: c.name,
+          tone: c.state === "running" || c.state === "installed" || c.state === "ready" || c.state === "not_needed"
+            ? c.state === "running" || c.state === "installed"
+              ? "on"
+              : "idle"
+            : c.severity === "error" || c.severity === "warn"
+              ? "bad"
+              : "off",
+          chip: c.label,
+          detail,
+          links,
+        };
+      })
+    : [
+        {
+          name: "Edge LB",
+          tone: edge.running ? "on" : "bad",
+          chip: edge.running ? "运行中" : "应启动",
+          detail: edge.listen || "",
+          links: [
+            publicUrl ? { href: publicUrl, label: publicUrl } : null,
+            healthz ? { href: healthz, label: "health" } : null,
+          ].filter(Boolean),
+        },
+        {
+          name: "nginx",
+          tone: nginx.binary ? "on" : "idle",
+          chip: nginx.binary ? "已装" : nginx.needed ? "未装" : "不必装",
+          detail: nginx.hint || "",
+          links: [],
+        },
+        {
+          name: "LiteLLM",
+          tone: ll.running ? "on" : ll.ready ? "idle" : "off",
+          chip: ll.running ? "运行中" : ll.ready ? "可选·就绪" : "可选·未配",
+          detail: ll.dir || "",
+          links: [],
+        },
+      ];
   root.innerHTML = rows
     .map((row) => {
       const links = (row.links || [])
         .map((l) => `<a href="${escapeHtml(l.href)}" target="_blank" rel="noopener">${escapeHtml(l.label)}</a>`)
         .join("");
-      return `<div class="dash-gw-row ${row.on ? "on" : "off"}">
+      return `<div class="dash-gw-row ${row.tone || "off"}">
         <div class="name">${escapeHtml(row.name)}</div>
         <div>
           <div class="meta">${escapeHtml(row.detail || "")}</div>
-          <div class="links">${links || '<span class="meta">无外链</span>'}</div>
+          <div class="links">${links || '<span class="meta">—</span>'}</div>
         </div>
-        <span class="chip">${row.on ? "运行中" : row.name === "nginx" ? (nginx.binary ? "就绪" : "未装") : "未运行"}</span>
+        <span class="chip">${escapeHtml(row.chip || "")}</span>
       </div>`;
     })
     .join("");
@@ -2091,6 +2233,20 @@ function fillSetupForm(data) {
   document.getElementById("cluster-api-key").value = api.api_key_file || "";
   document.getElementById("cluster-prefer").value = (scheduling.prefer_labels || []).join(",");
   document.getElementById("cluster-avoid").value = (scheduling.avoid_labels || []).join(",");
+  const ingress = ((cluster.gateway || {}).ingress || {});
+  const tls = ingress.tls || {};
+  const domainEl = document.getElementById("cluster-domain");
+  if (domainEl) domainEl.value = ingress.domain || (ingress.domains || [])[0] || "";
+  const pubEl = document.getElementById("cluster-public-url");
+  if (pubEl) pubEl.value = ingress.public_base_url || "";
+  const tlsEn = document.getElementById("cluster-tls-enabled");
+  if (tlsEn) tlsEn.checked = !!tls.enabled;
+  const tlsCert = document.getElementById("cluster-tls-cert");
+  if (tlsCert) tlsCert.value = tls.cert_file || "";
+  const tlsKey = document.getElementById("cluster-tls-key");
+  if (tlsKey) tlsKey.value = tls.key_file || "";
+  const tlsCa = document.getElementById("cluster-tls-ca");
+  if (tlsCa) tlsCa.value = tls.ca_file || "";
   document.getElementById("nodes-editor").value = nodesDocToEditor(data.nodes || {});
 
   const pick = document.getElementById("setup-job-pick");
@@ -2239,6 +2395,10 @@ async function testSsh() {
 
 async function saveCluster() {
   const base = (stateSetup.data && stateSetup.data.cluster) || {};
+  const baseGw = base.gateway || {};
+  const baseIngress = baseGw.ingress || {};
+  const baseTls = baseIngress.tls || {};
+  const domain = (document.getElementById("cluster-domain")?.value || "").trim();
   const data = {
     ...base,
     name: document.getElementById("cluster-name").value.trim() || base.name,
@@ -2261,6 +2421,22 @@ async function saveCluster() {
         .value.split(",")
         .map((x) => x.trim())
         .filter(Boolean),
+    },
+    gateway: {
+      ...baseGw,
+      ingress: {
+        ...baseIngress,
+        domain,
+        domains: domain ? [domain] : baseIngress.domains || [],
+        public_base_url: (document.getElementById("cluster-public-url")?.value || "").trim(),
+        tls: {
+          ...baseTls,
+          enabled: !!document.getElementById("cluster-tls-enabled")?.checked,
+          cert_file: (document.getElementById("cluster-tls-cert")?.value || "").trim(),
+          key_file: (document.getElementById("cluster-tls-key")?.value || "").trim(),
+          ca_file: (document.getElementById("cluster-tls-ca")?.value || "").trim(),
+        },
+      },
     },
   };
   setBusy(true);

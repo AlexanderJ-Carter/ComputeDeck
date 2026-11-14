@@ -93,33 +93,35 @@
 
       <section class="view active" data-view-panel="actions">
         <div class="dash-hero">
-          <div class="score-block">
-            <div class="score-ring" id="quality-ring">
-              <strong id="quality-score">-</strong>
-              <span id="quality-grade">未检测</span>
-            </div>
-            <div class="score-copy">
-              <h2>集群健康</h2>
-              <p class="muted" id="quality-updated">同步后更新评分与资源</p>
-              <div class="quality-kpis">
-                <div><span>SSH</span><strong id="q-ssh">-</strong></div>
-                <div><span>API</span><strong id="q-api">-</strong></div>
-                <div><span>互通</span><strong id="q-mesh">-</strong></div>
-                <div><span>GPU</span><strong id="q-gpu">-</strong></div>
+          <div class="dash-hero-main">
+            <div class="score-block">
+              <div class="score-ring" id="quality-ring">
+                <strong id="quality-score">-</strong>
+                <span id="quality-grade">未检测</span>
+              </div>
+              <div class="score-copy">
+                <h2>集群健康</h2>
+                <p class="muted" id="quality-updated">同步后更新评分与资源</p>
+                <div class="quality-kpis">
+                  <div><span>SSH</span><strong id="q-ssh">-</strong></div>
+                  <div><span>API</span><strong id="q-api">-</strong></div>
+                  <div><span>互通</span><strong id="q-mesh">-</strong></div>
+                  <div><span>GPU</span><strong id="q-gpu">-</strong></div>
+                </div>
               </div>
             </div>
-          </div>
-          <div class="dash-pulse" id="dash-gpu-pulse" aria-label="GPU 占用">
-            <div class="dash-pulse-head">
-              <strong>GPU 池</strong>
-              <span class="meta" id="dash-gpu-meta">-</span>
+            <div class="dash-pulse" id="dash-gpu-pulse" aria-label="GPU 占用">
+              <div class="dash-pulse-head">
+                <strong>GPU 池</strong>
+                <span class="meta" id="dash-gpu-meta">-</span>
+              </div>
+              <div class="dash-bar">
+                <div class="dash-bar-used" id="dash-bar-used" style="width:0%"></div>
+              </div>
+              <div class="dash-node-strip" id="dash-node-strip"></div>
             </div>
-            <div class="dash-bar">
-              <div class="dash-bar-used" id="dash-bar-used" style="width:0%"></div>
-            </div>
-            <div class="dash-node-strip" id="dash-node-strip"></div>
           </div>
-            <div class="hero-actions">
+          <div class="hero-actions">
             <button id="btn-full-sync" class="primary" data-keep-enabled="1">全量同步</button>
             <button class="ghost" data-oneclick="diagnose" data-keep-enabled="1">一键检测</button>
             <button class="ghost" data-oneclick="repair" data-keep-enabled="1">一键修复</button>
@@ -127,10 +129,58 @@
           </div>
         </div>
 
+        <div class="panel dash-board-panel">
+          <div class="panel-h">
+            <h2>状态面板</h2>
+            <span class="meta" id="dash-board-at">实时总览</span>
+          </div>
+          <div class="dash-board" id="dash-board"></div>
+        </div>
+
         <div class="dash-grid dash-grid-3">
           <div class="panel">
             <div class="panel-h">
-              <h2>集群</h2>
+              <h2>统一入口</h2>
+              <div class="btn-row">
+                <button id="btn-dash-gw-refresh" class="ghost tiny" data-keep-enabled="1">刷新</button>
+                <button id="btn-dash-gw-start" class="primary tiny" data-keep-enabled="1">规整启动</button>
+                <button id="btn-dash-gw-stop" class="ghost tiny" data-keep-enabled="1">停</button>
+              </div>
+            </div>
+            <div id="dash-gateway" class="dash-gateway"></div>
+            <p class="meta" id="dash-ingress-url">-</p>
+          </div>
+          <div class="panel">
+            <div class="panel-h">
+              <h2>节点占用</h2>
+              <button class="ghost tiny" data-view-jump="cluster" data-keep-enabled="1">矩阵</button>
+            </div>
+            <div id="dash-nodes" class="dash-nodes"></div>
+            <div class="dash-kvs" style="margin-top:10px">
+              <div class="kv"><b>GPU</b> <span id="dash-occ-gpu">-</span></div>
+              <div class="kv"><b>忙/闲</b> <span id="dash-occ-nodes">-</span></div>
+              <div class="kv"><b>Lease</b> <span id="dash-leases">-</span></div>
+              <div class="kv"><b>API</b> <span id="dash-api">-</span></div>
+            </div>
+            <div id="dash-leases-list" class="list dash-lease-list"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-h">
+              <h2>运行日志</h2>
+              <div class="btn-row">
+                <button id="btn-runlog-refresh" class="ghost tiny" data-keep-enabled="1">刷新</button>
+                <button id="btn-load-quality" class="ghost tiny" data-keep-enabled="1">评分</button>
+              </div>
+            </div>
+            <div id="runlog-list" class="list runlog-list"></div>
+            <span class="meta" id="runlog-meta">CLI / 一键 / 检测修复</span>
+          </div>
+        </div>
+
+        <div class="dash-grid dash-grid-2">
+          <div class="panel">
+            <div class="panel-h">
+              <h2>集群信息</h2>
               <span class="meta" id="dash-cluster-at">-</span>
             </div>
             <div class="dash-kvs" id="dash-cluster-kvs">
@@ -140,45 +190,14 @@
               <div class="kv"><b>默认 Job</b> <span id="dash-cluster-job">-</span></div>
               <div class="kv"><b>节点</b> <span id="dash-cluster-nodes">-</span></div>
               <div class="kv"><b>隔离</b> <span id="dash-cluster-cordon">-</span></div>
-            </div>
-          </div>
-          <div class="panel">
-            <div class="panel-h">
-              <h2>统一入口 / Gateway</h2>
-              <div class="btn-row">
-                <button id="btn-dash-gw-refresh" class="ghost tiny" data-keep-enabled="1">刷新</button>
-                <button id="btn-dash-gw-start" class="primary tiny" data-keep-enabled="1">启 Edge</button>
-                <button id="btn-dash-gw-stop" class="ghost tiny" data-keep-enabled="1">停</button>
-                <button class="ghost tiny" data-view-jump="endpoints" data-keep-enabled="1">端点页</button>
-              </div>
-            </div>
-            <div id="dash-gateway" class="dash-gateway"></div>
-          </div>
-          <div class="panel">
-            <div class="panel-h">
-              <h2>机器占用</h2>
-              <button class="ghost tiny" data-view-jump="workloads" data-keep-enabled="1">任务</button>
-            </div>
-            <div class="dash-kvs">
-              <div class="kv"><b>GPU</b> <span id="dash-occ-gpu">-</span></div>
-              <div class="kv"><b>忙/闲节点</b> <span id="dash-occ-nodes">-</span></div>
-              <div class="kv"><b>Lease</b> <span id="dash-leases">-</span></div>
               <div class="kv"><b>队列</b> <span id="dash-queue">-</span></div>
-              <div class="kv"><b>API</b> <span id="dash-api">-</span></div>
-              <div class="kv"><b>Job 数</b> <span id="dash-jobs">-</span></div>
+              <div class="kv"><b>Job</b> <span id="dash-jobs">-</span></div>
             </div>
-            <div id="dash-leases-list" class="list dash-lease-list"></div>
-          </div>
-          <div class="panel">
-            <div class="panel-h">
-              <h2>节点状态</h2>
-              <button class="ghost tiny" data-view-jump="cluster" data-keep-enabled="1">矩阵</button>
-            </div>
-            <div id="dash-nodes" class="dash-nodes"></div>
           </div>
           <div class="panel">
             <div class="panel-h">
               <h2>快速部署</h2>
+              <button class="ghost tiny" data-view-jump="toolkits" data-keep-enabled="1">工具栈</button>
             </div>
             <div class="compact-fields">
               <label class="field"><span>任务</span><select id="quick-job"></select></label>
@@ -193,25 +212,10 @@
                 </select>
               </label>
             </div>
-            <div class="panel-h" style="margin-top:12px">
-              <h2>工具栈</h2>
-              <button class="ghost tiny" data-view-jump="toolkits" data-keep-enabled="1">管理</button>
-            </div>
             <div id="dash-toolkit-chips" class="chip-row"></div>
-            <p class="meta" id="dash-toolkit-meta">探测后显示 LLaMA-Factory / DeepSpeed 等</p>
+            <p class="meta" id="dash-toolkit-meta">探测后显示微调栈就绪情况</p>
             <span class="meta" id="dash-toolkits" hidden></span>
             <span id="dash-ingress" hidden></span>
-          </div>
-          <div class="panel">
-            <div class="panel-h">
-              <h2>运行日志</h2>
-              <div class="btn-row">
-                <button id="btn-runlog-refresh" class="ghost tiny" data-keep-enabled="1">刷新</button>
-                <button id="btn-load-quality" class="ghost tiny" data-keep-enabled="1">评分</button>
-              </div>
-            </div>
-            <div id="runlog-list" class="list runlog-list"></div>
-            <span class="meta" id="runlog-meta">记录 CLI / 一键动作 / 检测修复</span>
           </div>
         </div>
 
@@ -646,6 +650,16 @@ gpu-control ui --background</pre>
               <label class="field"><span>API 密钥文件</span><input id="cluster-api-key" /></label>
               <label class="field"><span>优先标签</span><input id="cluster-prefer" placeholder="serving" /></label>
               <label class="field"><span>避开标签</span><input id="cluster-avoid" placeholder="shared" /></label>
+              <p class="sub">统一入口 · 域名 / HTTPS</p>
+              <label class="field"><span>域名</span><input id="cluster-domain" placeholder="api.example.com" /></label>
+              <label class="field"><span>对外 URL</span><input id="cluster-public-url" placeholder="https://api.example.com" /></label>
+              <label class="field switch-field">
+                <span>启用 HTTPS</span>
+                <input type="checkbox" id="cluster-tls-enabled" data-keep-enabled="1" />
+              </label>
+              <label class="field"><span>证书 cert</span><input id="cluster-tls-cert" placeholder="config/local/secrets/ingress.crt" /></label>
+              <label class="field"><span>私钥 key</span><input id="cluster-tls-key" placeholder="config/local/secrets/ingress.key" /></label>
+              <label class="field"><span>CA（可选）</span><input id="cluster-tls-ca" placeholder="config/local/secrets/ca.crt" /></label>
             </div>
           </div>
 
@@ -733,12 +747,18 @@ gpu-control ui --background</pre>
       <div class="auth-brand">gpu-control</div>
       <h2>控制面登录</h2>
       <p class="meta" id="auth-hint">此控制台已启用鉴权。会话 Cookie · HttpOnly · SameSite=Strict</p>
-      <label class="field">
-        <span>密码</span>
-        <input id="auth-password" type="password" required minlength="8" placeholder="管理员密码" autocomplete="current-password" />
-      </label>
+      <div id="auth-oidc-box" hidden>
+        <a class="btn primary" id="auth-oidc-btn" href="/api/auth/oidc/login" data-keep-enabled="1">使用企业账号登录（OIDC）</a>
+        <p class="meta" id="auth-oidc-meta">OpenID Connect</p>
+      </div>
+      <div id="auth-password-box">
+        <label class="field">
+          <span>密码</span>
+          <input id="auth-password" type="password" minlength="8" placeholder="管理员密码" autocomplete="current-password" />
+        </label>
+        <button type="submit" class="primary" id="auth-submit" data-keep-enabled="1">进入控制台</button>
+      </div>
       <p class="meta bad" id="auth-error" hidden></p>
-      <button type="submit" class="primary" id="auth-submit" data-keep-enabled="1">进入控制台</button>
       <p class="meta">API / MCP 可用 <code>Authorization: Bearer &lt;token&gt;</code>（<code>gpu-control auth issue-token</code>）</p>
     </form>
   </div>

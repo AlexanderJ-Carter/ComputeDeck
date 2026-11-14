@@ -28,7 +28,12 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import _bootstrap  # noqa: F401
-from paths import STATE_DIR, cluster_file
+from paths import PROJECT_DIR, STATE_DIR, cluster_file
+
+import sys
+
+sys.path.insert(0, str(PROJECT_DIR / "lib"))
+from ingress_tls import build_ssl_context, normalize_ingress, probe_tls  # noqa: E402
 
 ENDPOINTS_FILE = STATE_DIR / "endpoints.json"
 HEALTH_FILE = STATE_DIR / "endpoint_health.json"
@@ -60,23 +65,15 @@ def load_ingress_settings() -> dict:
     if path.is_file():
         cluster = json.loads(path.read_text(encoding="utf-8"))
     gateway = cluster.get("gateway") or {}
-    ingress = gateway.get("ingress") if isinstance(gateway.get("ingress"), dict) else {}
-    return {
-        "bind": str(ingress.get("bind") or os.environ.get("GPU_CONTROL_EDGE_HOST") or "0.0.0.0"),
-        "port": int(
-            ingress.get("port")
-            or gateway.get("nginx_listen")
-            or os.environ.get("GPU_CONTROL_EDGE_PORT")
-            or 18080
-        ),
-        "strategy": str(ingress.get("strategy") or "round_robin").lower(),
-        "retries": max(0, int(ingress.get("retries") or 2)),
-        "cooldown_sec": max(0, int(ingress.get("cooldown_sec") or 30)),
-        "connect_timeout_sec": float(ingress.get("connect_timeout_sec") or 2),
-        "read_timeout_sec": float(ingress.get("read_timeout_sec") or 300),
-        "sticky_header": str(ingress.get("sticky_header") or "").strip(),
-        "reload_interval_sec": float(ingress.get("reload_interval_sec") or 5),
-    }
+    ingress = normalize_ingress(
+        gateway.get("ingress") if isinstance(gateway.get("ingress"), dict) else {},
+        gateway=gateway,
+    )
+    if os.environ.get("GPU_CONTROL_EDGE_HOST"):
+        ingress["bind"] = os.environ["GPU_CONTROL_EDGE_HOST"]
+    if os.environ.get("GPU_CONTROL_EDGE_PORT"):
+        ingress["port"] = int(os.environ["GPU_CONTROL_EDGE_PORT"])
+    return ingress
 
 
 class UpstreamPool:
@@ -378,11 +375,22 @@ def main() -> int:
 
     httpd = ThreadingHTTPServer((host, port), EdgeHandler)
     httpd.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    tls_cfg = SETTINGS.get("tls") or {}
+    tls_info = probe_tls(tls_cfg)
+    scheme = "http"
+    if tls_info.get("enabled"):
+        if not tls_info.get("ready"):
+            raise SystemExit("TLS 已启用但证书未就绪: " + "; ".join(tls_info.get("reasons") or []))
+        httpd.socket = build_ssl_context(tls_cfg).wrap_socket(httpd.socket, server_side=True)
+        scheme = "https"
     snap = POOL.snapshot()
-    print(f"gpu-control edge listening on http://{host}:{port}", flush=True)
+    domain = SETTINGS.get("domain") or ""
+    print(f"gpu-control edge listening on {scheme}://{host}:{port}", flush=True)
+    if domain:
+        print(f"domain={domain}", flush=True)
     print(
         f"strategy={SETTINGS.get('strategy')} retries={SETTINGS.get('retries')} "
-        f"upstreams={snap.get('upstream_count')} healthz=/_gpu_control/health",
+        f"tls={scheme} upstreams={snap.get('upstream_count')} healthz=/_gpu_control/health",
         flush=True,
     )
     try:

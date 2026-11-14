@@ -63,8 +63,8 @@ gpu-control toolkits install --bundle train-stack
 gpu-control jobs install train-job --name sft
 gpu-control deploy sft --nodes gpu-1,gpu-2 --gpus 16
 gpu-control diagnose check && gpu-control logs
-gpu-control gateway start --kind edge   # Control 统一推理入口 :18080
-gpu-control gateway status
+gpu-control gateway ensure              # 规整配套并拉起 Edge :18080
+gpu-control gateway status              # companions（nginx 在 kind=edge 时不必装）
 ```
 
 路径异构：`nodes.json` → `defaults.paths` + 节点覆盖；Job/models 用 `${paths.*}`。详见手册。  

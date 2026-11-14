@@ -16,10 +16,16 @@
       "session_secret_file": "config/local/secrets/ui_session_secret",
       "api_token_file": "config/local/secrets/ui_api_token",
       "oidc": {
-        "issuer": "",
-        "client_id": "",
+        "issuer": "https://login.example.com",
+        "client_id": "gpu-control",
         "client_secret_file": "config/local/secrets/oidc_client_secret",
-        "redirect_path": "/api/auth/oidc/callback"
+        "redirect_path": "/api/auth/oidc/callback",
+        "scopes": ["openid", "profile", "email"],
+        "username_claim": "email",
+        "allowed_emails": [],
+        "allowed_subjects": [],
+        "allowed_groups": [],
+        "allow_password_fallback": false
       }
     }
   },
@@ -39,13 +45,23 @@
       "bind": "0.0.0.0",
       "port": 18080,
       "kind": "edge",
+      "domain": "",
+      "domains": [],
       "public_base_url": "http://10.0.0.10:18080",
       "strategy": "round_robin",
       "retries": 2,
       "cooldown_sec": 30,
       "connect_timeout_sec": 2,
       "read_timeout_sec": 300,
-      "sticky_header": ""
+      "sticky_header": "",
+      "tls": {
+        "enabled": false,
+        "cert_file": "config/local/secrets/ingress.crt",
+        "key_file": "config/local/secrets/ingress.key",
+        "ca_file": "",
+        "require_client_cert": false,
+        "min_version": "TLSv1.2"
+      }
     },
     "model_name": "gpu-pool",
     "litellm_model": "openai/local-model",

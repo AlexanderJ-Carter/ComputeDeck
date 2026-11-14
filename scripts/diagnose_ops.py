@@ -153,6 +153,19 @@ def collect_findings() -> list[dict[str, Any]]:
             auto=False,
         )
 
+    ingress = (cluster.get("gateway") or {}).get("ingress") or {}
+    ingress_kind = str(ingress.get("kind") or "edge").lower()
+    if bool(ingress.get("enabled", True)) and ingress_kind in {"edge", "both", "all"}:
+        if _pid_alive(STATE_DIR / "ingress-edge.pid") is not True:
+            add(
+                "edge-down",
+                severity="error",
+                title="统一入口 Edge 未运行",
+                detail=f"ingress.kind={ingress_kind} port={ingress.get('port') or 18080}",
+                fix="gpu-control gateway ensure",
+                auto=True,
+            )
+
     default_job = (cluster.get("default_job") or "").strip()
     from jobs_util import registered_job_names
 
@@ -222,6 +235,20 @@ def apply_fix(finding_id: str) -> dict[str, Any]:
         if path.is_file():
             path.unlink()
         return {"id": finding_id, "ok": True, "removed": str(path)}
+    if finding_id == "edge-down":
+        completed = subprocess.run(
+            [str(VENV_PYTHON), str(CLI), "gateway", "ensure"],
+            cwd=PROJECT_DIR,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        return {
+            "id": finding_id,
+            "ok": completed.returncode == 0,
+            "stdout": completed.stdout[-800:],
+            "stderr": completed.stderr[-300:],
+        }
     return {"id": finding_id, "ok": False, "error": "该问题不支持自动修复"}
 
 
