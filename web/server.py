@@ -955,12 +955,15 @@ class Handler(BaseHTTPRequestHandler):
                             except json.JSONDecodeError:
                                 session.write(payload)
                                 continue
-                            if msg.get("type") == "resize":
+                            msg_type = msg.get("type")
+                            if msg_type == "resize":
                                 session.resize(int(msg.get("cols") or cols), int(msg.get("rows") or rows))
                                 continue
-                            if msg.get("type") == "input":
+                            if msg_type == "input":
                                 session.write(str(msg.get("data") or "").encode("utf-8"))
                                 continue
+                            # 未知控制帧直接忽略，避免把 JSON 写进远端 shell
+                            continue
                         session.write(payload)
                     else:
                         session.write(payload)
