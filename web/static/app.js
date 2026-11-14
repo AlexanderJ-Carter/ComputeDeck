@@ -140,25 +140,44 @@ function selectedFrom(selectId) {
   return { nodes: "all" };
 }
 
+function fillSelectPreserve(el, html, prefer) {
+  if (!el) return;
+  const prev = el.value;
+  el.innerHTML = html;
+  const options = [...el.options].map((o) => o.value);
+  if (options.includes(prev)) el.value = prev;
+  else if (prefer && options.includes(prefer)) el.value = prefer;
+}
+
 function fillTargetSelects(nodes) {
   const optsAll =
     `<option value="all">全部节点</option>` +
     nodes.map((n) => `<option value="${n.name}">${n.name}</option>`).join("");
   const optsNode = nodes.map((n) => `<option value="${n.name}">${n.name}</option>`).join("");
-  for (const id of ["exec-target", "py-target"]) {
-    const el = document.getElementById(id);
-    const prev = el.value;
-    el.innerHTML = optsAll;
-    if ([...el.options].some((o) => o.value === prev)) el.value = prev;
-    else if (state.selectedNode) el.value = state.selectedNode;
+  for (const id of ["exec-target", "py-target", "job-target"]) {
+    fillSelectPreserve(document.getElementById(id), optsAll, state.selectedNode);
   }
-  const termSel = document.getElementById("term-node");
-  if (termSel) {
-    const prev = termSel.value;
-    termSel.innerHTML = optsNode || `<option value="">暂无节点</option>`;
-    if ([...termSel.options].some((o) => o.value === prev)) termSel.value = prev;
-    else if (state.selectedNode) termSel.value = state.selectedNode;
-  }
+  fillSelectPreserve(
+    document.getElementById("deploy-node"),
+    optsNode || `<option value="">暂无节点</option>`,
+    state.selectedNode
+  );
+  fillSelectPreserve(
+    document.getElementById("term-node"),
+    optsNode || `<option value="">暂无节点</option>`,
+    state.selectedNode
+  );
+  syncDeployMode();
+}
+
+function syncDeployMode() {
+  const mode = document.getElementById("deploy-mode");
+  if (!mode) return;
+  const byNode = mode.value === "node";
+  const gpusWrap = document.getElementById("deploy-gpus-wrap");
+  const nodeWrap = document.getElementById("deploy-node-wrap");
+  if (gpusWrap) gpusWrap.hidden = byNode;
+  if (nodeWrap) nodeWrap.hidden = !byNode;
 }
 
 function renderSummary(summary) {
@@ -492,7 +511,7 @@ function renderDrawer() {
   const name = state.selectedNode;
   if (!name || !state.overview) {
     body.innerHTML =
-      '<p class="muted">点选左侧节点查看详情。<br/>CLI：<code>gpu-control describe node 名称</code></p>';
+      '<p class="muted">点选左侧瓦片查看详情。<br/>任务启停请到「任务」页选目标节点。</p>';
     return;
   }
   const node = (state.overview.nodes || []).find((n) => n.name === name);
@@ -527,14 +546,20 @@ function renderDrawer() {
   });
 }
 
-function selectNode(name) {
+function selectNode(name, { stay = false } = {}) {
   state.selectedNode = name;
-  document.getElementById("exec-target").value = name;
-  document.getElementById("py-target").value = name;
-  document.getElementById("job-scope").value = "selected";
+  for (const id of ["exec-target", "py-target", "job-target", "deploy-node", "term-node"]) {
+    const el = document.getElementById(id);
+    if (el && [...el.options].some((o) => o.value === name)) el.value = name;
+  }
+  const mode = document.getElementById("deploy-mode");
+  if (mode) {
+    mode.value = "node";
+    syncDeployMode();
+  }
   if (state.overview) renderNodes(state.overview.nodes);
   log(`已选中 ${name}`);
-  setView("cluster");
+  if (!stay) setView("cluster");
 }
 
 function bindRemoveButtons(root) {
@@ -952,12 +977,12 @@ async function runPython() {
 async function runJobAction(action) {
   const job = document.getElementById("job-select").value;
   if (!job) return;
-  const scope = document.getElementById("job-scope").value;
+  const scope = document.getElementById("job-target").value;
   let target;
-  if (scope === "all") target = { nodes: "all" };
+  if (!scope || scope === "all") target = { nodes: "all" };
   else {
-    if (!state.selectedNode) return log("请先选中节点");
-    target = { node: state.selectedNode };
+    state.selectedNode = scope;
+    target = { node: scope };
   }
   setBusy(true);
   try {
@@ -1485,13 +1510,24 @@ async function boot() {
     btn.addEventListener("click", () => runJobAction(btn.dataset.jobAction));
   });
 
+  document.getElementById("deploy-mode").addEventListener("change", syncDeployMode);
+  document.getElementById("job-target").addEventListener("change", () => {
+    const v = document.getElementById("job-target").value;
+    if (v && v !== "all") {
+      state.selectedNode = v;
+      if (state.overview) renderNodes(state.overview.nodes);
+    }
+  });
   document.getElementById("btn-deploy").addEventListener("click", async () => {
     const job = document.getElementById("job-select").value;
     if (!job) return;
     const body = { job, note: "from-ui" };
-    if (document.getElementById("deploy-use-selected").checked) {
-      if (!state.selectedNode) return log("请先选中节点");
-      body.nodes = state.selectedNode;
+    const mode = document.getElementById("deploy-mode").value;
+    if (mode === "node") {
+      const node = document.getElementById("deploy-node").value;
+      if (!node) return log("请选择要部署的节点");
+      body.nodes = node;
+      state.selectedNode = node;
     } else body.gpus = Number(document.getElementById("deploy-gpus").value);
     if (!confirm(`确认部署 ${job}？`)) return;
     setBusy(true);

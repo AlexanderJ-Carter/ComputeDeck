@@ -212,10 +212,10 @@
           </div>
           <div class="panel drawer" id="node-drawer">
             <div class="panel-h">
-              <h2>选中节点</h2>
+              <h2>节点详情</h2>
             </div>
             <div class="drawer-body" id="drawer-body">
-              <p class="muted">点选左侧节点，查看详情与快捷动作。<br />CLI：<code>gpu-control describe node 名称</code></p>
+              <p class="muted">点选左侧瓦片查看详情 / 隔离 / 终端。<br />任务启停请到「任务」页用「目标节点」下拉框。</p>
             </div>
           </div>
         </div>
@@ -246,12 +246,12 @@
             </div>
             <label class="field"><span>任务</span><select id="job-select"></select></label>
             <label class="field">
-              <span>范围</span>
-              <select id="job-scope">
-                <option value="selected">当前选中节点</option>
+              <span>目标节点</span>
+              <select id="job-target">
                 <option value="all">全部节点</option>
               </select>
             </label>
+            <p class="muted tiny" id="job-target-hint">在此下拉框直接选节点；与「集群」页点选同步。</p>
             <div class="btn-row">
               <button data-job-action="status">状态</button>
               <button data-job-action="start" class="primary">启动</button>
@@ -261,6 +261,13 @@
             </div>
             <hr />
             <label class="field">
+              <span>部署方式</span>
+              <select id="deploy-mode">
+                <option value="gpus">按 GPU 数自动选机</option>
+                <option value="node">指定节点</option>
+              </select>
+            </label>
+            <label class="field" id="deploy-gpus-wrap">
               <span>部署 GPU 数</span>
               <select id="deploy-gpus">
                 <option>4</option>
@@ -269,7 +276,10 @@
                 <option>16</option>
               </select>
             </label>
-            <label class="check"><input type="checkbox" id="deploy-use-selected" /><span>使用选中节点</span></label>
+            <label class="field" id="deploy-node-wrap" hidden>
+              <span>指定节点</span>
+              <select id="deploy-node"></select>
+            </label>
             <button id="btn-deploy" class="primary wide">部署</button>
             <div id="jobs" class="list"></div>
           </div>
