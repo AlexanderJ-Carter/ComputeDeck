@@ -723,12 +723,18 @@ function renderIngressMeta(status) {
   if (!el || !status) return;
   const edge = status.edge || {};
   const ll = status.litellm || {};
+  const pool = (edge.status && edge.status.pool) || {};
+  const settings = (edge.status && edge.status.settings) || {};
   el.textContent = [
     `对外入口 ${status.public_base_url || "-"}`,
     `edge ${edge.running ? "运行中" : "未运行"}${edge.pid ? " pid=" + edge.pid : ""}`,
+    settings.strategy ? `LB ${settings.strategy}` : null,
+    pool.upstream_count != null ? `上游 ${pool.available ?? "?"}/${pool.upstream_count}` : null,
     `litellm ${ll.running ? "运行中" : "未运行"}`,
     `nginx ${status.nginx && status.nginx.binary ? "已装" : "未装（可用内置 edge）"}`,
-  ].join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 async function refreshIngressStatus() {
@@ -1355,6 +1361,16 @@ function renderProbe(probe) {
 }
 
 function applyOverview(data) {
+  // Light polls omit lb / full probe; keep previous heavy fields.
+  if (data.light && state.overview) {
+    data = {
+      ...state.overview,
+      ...data,
+      lb: data.lb || state.overview.lb,
+      probe: data.probe?.matrix ? data.probe : state.overview.probe || data.probe,
+      notes: data.notes || state.overview.notes,
+    };
+  }
   state.overview = data;
   if (data.__etag) state.etag = data.__etag;
   else if (data.etag) state.etag = data.etag;
@@ -1494,13 +1510,15 @@ async function runOneclick(action, extra = {}) {
   }
 }
 
-async function refresh(doRemoteRefresh) {
+async function refresh(doRemoteRefresh, { light = false } = {}) {
   if (state.refreshInFlight && !doRemoteRefresh) return state.overview;
   state.refreshInFlight = true;
   try {
     const headers = {};
     if (!doRemoteRefresh && state.etag) headers["If-None-Match"] = state.etag;
-    const path = doRemoteRefresh ? "/api/overview?refresh=1" : "/api/overview";
+    let path = "/api/overview";
+    if (doRemoteRefresh) path += "?refresh=1";
+    else if (light) path += "?light=1";
     const data = await api(path, { headers });
     if (data.__notModified) {
       if (data.etag) state.etag = data.etag;
@@ -1978,11 +1996,12 @@ function setupAutoRefresh() {
   clearInterval(state.autoTimer);
   if (!document.getElementById("auto-refresh").checked) return;
   state.autoTimer = setInterval(async () => {
-    if (state.busy) return;
+    if (state.busy || document.hidden) return;
     try {
-      await refresh(false);
+      // Light poll: skip LB rebuild / full probe matrix to keep UI snappy.
+      await refresh(false, { light: true });
     } catch (_) { }
-  }, 8000);
+  }, 12000);
 }
 
 async function boot() {

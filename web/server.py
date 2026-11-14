@@ -110,6 +110,14 @@ EXEC_PRESETS = {
         "label": "nvidia-smi",
         "command": "nvidia-smi",
     },
+    "gpu-util": {
+        "label": "GPU 利用率",
+        "command": (
+            "nvidia-smi --query-gpu=index,name,utilization.gpu,utilization.memory,"
+            "memory.used,memory.total,temperature.gpu "
+            "--format=csv"
+        ),
+    },
     "gpu-list": {
         "label": "列出 GPU",
         "command": "nvidia-smi -L",
@@ -117,25 +125,51 @@ EXEC_PRESETS = {
     "gpu-procs": {
         "label": "GPU 进程",
         "command": (
-            "nvidia-smi --query-compute-apps=pid,process_name,used_gpu_memory "
-            "--format=csv,noheader"
+            "nvidia-smi --query-compute-apps=gpu_uuid,pid,process_name,used_gpu_memory "
+            "--format=csv"
         ),
     },
     "uptime": {
         "label": "负载/内存",
-        "command": "uptime; free -h; nproc",
+        "command": "uptime; free -h; nproc; cat /proc/loadavg",
     },
     "disk": {
         "label": "磁盘",
         "command": "df -h / /tmp 2>/dev/null; df -h | head -20",
     },
     "model-procs": {
-        "label": "Python / Job 进程",
-        "command": "pgrep -af 'python|torch|uvicorn|gunicorn' | head -40 || true",
+        "label": "推理进程",
+        "command": (
+            "pgrep -af 'python|torch|sglang|vllm|uvicorn|gunicorn|decider' | head -50 || true"
+        ),
     },
     "ports": {
         "label": "监听端口",
-        "command": "ss -lntp 2>/dev/null | head -40 || netstat -lntp 2>/dev/null | head -40",
+        "command": "ss -lntp 2>/dev/null | head -50 || netstat -lntp 2>/dev/null | head -50",
+    },
+    "api-ports": {
+        "label": "常见 API 端口",
+        "command": (
+            "ss -lntp 2>/dev/null | grep -E ':3000|:8000|:8080|:4000' || "
+            "echo 'no common API ports listening'"
+        ),
+    },
+    "local-health": {
+        "label": "本机 /health",
+        "command": (
+            "for p in 30000 8000 8080; do "
+            "code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 1 --max-time 2 "
+            "http://127.0.0.1:$p/health || echo down); "
+            "echo \"127.0.0.1:$p/health -> $code\"; done"
+        ),
+    },
+    "docker-ps": {
+        "label": "Docker 容器",
+        "command": "docker ps --format 'table {{.Names}}\\t{{.Status}}\\t{{.Ports}}' 2>/dev/null || echo 'docker unavailable'",
+    },
+    "hostname": {
+        "label": "主机信息",
+        "command": "hostname; date; whoami; ip -4 addr show scope global 2>/dev/null | awk '/inet /{print $2}' | head -5",
     },
     "torch-cuda": {
         "label": "Torch CUDA",
@@ -147,15 +181,6 @@ EXEC_PRESETS = {
             "print('version', __import__('torch').__version__), "
             "print('cuda', __import__('torch').cuda.is_available(), "
             "'count', __import__('torch').cuda.device_count()))\""
-        ),
-    },
-    "ray-check": {
-        "label": "Ray 检测",
-        "command": (
-            "python3 -c \"import importlib.util as u; "
-            "s=u.find_spec('ray'); "
-            "print('ray: not installed') if not s else "
-            "print('ray:', __import__('ray').__version__)\""
         ),
     },
 }
@@ -330,7 +355,7 @@ def state_fingerprint() -> str:
     return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:16]
 
 
-def build_overview() -> dict:
+def build_overview(*, light: bool = False) -> dict:
     resources = _read_json(RESOURCES_FILE, {})
     registry = node_registry()
     leases = _read_json(LEASES_FILE, {"leases": []}).get("leases", [])
@@ -394,10 +419,13 @@ def build_overview() -> dict:
     control_name = control_meta.get("node") or control_meta.get("name") or "control"
     control_meta.setdefault("node", control_name)
     control_meta.setdefault("ui_port", 8787)
-    return {
+    jobs = list_jobs()
+    endpoints = _read_json(ENDPOINTS_FILE, {})
+    payload = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "version": UI_VERSION,
         "etag": state_fingerprint(),
+        "light": light,
         "control": control_meta,
         "summary": {
             "nodes": len(nodes),
@@ -405,7 +433,7 @@ def build_overview() -> dict:
             "gpus_used": used_total,
             "gpus_total": free_total + used_total,
             "leases": len(leases),
-            "jobs": len(list_jobs()),
+            "jobs": len(jobs),
             "queue_pending": pending,
             "cordoned": len(cordoned),
             "probe_ok": probe.get("ok_count"),
@@ -418,31 +446,50 @@ def build_overview() -> dict:
         },
         "nodes": nodes,
         "leases": leases,
-        "jobs": list_jobs(),
+        "jobs": jobs,
         "queue": queue,
-        "probe": probe,
         "cordoned": cordoned,
-        "cluster": cluster_doc,
-        "endpoints": _read_json(ENDPOINTS_FILE, {}),
         "endpoint_health": endpoint_health,
-        "host_metrics": host_metrics,
-        "lb": build_lb_plan("least_latency"),
         "exec_presets": [
             {"id": key, "label": meta["label"]} for key, meta in EXEC_PRESETS.items()
         ],
         "notes": {
-            "ray": (
-                "Core 不绑定 Ray。需要跨节点训练时再单独验证 NCCL/Ray。"
-            ),
             "strategy": (
                 "通用控制面：连通 → 看卡 → 腾空/隔离 → 跑任意 Job。"
-                "推理 API / 模型缓存是可选模块。"
-            ),
-            "innovation": (
-                "Core + Modules：并行 SSH 质量、Job 插件、可选 models/inference。"
+                "统一入口：gpu-control gateway start --kind edge。"
             ),
         },
     }
+    if light:
+        # Auto-refresh path: skip expensive LB snippet build and large probe matrix.
+        payload["probe"] = {
+            "ok_count": probe.get("ok_count"),
+            "fail_count": probe.get("fail_count"),
+            "generated_at": probe.get("generated_at"),
+        }
+        payload["cluster"] = {
+            "name": cluster_doc.get("name"),
+            "default_job": cluster_doc.get("default_job"),
+            "strategy": cluster_doc.get("strategy"),
+            "gateway": {"ingress": ((cluster_doc.get("gateway") or {}).get("ingress") or {})},
+        }
+        payload["endpoints"] = {
+            "count": endpoints.get("count") or len(endpoints.get("endpoints") or []),
+            "by_node": endpoints.get("by_node") or {},
+            "endpoints": endpoints.get("endpoints") or [],
+        }
+        payload["host_metrics"] = {
+            "generated_at": host_metrics.get("generated_at"),
+            "nodes": host_by_node,
+        }
+        return payload
+
+    payload["probe"] = probe
+    payload["cluster"] = cluster_doc
+    payload["endpoints"] = endpoints
+    payload["host_metrics"] = host_metrics
+    payload["lb"] = build_lb_plan("least_latency")
+    return payload
 
 
 def run_cli(args: list[str], timeout: int = 900) -> dict:
@@ -1214,7 +1261,8 @@ class Handler(BaseHTTPRequestHandler):
                     etag=etag,
                 )
                 return
-            self._json(200, build_overview(), etag=etag)
+            light = qs.get("light", ["0"])[0] in {"1", "true", "yes"}
+            self._json(200, build_overview(light=light), etag=etag)
             return
 
         if path == "/api/endpoints/health":

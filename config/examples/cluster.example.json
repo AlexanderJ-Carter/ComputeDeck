@@ -39,7 +39,13 @@
       "bind": "0.0.0.0",
       "port": 18080,
       "kind": "edge",
-      "public_base_url": "http://10.0.0.10:18080"
+      "public_base_url": "http://10.0.0.10:18080",
+      "strategy": "round_robin",
+      "retries": 2,
+      "cooldown_sec": 30,
+      "connect_timeout_sec": 2,
+      "read_timeout_sec": 300,
+      "sticky_header": ""
     },
     "model_name": "gpu-pool",
     "litellm_model": "openai/local-model",

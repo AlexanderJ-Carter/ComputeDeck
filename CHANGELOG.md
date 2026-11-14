@@ -14,6 +14,24 @@
 
 ---
 
+## [0.14.0] - 2026-11-14
+
+### Added
+
+- Edge LB 吸收成熟 Gateway 能力：`retries` · `cooldown` · `least_conn` · 可选 sticky header · 连接/读超时
+- 远程命令预设扩充：GPU 利用率、API 端口、本机 health、Docker、主机信息等
+- `GET /api/overview?light=1`：自动刷新轻量路径（跳过 LB 片段/完整 probe 矩阵）
+
+### Changed
+
+- UI 自动刷新 12s + 后台页暂停；减轻控制面轮询开销
+
+### Notes
+
+- 仍不内建虚拟密钥/预算/Redis（留给 LiteLLM/Kong/Portkey）；我们专注多机发现与 Control 统一入口
+
+---
+
 ## [0.13.2] - 2026-11-14
 
 ### Fixed
@@ -296,6 +314,7 @@
 4. **链接**：下方版本锚点在具备远程 tag 后可改为 compare URL。
 
 [Unreleased]: #unreleased
+[0.14.0]: #0140---2026-11-14
 [0.13.2]: #0132---2026-11-14
 [0.13.1]: #0131---2026-11-14
 [0.13.0]: #0130---2026-11-14

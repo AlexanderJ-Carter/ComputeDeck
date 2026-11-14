@@ -1,6 +1,6 @@
 [project]
 name = "gpu-control"
-version = "0.13.2"
+version = "0.14.0"
 description = "General multi-node GPU control plane (Core) with optional inference/models modules"
 readme = "README.md"
 requires-python = ">=3.11"
