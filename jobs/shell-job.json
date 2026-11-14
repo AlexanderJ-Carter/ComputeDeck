@@ -1,6 +1,6 @@
 {
   "name": "shell-job",
-  "description": "通用：任意 start/stop/status 管理脚本（examples/job_manager_stub.py）",
+  "description": "通用壳：挂任意 start/stop/status 脚本（examples/job_manager_stub.py）",
   "gpus_per_node": 1,
   "runtime": "process",
   "python": "${paths.python}",

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unified CLI for multi-node GPU cluster control via Ansible."""
+"""gpu-control 统一 CLI：多节点 GPU 控制面（Ansible / Job / Gateway / 工具栈）。"""
 
 from __future__ import annotations
 
@@ -344,13 +344,22 @@ def release_lease_nodes(nodes: list[str]) -> int:
 def job_manager_extra(job: dict, action: str, *, extra_args: list[str] | None = None) -> dict:
     runtime = job.get("runtime") or "process"
     args = list(extra_args if extra_args is not None else job.get("extra_args") or [])
+    gpus_per_node = int(job.get("gpus_per_node") or 1)
+    nproc = int(job.get("nproc_per_node") or gpus_per_node)
+    env = dict(job.get("env") or {})
+    if job.get("name") and "GPU_CONTROL_JOB_NAME" not in env:
+        env["GPU_CONTROL_JOB_NAME"] = str(job["name"])
     payload = {
         "job_action": action,
         "runtime": runtime,
         "job_python": job.get("python") or "python3",
         "job_script": job.get("script") or "",
         "job_extra_args": args,
-        "job_env": job.get("env") or {},
+        "job_env": env,
+        "job_kind": job.get("kind") or "service",
+        "distributed": bool(job.get("distributed")),
+        "nproc_per_node": nproc,
+        "master_port": int(job.get("master_port") or 29500),
     }
     if runtime == "docker":
         docker = job.get("docker") or {}
@@ -451,10 +460,12 @@ def cmd_jobs(args: argparse.Namespace) -> int:
         return 0
     print(f"default_job={default_job_name()}")
     for job in jobs:
+        dist = " dist" if job.get("distributed") else ""
+        kind = job.get("kind") or "service"
         print(
             f"{job['name']}: {job.get('description', '')} "
-            f"(gpus={job.get('gpus_per_node', '?')} "
-            f"runtime={job.get('runtime')} source={job.get('source')})"
+            f"(kind={kind} gpus={job.get('gpus_per_node', '?')} "
+            f"runtime={job.get('runtime')}{dist} source={job.get('source')})"
         )
     return 0
 
@@ -1169,6 +1180,39 @@ def cmd_health(args: argparse.Namespace) -> int:
     return run_python("probe_endpoints.py", *cmd).returncode
 
 
+def cmd_diagnose(args: argparse.Namespace) -> int:
+    """一键检测 / 安全自动修复。"""
+    ensure_runtime()
+    cmd = [args.diagnose_action]
+    for fid in getattr(args, "fix_ids", None) or []:
+        cmd.extend(["--id", fid])
+    return run_python("diagnose_ops.py", *cmd).returncode
+
+
+def cmd_logs(args: argparse.Namespace) -> int:
+    """查看或清空控制面运行日志。"""
+    ensure_runtime()
+    sys.path.insert(0, str(PROJECT_DIR / "lib"))
+    from runlog_util import clear_runlog, list_runlog
+
+    if args.logs_action == "clear":
+        print(json.dumps(clear_runlog(), ensure_ascii=False, indent=2))
+        return 0
+    payload = list_runlog(limit=args.limit, kind=args.kind)
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+    items = payload.get("items") or []
+    if not items:
+        print("暂无运行日志")
+        return 0
+    for item in items:
+        flag = "OK" if item.get("ok") else (".." if item.get("ok") is None else "FAIL")
+        print(f"{item.get('ts')} [{flag}] {item.get('kind')}: {item.get('summary')}")
+    print(f"({len(items)}/{payload.get('total')} · {payload.get('path')})")
+    return 0
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     """Validate config / runtime readiness before publish or handoff."""
     extra = ["--json"] if args.json else []
@@ -1194,8 +1238,29 @@ def cmd_auth(args: argparse.Namespace) -> int:
     return run_python("auth_ops.py", *cmd).returncode
 
 
+def cmd_toolkits(args: argparse.Namespace) -> int:
+    """一站式工具栈：list / probe / install（LLaMA-Factory、DeepSpeed 等）。"""
+    ensure_runtime()
+    action = args.toolkits_action
+    cmd = [action]
+    if action in {"probe", "install"}:
+        for tid in args.toolkit_ids or []:
+            cmd.extend(["--id", tid])
+        if args.bundle:
+            cmd.extend(["--bundle", args.bundle])
+        if args.node:
+            cmd.extend(["--node", args.node])
+        elif args.nodes:
+            cmd.extend(["--nodes", args.nodes])
+        if action == "install" and getattr(args, "dry_run", False):
+            cmd.append("--dry-run")
+        if args.quiet:
+            cmd.append("--quiet")
+    return run_python("toolkit_ops.py", *cmd).returncode
+
+
 def cmd_models(args: argparse.Namespace) -> int:
-    """Optional models module: catalog / deps / verify / pull / paths."""
+    """模型模块：目录 / 依赖 / 校验 / 拉取 / 路径。"""
     ensure_runtime()
     action = args.models_action
     cmd = [action]
@@ -1714,6 +1779,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor.add_argument("--json", action="store_true")
     p_doctor.set_defaults(func=cmd_doctor)
 
+    p_diag = sub.add_parser("diagnose", help="一键检测 / 安全自动修复")
+    p_diag.add_argument("diagnose_action", choices=["check", "repair"])
+    p_diag.add_argument("--id", action="append", default=[], dest="fix_ids", help="repair 时指定 finding id")
+    p_diag.set_defaults(func=cmd_diagnose)
+
+    p_logs = sub.add_parser("logs", help="控制面运行日志")
+    p_logs.add_argument("logs_action", nargs="?", default="show", choices=["show", "clear"])
+    p_logs.add_argument("--limit", type=int, default=40)
+    p_logs.add_argument("--kind", help="过滤 kind，如 oneclick|cli|diagnose|repair")
+    p_logs.add_argument("--json", action="store_true")
+    p_logs.set_defaults(func=cmd_logs)
+
     p_auth = sub.add_parser("auth", help="控制面 UI 鉴权（密码 / Token / 模式）")
     p_auth.add_argument(
         "auth_action",
@@ -1804,6 +1881,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_metrics = sub.add_parser("metrics", help="采集各节点 CPU / 内存 / 负载")
     p_metrics.set_defaults(func=cmd_metrics)
+
+    p_toolkits = sub.add_parser(
+        "toolkits",
+        help="一站式 AI 工具栈：LLaMA-Factory / DeepSpeed / vLLM 等",
+    )
+    p_toolkits.add_argument(
+        "toolkits_action",
+        choices=["list", "probe", "install"],
+        help="list|probe|install",
+    )
+    p_toolkits.add_argument("--id", action="append", default=[], dest="toolkit_ids")
+    p_toolkits.add_argument("--bundle", help="如 train-stack / serve-stack")
+    p_toolkits.add_argument("--node")
+    p_toolkits.add_argument("--nodes", default="all")
+    p_toolkits.add_argument("--dry-run", action="store_true")
+    p_toolkits.add_argument("--quiet", action="store_true")
+    p_toolkits.set_defaults(func=cmd_toolkits)
 
     p_models = sub.add_parser(
         "models",

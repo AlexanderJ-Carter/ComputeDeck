@@ -1,4 +1,4 @@
-"""Resolve registered jobs, defaults, and installable templates."""
+"""已注册 Job、默认任务与可安装模板。"""
 
 from __future__ import annotations
 
@@ -43,7 +43,9 @@ def load_job_summaries() -> list[dict]:
         rows.append({
             "name": name,
             "description": job.get("description") or "",
+            "kind": job.get("kind") or "service",
             "gpus_per_node": job.get("gpus_per_node"),
+            "distributed": bool(job.get("distributed")),
             "runtime": job.get("runtime") or "process",
             "model": job.get("model") or "",
             "python": job.get("python") or "",
@@ -75,10 +77,9 @@ def default_job_name(fallback: str | None = None) -> str | None:
         for name in watchdog_jobs:
             if name in names:
                 return name
-    # Prefer a non-domain builtin if default missing.
-    for preferred in ("shell-job", "http-serve"):
-        if preferred in names:
-            return preferred
+    # 默认优先通用壳；业务 Job 在 local，不假定 http-serve/train。
+    if "shell-job" in names:
+        return "shell-job"
     return names[0]
 
 

@@ -1,0 +1,42 @@
+### 复制到你的数据盘后改路径，再挂到 Job --config。
+### 官方字段说明见 LLaMA-Factory 文档；此处仅为可跑通的骨架。
+
+### model
+model_name_or_path: /models/your-base-model
+trust_remote_code: true
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 8
+lora_target: all
+
+### dataset
+dataset: alpaca_en_demo
+template: default
+cutoff_len: 2048
+max_samples: 1000
+overwrite_cache: true
+preprocessing_num_workers: 4
+
+### output
+output_dir: /models/saves/lora-sft-demo
+logging_steps: 10
+save_steps: 500
+plot_loss: true
+overwrite_output_dir: true
+
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8
+learning_rate: 1.0e-4
+num_train_epochs: 1.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+ddp_timeout: 180000000
+
+### 多机时由 gpu-control 注入 NNODES/NODE_RANK/MASTER_*；
+### YAML 里可再写 deepspeed 配置路径（单机多卡也适用）：
+# deepspeed: /path/to/gpu-control/examples/deepspeed/ds_z2_config.json

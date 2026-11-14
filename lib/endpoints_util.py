@@ -1,4 +1,4 @@
-"""Inference-pool endpoint port resolution (per-node, heterogeneous)."""
+"""推理池端点端口解析（支持节点异构）。"""
 
 from __future__ import annotations
 

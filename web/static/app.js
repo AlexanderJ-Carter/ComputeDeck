@@ -10,14 +10,16 @@ const state = {
   lb: null,
   models: null,
   auth: null,
+  ingress: null,
 };
 
 const VIEW_TITLE = {
-  actions: "一键运维",
-  cluster: "总览",
+  actions: "看板",
+  cluster: "节点矩阵",
   nodes: "节点",
   workloads: "任务",
   models: "模型",
+  toolkits: "工具栈",
   endpoints: "API 端点",
   ops: "命令",
   terminal: "终端",
@@ -26,11 +28,12 @@ const VIEW_TITLE = {
 };
 
 const VIEW_CLI = {
-  actions: "gpu-control doctor && gpu-control health",
+  actions: "gpu-control overview && gpu-control toolkits probe",
   cluster: "gpu-control get nodes",
   nodes: "gpu-control node render",
   workloads: "gpu-control get jobs",
   models: "gpu-control models deps && gpu-control models verify",
+  toolkits: "gpu-control toolkits list && gpu-control toolkits probe",
   endpoints: "gpu-control health",
   ops: "gpu-control exec --nodes all -- ...",
   terminal: "ssh <node>  # Web 内置 PTY",
@@ -740,6 +743,7 @@ function renderIngressMeta(status) {
 async function refreshIngressStatus() {
   const data = await api("/api/gateway/status");
   renderIngressMeta(data);
+  renderDashGateway(data);
   return data;
 }
 
@@ -1067,7 +1071,9 @@ function bindNodeActions(root) {
 function jobOptionLabel(j) {
   const src = j.source === "local" ? "local" : j.source === "builtin" ? "内置" : "";
   const gpus = j.gpus_per_node != null ? `${j.gpus_per_node}GPU` : "";
-  const bits = [j.name, gpus, src].filter(Boolean);
+  const kind = j.kind === "train" ? "训练" : "";
+  const dist = j.distributed ? "多机" : "";
+  const bits = [j.name, kind, dist, gpus, src].filter(Boolean);
   return bits.join(" · ");
 }
 
@@ -1095,9 +1101,13 @@ function renderJobs(jobs) {
           const runtime = j.runtime || "process";
           const args = (j.extra_args || []).join(" ");
           const src = j.source || "";
+          const kind = j.kind === "train" ? "train" : "";
+          const dist = j.distributed ? "distributed" : "";
           return `<div class="item"><div><strong>${escapeHtml(j.name)}</strong>
           <div class="meta">${escapeHtml(j.description || "")}</div>
-          <div class="meta">${escapeHtml(runtime)}${src ? " · " + escapeHtml(src) : ""}${
+          <div class="meta">${escapeHtml(runtime)}${kind ? " · " + kind : ""}${
+            dist ? " · " + dist : ""
+          }${src ? " · " + escapeHtml(src) : ""}${
             j.model ? " · model=" + escapeHtml(j.model) : ""
           }
           ${args ? " · " + escapeHtml(args) : ""}</div></div>
@@ -1116,8 +1126,10 @@ function syncJobSelectHint(jobs) {
   const quickHint = document.getElementById("quick-job-hint");
   const job = (jobs || state.overview?.jobs || []).find((j) => j.name === sel?.value);
   const text = job
-    ? `${job.description || ""} · ${job.runtime || "process"} · ${job.gpus_per_node ?? "?"}GPU/节点`
-    : "选择任务后可启动 / 部署；Decider 只是场景 Job 之一";
+    ? `${job.description || ""} · ${job.kind || "service"} · ${job.runtime || "process"}${
+        job.distributed ? " · 多机" : ""
+      } · ${job.gpus_per_node ?? "?"}GPU/节点 · ${job.source || ""}`
+    : "无已安装任务 — 请从下方模板安装（框架仅内置 shell-job）";
   if (hint) hint.textContent = text;
   if (quickHint) quickHint.textContent = text;
 }
@@ -1369,6 +1381,7 @@ function applyOverview(data) {
       lb: data.lb || state.overview.lb,
       probe: data.probe?.matrix ? data.probe : state.overview.probe || data.probe,
       notes: data.notes || state.overview.notes,
+      ingress: data.ingress || state.overview.ingress || state.ingress,
     };
   }
   state.overview = data;
@@ -1401,9 +1414,305 @@ function applyOverview(data) {
   renderLeases(data.leases || []);
   renderProbe(data.probe || {});
   renderHostMetrics(data);
+  renderDashboard(data);
   document.getElementById("generated-at").textContent = data.generated_at || "-";
-  document.getElementById("ray-note").textContent =
-    (data.notes && (data.notes.innovation || data.notes.strategy)) || "";
+  const rayNote = document.getElementById("ray-note");
+  if (rayNote) {
+    rayNote.textContent =
+      (data.notes && (data.notes.innovation || data.notes.strategy)) || "";
+  }
+}
+
+function renderToolkits(payload) {
+  const bundles = payload.bundles || [];
+  const toolkits = payload.toolkits || [];
+  const stateTk = payload.state || {};
+  const bundleRoot = document.getElementById("toolkit-bundles");
+  if (bundleRoot) {
+    bundleRoot.innerHTML =
+      bundles
+        .map(
+          (b) => `<button type="button" class="chip" data-toolkit-bundle="${escapeHtml(b.id)}" title="${escapeHtml(b.description || "")}">
+            ${escapeHtml(b.name || b.id)}
+          </button>`
+        )
+        .join("") || "";
+    bundleRoot.querySelectorAll("[data-toolkit-bundle]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (!confirm(`安装 ${btn.dataset.toolkitBundle}？`)) return;
+        runToolkit("install", { bundle: btn.dataset.toolkitBundle });
+      });
+    });
+  }
+  const list = document.getElementById("toolkit-list");
+  if (list) {
+    list.innerHTML =
+      toolkits
+        .map((t) => {
+          const pkgs = (t.install_pip || []).join(", ") || "（仅探测）";
+          return `<div class="item">
+            <div>
+              <strong>${escapeHtml(t.name || t.id)}</strong>
+              <span class="chip">${escapeHtml(t.group || "")}</span>
+              <div class="meta">${escapeHtml(t.description || "")}</div>
+              <div class="meta">pip: ${escapeHtml(pkgs)}</div>
+            </div>
+            <button class="ghost tiny" data-toolkit-id="${escapeHtml(t.id)}">探测</button>
+          </div>`;
+        })
+        .join("") || '<div class="meta">无工具栈定义</div>';
+    list.querySelectorAll("[data-toolkit-id]").forEach((btn) => {
+      btn.addEventListener("click", () => runToolkit("probe", { ids: [btn.dataset.toolkitId] }));
+    });
+  }
+  const meta = document.getElementById("toolkit-state-meta");
+  if (meta) meta.textContent = stateTk.generated_at ? `探测于 ${stateTk.generated_at}` : "尚未探测";
+  const nodesRoot = document.getElementById("toolkit-nodes");
+  if (nodesRoot) {
+    const nodes = stateTk.nodes || {};
+    nodesRoot.innerHTML =
+      Object.keys(nodes)
+        .sort()
+        .map((name) => {
+          const entry = nodes[name] || {};
+          const chips = (entry.toolkits || [])
+            .map((x) => {
+              const cls = x.ok ? "ok" : "bad";
+              return `<span class="chip ${cls}">${escapeHtml(x.id)}${x.version ? " " + escapeHtml(String(x.version)) : ""}</span>`;
+            })
+            .join(" ");
+          return `<div class="item"><div><strong>${escapeHtml(name)}</strong>
+            <div class="meta">python ${escapeHtml(entry.python || "-")} · rc=${entry.rc ?? "-"}</div>
+            <div class="chip-row">${chips || '<span class="meta">无结果</span>'}</div>
+          </div></div>`;
+        })
+        .join("") || '<div class="meta">暂无探测结果</div>';
+  }
+}
+
+async function refreshToolkits() {
+  const data = await api("/api/toolkits");
+  renderToolkits(data);
+  return data;
+}
+
+async function runToolkit(action, extra = {}) {
+  setBusy(true);
+  try {
+    const body = { ...extra };
+    const data = await api(`/api/toolkits/${action}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    writeConsoleText(data.result?.stdout || data.result?.stderr || action, {
+      meta: `toolkits ${action}`,
+    });
+    if (data.toolkits) renderToolkits(data.toolkits);
+    if (data.overview) applyOverview(data.overview);
+    toast(data.result?.rc === 0 ? `${action} 完成` : `${action} 有失败`);
+  } catch (err) {
+    writeConsoleText(String(err.message || err), { meta: `toolkits ${action}` });
+    log(String(err.message || err));
+  } finally {
+    setBusy(false);
+  }
+}
+
+function renderDashboard(data) {
+  const summary = data.summary || {};
+  const free = Number(summary.gpus_free || 0);
+  const used = Number(summary.gpus_used || 0);
+  const total = Number(summary.gpus_total || free + used) || 0;
+  const usedPct = total ? Math.round((used / total) * 100) : 0;
+  const bar = document.getElementById("dash-bar-used");
+  if (bar) bar.style.width = `${usedPct}%`;
+  const meta = document.getElementById("dash-gpu-meta");
+  if (meta) meta.textContent = total ? `${used}/${total} 占用 · ${free} 空闲 · ${usedPct}%` : "暂无 GPU 数据";
+
+  const strip = document.getElementById("dash-node-strip");
+  if (strip) {
+    const nodes = data.nodes || [];
+    strip.innerHTML =
+      nodes
+        .map((n) => {
+          const cls = n.cordoned ? "cordoned" : n.used ? "busy" : "free";
+          const leaseJob = n.lease && n.lease.job ? n.lease.job : "";
+          return `<div class="dash-node-pill ${cls}" title="${escapeHtml(n.host || "")}${leaseJob ? " · " + leaseJob : ""}">
+            <b>${escapeHtml(n.name)}</b>
+            ${n.used || 0}/${n.total || 0}${leaseJob ? " · " + escapeHtml(leaseJob) : ""}
+          </div>`;
+        })
+        .join("") || '<span class="meta">无节点</span>';
+  }
+
+  const list = document.getElementById("dash-nodes");
+  if (list) {
+    list.innerHTML =
+      (data.nodes || [])
+        .map((n) => {
+          const tot = Number(n.total || 0) || 1;
+          const pct = Math.round((Number(n.used || 0) / tot) * 100);
+          const lease = n.lease
+            ? ` · ${escapeHtml(n.lease.job || "lease")}${n.lease.gpus != null ? " " + n.lease.gpus + "GPU" : ""}`
+            : "";
+          return `<div class="dash-node-row">
+            <span><strong>${escapeHtml(n.name)}</strong>
+              <span class="meta"> · ${n.cordoned ? "隔离" : n.state || "-"}${lease}</span></span>
+            <span class="meta">${n.used || 0}/${n.total || 0}</span>
+            <span class="bar"><i style="width:${pct}%"></i></span>
+          </div>`;
+        })
+        .join("") || '<p class="muted">暂无节点</p>';
+  }
+
+  const setText = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+
+  const cluster = data.cluster || {};
+  const ctrl = data.control || {};
+  const ctrlHost = ctrl.host || ctrl.ansible_host || "";
+  setText("dash-cluster-name", cluster.name || "-");
+  setText("dash-cluster-strategy", cluster.strategy || "-");
+  setText(
+    "dash-cluster-control",
+    ctrlHost ? `${ctrl.node || ctrl.name || "control"}@${ctrlHost}` : ctrl.node || "-"
+  );
+  setText("dash-cluster-job", cluster.default_job || "-");
+  setText(
+    "dash-cluster-nodes",
+    `${summary.nodes ?? (data.nodes || []).length} · 忙 ${summary.busy_nodes ?? "-"} · 闲 ${summary.free_nodes ?? "-"}`
+  );
+  setText("dash-cluster-cordon", String(summary.cordoned ?? 0));
+  setText("dash-cluster-at", data.generated_at || "-");
+
+  setText("dash-jobs", String(summary.jobs ?? (data.jobs || []).length));
+  setText("dash-leases", String(summary.leases ?? (data.leases || []).length));
+  setText("dash-queue", String(summary.queue_pending ?? 0));
+  setText("dash-occ-gpu", total ? `${used}/${total}（${usedPct}%）` : "-");
+  setText(
+    "dash-occ-nodes",
+    `${summary.busy_nodes ?? "-"} / ${summary.free_nodes ?? "-"}`
+  );
+  const apiOk = summary.api_ok;
+  const apiTotal = summary.api_total;
+  setText("dash-api", apiTotal != null ? `${apiOk ?? 0}/${apiTotal}` : "-");
+
+  const leasesRoot = document.getElementById("dash-leases-list");
+  if (leasesRoot) {
+    const leases = data.leases || [];
+    leasesRoot.innerHTML =
+      leases
+        .slice(0, 8)
+        .map((lease) => {
+          const nodes = (lease.nodes || []).join(", ");
+          return `<div class="item">
+            <div><strong>${escapeHtml(lease.job || lease.id || "lease")}</strong>
+              <div class="meta">${escapeHtml(nodes)} · ${lease.gpus ?? "?"}GPU${lease.note ? " · " + escapeHtml(lease.note) : ""}</div>
+            </div>
+          </div>`;
+        })
+        .join("") || '<div class="meta">无占用登记</div>';
+  }
+
+  renderDashGateway(data.ingress || state.ingress);
+  if (data.ingress) state.ingress = data.ingress;
+
+  const tk = data.toolkits || {};
+  const tkSum = tk.summary || summary.toolkits_ready || {};
+  setText("dash-toolkits", tkSum.total ? `${tkSum.ok ?? 0}/${tkSum.total}` : "未探测");
+  const chips = document.getElementById("dash-toolkit-chips");
+  if (chips) {
+    const rows = tk.by_id || [];
+    chips.innerHTML =
+      rows
+        .map((r) => {
+          const ok = (r.ok || 0) > 0 && (r.fail || 0) === 0;
+          const mixed = (r.ok || 0) > 0 && (r.fail || 0) > 0;
+          const cls = ok ? "ok" : mixed ? "" : "bad";
+          const ver = (r.versions || [])[0] || "";
+          return `<span class="chip ${cls}">${escapeHtml(r.id)}${ver ? " " + escapeHtml(ver) : ""} · ${r.ok || 0}ok</span>`;
+        })
+        .join("") || '<span class="meta">尚未探测工具栈</span>';
+  }
+  const tkMeta = document.getElementById("dash-toolkit-meta");
+  if (tkMeta) {
+    tkMeta.textContent = tk.generated_at
+      ? `探测于 ${tk.generated_at}`
+      : "点「工具栈」安装微调栈（LLaMA-Factory / DeepSpeed）";
+  }
+}
+
+function renderDashGateway(status) {
+  const root = document.getElementById("dash-gateway");
+  if (!root) return;
+  if (!status) {
+    root.innerHTML = '<p class="muted">入口状态未加载</p>';
+    return;
+  }
+  state.ingress = status;
+  renderIngressMeta(status);
+  const edge = status.edge || {};
+  const ll = status.litellm || {};
+  const nginx = status.nginx || {};
+  const pool = (edge.status && edge.status.pool) || {};
+  const settings = (edge.status && edge.status.settings) || {};
+  const publicUrl = status.public_base_url || edge.url || "";
+  const healthz = edge.healthz || (publicUrl ? `${publicUrl}/_gpu_control/health` : "");
+  const rows = [
+    {
+      name: "Edge",
+      on: !!edge.running,
+      detail: [
+        edge.listen ? `listen ${edge.listen}` : null,
+        settings.strategy ? `LB ${settings.strategy}` : null,
+        pool.upstream_count != null ? `上游 ${pool.available ?? "?"}/${pool.upstream_count}` : null,
+        edge.pid ? `pid ${edge.pid}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      links: [
+        publicUrl ? { href: publicUrl, label: publicUrl } : null,
+        healthz ? { href: healthz, label: "health" } : null,
+      ].filter(Boolean),
+    },
+    {
+      name: "LiteLLM",
+      on: !!ll.running,
+      detail: [
+        ll.port ? `:${ll.port}` : null,
+        ll.pid ? `pid ${ll.pid}` : null,
+        ll.dir ? `dir ${ll.dir}` : "未配置 openai_proxy_dir",
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      links: ll.url ? [{ href: ll.url, label: ll.url }] : [],
+    },
+    {
+      name: "nginx",
+      on: !!nginx.binary,
+      detail: nginx.binary
+        ? `已安装 · listen ${nginx.listen ?? "-"} · ${nginx.artifact || ""}`
+        : "未安装（可用内置 Edge）",
+      links: [],
+    },
+  ];
+  root.innerHTML = rows
+    .map((row) => {
+      const links = (row.links || [])
+        .map((l) => `<a href="${escapeHtml(l.href)}" target="_blank" rel="noopener">${escapeHtml(l.label)}</a>`)
+        .join("");
+      return `<div class="dash-gw-row ${row.on ? "on" : "off"}">
+        <div class="name">${escapeHtml(row.name)}</div>
+        <div>
+          <div class="meta">${escapeHtml(row.detail || "")}</div>
+          <div class="links">${links || '<span class="meta">无外链</span>'}</div>
+        </div>
+        <span class="chip">${row.on ? "运行中" : row.name === "nginx" ? (nginx.binary ? "就绪" : "未装") : "未运行"}</span>
+      </div>`;
+    })
+    .join("");
 }
 
 function renderQuality(q) {
@@ -1474,6 +1783,38 @@ async function loadQuality() {
   return q;
 }
 
+function renderRunlog(payload) {
+  const root = document.getElementById("runlog-list");
+  const meta = document.getElementById("runlog-meta");
+  if (!root) return;
+  const items = payload.items || [];
+  root.innerHTML =
+    items
+      .slice(0, 12)
+      .map((item) => {
+        const cls = item.ok === false ? "fail" : item.ok ? "ok" : "";
+        return `<div class="item ${cls}">
+          <div><strong>${escapeHtml(item.kind || "")}</strong>
+            <span class="meta"> ${escapeHtml(item.ts || "")}</span>
+            <div class="meta">${escapeHtml(item.summary || "")}</div>
+          </div>
+          <span class="chip">${item.ok === false ? "失败" : item.ok ? "成功" : "—"}</span>
+        </div>`;
+      })
+      .join("") || '<div class="meta">暂无日志</div>';
+  if (meta) {
+    meta.textContent = payload.total
+      ? `${items.length}/${payload.total} · ${payload.path || "state/runlog.jsonl"}`
+      : "记录 CLI / 一键动作 / 检测修复";
+  }
+}
+
+async function refreshRunlog() {
+  const data = await api("/api/runlog?limit=30");
+  renderRunlog(data);
+  return data;
+}
+
 async function runOneclick(action, extra = {}) {
   setBusy(true);
   try {
@@ -1495,6 +1836,7 @@ async function runOneclick(action, extra = {}) {
     renderActionSteps(data.steps || [], data.elapsed_ms);
     if (data.quality) renderQuality(data.quality);
     if (data.overview) applyOverview(data.overview);
+    refreshRunlog().catch(() => {});
     if (data.error && !(data.steps || []).length) {
       showSteps([{ name: action, ok: false, ms: data.elapsed_ms, error: data.error }], action);
     } else {
@@ -1673,8 +2015,12 @@ function setView(name) {
   if (name === "models") {
     refreshModels().catch((err) => log(String(err.message || err)));
   }
+  if (name === "toolkits") {
+    refreshToolkits().catch((err) => log(String(err.message || err)));
+  }
   if (name === "actions") {
     loadQuality().catch(() => { });
+    refreshRunlog().catch(() => { });
   }
   if (name === "terminal") {
     ensureTerminal();
@@ -2061,8 +2407,19 @@ async function boot() {
     setView("config");
     setConfigTab("wizard");
   });
+  document.querySelectorAll("[data-view-jump]").forEach((btn) => {
+    btn.addEventListener("click", () => setView(btn.dataset.viewJump));
+  });
   document.getElementById("btn-full-sync").addEventListener("click", () => runOneclick("full-sync"));
-  document.getElementById("btn-load-quality").addEventListener("click", async () => {
+  document.getElementById("btn-runlog-refresh")?.addEventListener("click", () => {
+    refreshRunlog().then(() => toast("日志已刷新")).catch((err) => log(String(err.message || err)));
+  });
+  document.getElementById("btn-dash-gw-refresh")?.addEventListener("click", () => {
+    refreshIngressStatus().then(() => toast("入口状态已刷新")).catch((err) => log(String(err.message || err)));
+  });
+  document.getElementById("btn-dash-gw-start")?.addEventListener("click", () => startIngress());
+  document.getElementById("btn-dash-gw-stop")?.addEventListener("click", () => stopIngress());
+  document.getElementById("btn-load-quality")?.addEventListener("click", async () => {
     try {
       await loadQuality();
       toast("评分已刷新");
@@ -2072,6 +2429,11 @@ async function boot() {
   });
   document.querySelectorAll("[data-oneclick]").forEach((btn) => {
     btn.addEventListener("click", () => runOneclick(btn.dataset.oneclick));
+  });
+  document.getElementById("btn-toolkit-probe")?.addEventListener("click", () => runToolkit("probe"));
+  document.getElementById("btn-toolkit-train")?.addEventListener("click", () => {
+    if (!confirm("在全部 GPU 节点安装微调栈（LLaMA-Factory / DeepSpeed / Accelerate / PEFT）？可能较久。")) return;
+    runToolkit("install", { bundle: "train-stack" });
   });
   document.getElementById("btn-term-connect").addEventListener("click", connectTerminal);
   document.getElementById("btn-term-disconnect").addEventListener("click", disconnectTerminal);

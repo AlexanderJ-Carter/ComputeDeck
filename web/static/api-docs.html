@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>gpu-control API 文档</title>
+  <style>
+    :root {
+      --bg: #f6f7f4;
+      --panel: #fff;
+      --ink: #1a1f1c;
+      --muted: #5c6b64;
+      --line: #d7ddd8;
+      --accent: #0e7c74;
+      --code: #eef3f0;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: "Segoe UI", "PingFang SC", "Noto Sans SC", sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1412;
+        --panel: #171d1a;
+        --ink: #e7eee9;
+        --muted: #9aaba3;
+        --line: #2a342f;
+        --accent: #2ec4b6;
+        --code: #1f2824;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      color: var(--ink);
+      background: var(--bg);
+      line-height: 1.5;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--panel) 92%, transparent);
+      backdrop-filter: blur(8px);
+    }
+    h1 { margin: 0; font-size: 18px; }
+    .meta { color: var(--muted); font-size: 13px; }
+    .links { display: flex; gap: 8px; flex-wrap: wrap; }
+    a.btn {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--ink);
+      text-decoration: none;
+      font-size: 13px;
+      background: var(--panel);
+    }
+    a.btn.primary {
+      background: var(--accent);
+      border-color: transparent;
+      color: #fff;
+    }
+    main { max-width: 1100px; margin: 0 auto; padding: 20px; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+    }
+    .card h2 { margin: 0 0 8px; font-size: 15px; }
+    .auth-box {
+      border-left: 3px solid var(--accent);
+      padding-left: 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .auth-box code, code {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: var(--code);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 12px 0;
+    }
+    input, select {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: var(--panel);
+      color: var(--ink);
+      font: inherit;
+    }
+    input { flex: 1; min-width: 180px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; font-size: 12px; }
+    .method {
+      display: inline-block;
+      min-width: 52px;
+      text-align: center;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #fff;
+    }
+    .get { background: #2b6cb0; }
+    .post { background: #2f855a; }
+    .put { background: #c05621; }
+    .delete { background: #c53030; }
+    .path { font-family: var(--mono); font-size: 12px; }
+    .tag {
+      display: inline-block;
+      margin-right: 4px;
+      padding: 1px 6px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .public { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+    details { margin-top: 6px; }
+    summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+    pre {
+      margin: 8px 0 0;
+      padding: 10px;
+      overflow: auto;
+      background: var(--code);
+      border-radius: 8px;
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    .err { color: #c53030; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>gpu-control API</h1>
+      <div class="meta" id="hdr-meta">加载 OpenAPI…</div>
+    </div>
+    <div class="links">
+      <a class="btn" href="/">返回 UI</a>
+      <a class="btn" href="/api">/api 目录</a>
+      <a class="btn primary" href="/api/openapi.json">openapi.json</a>
+    </div>
+  </header>
+  <main>
+    <section class="card" id="auth-card">
+      <h2>鉴权</h2>
+      <div class="auth-box" id="auth-box">读取中…</div>
+    </section>
+    <div class="toolbar">
+      <input id="q" placeholder="筛选 path / summary / tag" />
+      <select id="tag">
+        <option value="">全部分组</option>
+      </select>
+    </div>
+    <section class="card">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:70px">方法</th>
+            <th>路径</th>
+            <th>说明</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </section>
+  </main>
+  <script>
+    const state = { paths: {}, auth: null, info: null };
+
+    function methodClass(m) {
+      return (m || "get").toLowerCase();
+    }
+
+    function renderAuth(auth) {
+      const el = document.getElementById("auth-box");
+      if (!auth) {
+        el.textContent = "无鉴权元数据";
+        return;
+      }
+      const schemes = (auth.schemes || []).join(" / ") || "（未启用）";
+      el.innerHTML = [
+        `<div><b>mode</b> = <code>${auth.mode}</code> · enabled=${auth.enabled} · 方案：${schemes}</div>`,
+        `<div style="margin-top:6px">${auth.note || ""}</div>`,
+        `<div style="margin-top:6px">Header：<code>${auth.header || ""}</code></div>`,
+        `<div style="margin-top:6px">MCP：<code>GPU_CONTROL_API_BASE</code> + <code>GPU_CONTROL_API_TOKEN</code></div>`,
+        `<div style="margin-top:6px">签发：<code>${auth.issue_token || ""}</code></div>`,
+      ].join("");
+    }
+
+    function flatten() {
+      const rows = [];
+      for (const [path, methods] of Object.entries(state.paths)) {
+        for (const [method, op] of Object.entries(methods)) {
+          rows.push({
+            method: method.toUpperCase(),
+            path,
+            summary: op.summary || "",
+            tags: op.tags || [],
+            security: op.security,
+            body: op.requestBody || null,
+            params: op.parameters || [],
+          });
+        }
+      }
+      rows.sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method));
+      return rows;
+    }
+
+    function render() {
+      const q = (document.getElementById("q").value || "").trim().toLowerCase();
+      const tag = document.getElementById("tag").value;
+      const tbody = document.getElementById("rows");
+      const rows = flatten().filter((r) => {
+        if (tag && !(r.tags || []).includes(tag)) return false;
+        if (!q) return true;
+        const blob = `${r.method} ${r.path} ${r.summary} ${(r.tags || []).join(" ")}`.toLowerCase();
+        return blob.includes(q);
+      });
+      tbody.innerHTML = rows.map((r) => {
+        const publicOp = Array.isArray(r.security) && r.security.length === 0;
+        const tags = (r.tags || []).map((t) => `<span class="tag">${t}</span>`).join("");
+        const pub = publicOp ? `<span class="tag public">公开</span>` : "";
+        let detail = "";
+        if (r.params.length || r.body) {
+          const payload = {
+            parameters: r.params,
+            requestBody: r.body,
+          };
+          detail = `<details><summary>参数 / 请求体</summary><pre>${escapeHtml(JSON.stringify(payload, null, 2))}</pre></details>`;
+        }
+        return `<tr>
+          <td><span class="method ${methodClass(r.method)}">${r.method}</span></td>
+          <td><div class="path">${escapeHtml(r.path)}</div>${tags}${pub}${detail}</td>
+          <td>${escapeHtml(r.summary)}</td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="3" class="meta">无匹配接口</td></tr>`;
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    async function boot() {
+      try {
+        const res = await fetch("/api/openapi.json", { credentials: "same-origin" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const doc = await res.json();
+        state.paths = doc.paths || {};
+        state.auth = doc["x-gpu-control-auth"] || null;
+        state.info = doc.info || {};
+        document.getElementById("hdr-meta").textContent =
+          `${state.info.title || "gpu-control"} · v${state.info.version || "?"} · OpenAPI ${doc.openapi || "3"}`;
+        renderAuth(state.auth);
+        const tags = new Set();
+        for (const methods of Object.values(state.paths)) {
+          for (const op of Object.values(methods)) {
+            (op.tags || []).forEach((t) => tags.add(t));
+          }
+        }
+        const sel = document.getElementById("tag");
+        [...tags].sort().forEach((t) => {
+          const opt = document.createElement("option");
+          opt.value = t;
+          opt.textContent = t;
+          sel.appendChild(opt);
+        });
+        document.getElementById("q").addEventListener("input", render);
+        sel.addEventListener("change", render);
+        render();
+      } catch (err) {
+        document.getElementById("hdr-meta").innerHTML = `<span class="err">${escapeHtml(err.message || err)}</span>`;
+        document.getElementById("auth-box").textContent =
+          "无法加载 /api/openapi.json（若已启用鉴权，请先登录 UI 或带 Bearer 访问）";
+      }
+    }
+    boot();
+  </script>
+</body>
+</html>

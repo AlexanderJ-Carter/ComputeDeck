@@ -34,10 +34,11 @@
       <nav class="rail-nav" id="rail-nav">
         <div class="nav-group">
           <span class="nav-label">运维</span>
-          <button class="nav-item active" data-view="actions">一键运维</button>
-          <button class="nav-item" data-view="cluster">总览</button>
+          <button class="nav-item active" data-view="actions">看板</button>
+          <button class="nav-item" data-view="cluster">节点矩阵</button>
           <button class="nav-item" data-view="workloads">任务</button>
           <button class="nav-item" data-view="models">模型</button>
+          <button class="nav-item" data-view="toolkits">工具栈</button>
         </div>
         <div class="nav-group">
           <span class="nav-label">集群</span>
@@ -66,7 +67,7 @@
       <header class="topbar">
         <div class="topbar-copy">
           <p class="eyebrow" id="strategy-line">控制面编排 · 节点执行 · 端点可观测</p>
-          <h1 id="view-title">一键运维</h1>
+          <h1 id="view-title">看板</h1>
         </div>
         <div class="topbar-actions">
           <label class="switch" title="自动刷新总览">
@@ -91,15 +92,15 @@
       </section>
 
       <section class="view active" data-view-panel="actions">
-        <div class="ops-hero">
+        <div class="dash-hero">
           <div class="score-block">
             <div class="score-ring" id="quality-ring">
               <strong id="quality-score">-</strong>
               <span id="quality-grade">未检测</span>
             </div>
             <div class="score-copy">
-              <h2>连接质量</h2>
-              <p class="muted" id="quality-updated">先跑「全量同步」或「一键连通」</p>
+              <h2>集群健康</h2>
+              <p class="muted" id="quality-updated">同步后更新评分与资源</p>
               <div class="quality-kpis">
                 <div><span>SSH</span><strong id="q-ssh">-</strong></div>
                 <div><span>API</span><strong id="q-api">-</strong></div>
@@ -108,97 +109,187 @@
               </div>
             </div>
           </div>
-          <div class="hero-actions">
+          <div class="dash-pulse" id="dash-gpu-pulse" aria-label="GPU 占用">
+            <div class="dash-pulse-head">
+              <strong>GPU 池</strong>
+              <span class="meta" id="dash-gpu-meta">-</span>
+            </div>
+            <div class="dash-bar">
+              <div class="dash-bar-used" id="dash-bar-used" style="width:0%"></div>
+            </div>
+            <div class="dash-node-strip" id="dash-node-strip"></div>
+          </div>
+            <div class="hero-actions">
             <button id="btn-full-sync" class="primary" data-keep-enabled="1">全量同步</button>
-            <button id="btn-load-quality" class="ghost" data-keep-enabled="1">刷新评分</button>
-            <button class="ghost" data-oneclick="connect" data-keep-enabled="1">一键连通</button>
+            <button class="ghost" data-oneclick="diagnose" data-keep-enabled="1">一键检测</button>
+            <button class="ghost" data-oneclick="repair" data-keep-enabled="1">一键修复</button>
             <button class="primary" data-oneclick="deploy" data-keep-enabled="1">启动 Job</button>
           </div>
         </div>
 
-        <div class="section-head">
-          <h2>运维动作</h2>
-          <p class="section-note">点卡片执行 · 步骤在「最近动作」· 详细输出在下方</p>
-        </div>
-        <div class="action-grid">
-          <button class="action-card" data-oneclick="control-bootstrap" data-keep-enabled="1">
-            <span class="action-tag">控制面</span>
-            <strong>一键就绪</strong>
-            <p>目录 · inventory · Doctor</p>
-          </button>
-          <button class="action-card" data-oneclick="connect" data-keep-enabled="1">
-            <span class="action-tag">连接</span>
-            <strong>一键连通</strong>
-            <p>并行 SSH 探测节点</p>
-          </button>
-          <button class="action-card" data-oneclick="worker-check" data-keep-enabled="1">
-            <span class="action-tag">节点</span>
-            <strong>节点体检</strong>
-            <p>GPU · Torch · 磁盘 · 负载</p>
-          </button>
-          <button class="action-card" data-oneclick="refresh" data-keep-enabled="1">
-            <span class="action-tag">资源</span>
-            <strong>刷新 GPU</strong>
-            <p>采集 nvidia-smi 快照</p>
-          </button>
-          <button class="action-card" data-oneclick="health" data-keep-enabled="1">
-            <span class="action-tag">推理</span>
-            <strong>探测 API</strong>
-            <p>各端口本地 /health</p>
-          </button>
-          <button class="action-card primary-card" data-oneclick="deploy" data-keep-enabled="1">
-            <span class="action-tag">负载</span>
-            <strong>一键启动 Job</strong>
-            <p>选节点 → 启动 → 占用</p>
-          </button>
-          <button class="action-card" data-oneclick="model-check" data-keep-enabled="1">
-            <span class="action-tag">模型</span>
-            <strong>缓存检查</strong>
-            <p>weights 路径与磁盘</p>
-          </button>
-          <button class="action-card" data-oneclick="watchdog" data-keep-enabled="1">
-            <span class="action-tag">保障</span>
-            <strong>启动看门狗</strong>
-            <p>不健康时自动重启</p>
-          </button>
-          <button class="action-card" id="btn-goto-config" data-keep-enabled="1">
-            <span class="action-tag">配置</span>
-            <strong>打开向导</strong>
-            <p>SSH · 节点 · Job</p>
-          </button>
-        </div>
-
-        <div class="ops-deck">
-          <div class="panel compact">
+        <div class="dash-grid dash-grid-3">
+          <div class="panel">
             <div class="panel-h">
-              <h2>部署参数</h2>
+              <h2>集群</h2>
+              <span class="meta" id="dash-cluster-at">-</span>
+            </div>
+            <div class="dash-kvs" id="dash-cluster-kvs">
+              <div class="kv"><b>名称</b> <span id="dash-cluster-name">-</span></div>
+              <div class="kv"><b>策略</b> <span id="dash-cluster-strategy">-</span></div>
+              <div class="kv"><b>主控</b> <span id="dash-cluster-control">-</span></div>
+              <div class="kv"><b>默认 Job</b> <span id="dash-cluster-job">-</span></div>
+              <div class="kv"><b>节点</b> <span id="dash-cluster-nodes">-</span></div>
+              <div class="kv"><b>隔离</b> <span id="dash-cluster-cordon">-</span></div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-h">
+              <h2>统一入口 / Gateway</h2>
+              <div class="btn-row">
+                <button id="btn-dash-gw-refresh" class="ghost tiny" data-keep-enabled="1">刷新</button>
+                <button id="btn-dash-gw-start" class="primary tiny" data-keep-enabled="1">启 Edge</button>
+                <button id="btn-dash-gw-stop" class="ghost tiny" data-keep-enabled="1">停</button>
+                <button class="ghost tiny" data-view-jump="endpoints" data-keep-enabled="1">端点页</button>
+              </div>
+            </div>
+            <div id="dash-gateway" class="dash-gateway"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-h">
+              <h2>机器占用</h2>
+              <button class="ghost tiny" data-view-jump="workloads" data-keep-enabled="1">任务</button>
+            </div>
+            <div class="dash-kvs">
+              <div class="kv"><b>GPU</b> <span id="dash-occ-gpu">-</span></div>
+              <div class="kv"><b>忙/闲节点</b> <span id="dash-occ-nodes">-</span></div>
+              <div class="kv"><b>Lease</b> <span id="dash-leases">-</span></div>
+              <div class="kv"><b>队列</b> <span id="dash-queue">-</span></div>
+              <div class="kv"><b>API</b> <span id="dash-api">-</span></div>
+              <div class="kv"><b>Job 数</b> <span id="dash-jobs">-</span></div>
+            </div>
+            <div id="dash-leases-list" class="list dash-lease-list"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-h">
+              <h2>节点状态</h2>
+              <button class="ghost tiny" data-view-jump="cluster" data-keep-enabled="1">矩阵</button>
+            </div>
+            <div id="dash-nodes" class="dash-nodes"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-h">
+              <h2>快速部署</h2>
             </div>
             <div class="compact-fields">
               <label class="field"><span>任务</span><select id="quick-job"></select></label>
               <span class="meta" id="quick-job-hint"></span>
               <label class="field">
-                <span>GPU 规模</span>
+                <span>GPU 数</span>
                 <select id="quick-gpus">
-                  <option value="4">4（1 节点）</option>
-                  <option value="8">8（2 节点）</option>
-                  <option value="12">12（3 节点）</option>
-                  <option value="16" selected>16（全量）</option>
+                  <option value="4">4</option>
+                  <option value="8">8</option>
+                  <option value="12">12</option>
+                  <option value="16" selected>16</option>
                 </select>
               </label>
             </div>
-          </div>
-          <div class="panel compact">
-            <div class="panel-h">
-              <h2>最近动作</h2>
+            <div class="panel-h" style="margin-top:12px">
+              <h2>工具栈</h2>
+              <button class="ghost tiny" data-view-jump="toolkits" data-keep-enabled="1">管理</button>
             </div>
-            <div id="action-steps" class="step-list"></div>
+            <div id="dash-toolkit-chips" class="chip-row"></div>
+            <p class="meta" id="dash-toolkit-meta">探测后显示 LLaMA-Factory / DeepSpeed 等</p>
+            <span class="meta" id="dash-toolkits" hidden></span>
+            <span id="dash-ingress" hidden></span>
           </div>
-          <div class="panel compact">
+          <div class="panel">
+            <div class="panel-h">
+              <h2>运行日志</h2>
+              <div class="btn-row">
+                <button id="btn-runlog-refresh" class="ghost tiny" data-keep-enabled="1">刷新</button>
+                <button id="btn-load-quality" class="ghost tiny" data-keep-enabled="1">评分</button>
+              </div>
+            </div>
+            <div id="runlog-list" class="list runlog-list"></div>
+            <span class="meta" id="runlog-meta">记录 CLI / 一键动作 / 检测修复</span>
+          </div>
+        </div>
+
+        <details class="fold dash-fold">
+          <summary>更多运维 · SSH 延迟 · 步骤</summary>
+          <div class="action-grid compact-actions">
+            <button class="action-card" data-oneclick="control-bootstrap" data-keep-enabled="1">
+              <span class="action-tag">控制面</span>
+              <strong>一键就绪</strong>
+            </button>
+            <button class="action-card" data-oneclick="connect" data-keep-enabled="1">
+              <span class="action-tag">连接</span>
+              <strong>一键连通</strong>
+            </button>
+            <button class="action-card" data-oneclick="worker-check" data-keep-enabled="1">
+              <span class="action-tag">节点</span>
+              <strong>节点体检</strong>
+            </button>
+            <button class="action-card" data-oneclick="refresh" data-keep-enabled="1">
+              <span class="action-tag">资源</span>
+              <strong>刷新 GPU</strong>
+            </button>
+            <button class="action-card" data-oneclick="health" data-keep-enabled="1">
+              <span class="action-tag">推理</span>
+              <strong>探测 API</strong>
+            </button>
+            <button class="action-card" data-oneclick="model-check" data-keep-enabled="1">
+              <span class="action-tag">模型</span>
+              <strong>缓存检查</strong>
+            </button>
+            <button class="action-card" data-oneclick="watchdog" data-keep-enabled="1">
+              <span class="action-tag">保障</span>
+              <strong>看门狗</strong>
+            </button>
+            <button class="action-card" id="btn-goto-config" data-keep-enabled="1">
+              <span class="action-tag">配置</span>
+              <strong>向导</strong>
+            </button>
+          </div>
+          <div class="panel compact" style="margin-top:10px">
             <div class="panel-h">
               <h2>SSH 延迟</h2>
               <span class="meta" id="ssh-latency-meta">尚未探测</span>
             </div>
             <div id="ssh-latency-bars" class="latency-bars"></div>
+          </div>
+          <div id="action-steps" class="step-list" style="margin-top:10px"></div>
+        </details>
+      </section>
+
+      <section class="view" data-view-panel="toolkits">
+        <div class="split">
+          <div class="panel">
+            <div class="panel-h">
+              <h2 title="在 GPU 节点 pip 探测/安装常用训练与推理栈">AI 工具栈</h2>
+              <div class="btn-row">
+                <button id="btn-toolkit-probe" class="ghost tiny" data-keep-enabled="1">探测全部</button>
+                <button id="btn-toolkit-train" class="primary tiny" data-keep-enabled="1">安装微调栈</button>
+              </div>
+            </div>
+            <p class="meta">一站式：LLaMA-Factory · DeepSpeed · Accelerate · vLLM 等。装到节点 <code>${paths.python}</code>。</p>
+            <div id="toolkit-bundles" class="chip-row"></div>
+            <div id="toolkit-list" class="list"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-h">
+              <h2>节点探测结果</h2>
+              <span class="meta" id="toolkit-state-meta">尚未探测</span>
+            </div>
+            <div id="toolkit-nodes" class="list"></div>
+            <details class="fold">
+              <summary>CLI</summary>
+              <pre class="snippet">gpu-control toolkits list
+gpu-control toolkits probe
+gpu-control toolkits install --bundle train-stack
+gpu-control jobs install llamafactory-train
+gpu-control deploy train-job --nodes gpu-1,gpu-2 --gpus 16</pre>
+            </details>
           </div>
         </div>
       </section>
@@ -244,8 +335,9 @@
           <div class="panel">
             <div class="panel-h">
               <h2>任务操作</h2>
+              <span class="meta">仅显示已安装 Job · 内置只有 shell-job</span>
             </div>
-            <label class="field"><span>任务</span><select id="job-select"></select></label>
+            <label class="field"><span>已安装任务</span><select id="job-select"></select></label>
             <span id="job-select-hint" class="meta"></span>
             <label class="field">
               <span>目标节点</span>
@@ -254,45 +346,50 @@
               </select>
             </label>
             <span id="job-target-hint" class="hidden"></span>
-            <label class="field">
-              <span>启动参数</span>
-              <input id="job-extra-args" placeholder="覆盖 extra_args，空格分隔" />
-            </label>
-            <span id="job-args-hint" class="meta"></span>
             <div class="btn-row">
               <button data-job-action="status">状态</button>
               <button data-job-action="start" class="primary">启动</button>
               <button data-job-action="stop" class="danger">停止</button>
-              <button data-job-action="restart">重启</button>
-              <button data-job-action="wait">等待就绪</button>
+              <button id="btn-deploy" class="primary">一键部署</button>
             </div>
             <details class="fold" style="margin-top:10px">
-              <summary>从模板添加 Job</summary>
+              <summary>高级：参数覆盖 / 重启 / 等待</summary>
+              <label class="field" style="margin-top:8px">
+                <span>启动参数</span>
+                <input id="job-extra-args" placeholder="覆盖 extra_args，空格分隔" />
+              </label>
+              <span id="job-args-hint" class="meta"></span>
+              <div class="btn-row">
+                <button data-job-action="restart">重启</button>
+                <button data-job-action="wait">等待就绪</button>
+              </div>
+              <label class="field">
+                <span>部署方式</span>
+                <select id="deploy-mode">
+                  <option value="gpus">按 GPU 数自动选机</option>
+                  <option value="node">指定节点</option>
+                </select>
+              </label>
+              <label class="field" id="deploy-gpus-wrap">
+                <span>部署 GPU 数</span>
+                <input id="deploy-gpus" type="number" min="1" step="1" value="4" />
+              </label>
+              <label class="field" id="deploy-node-wrap" hidden>
+                <span>指定节点</span>
+                <select id="deploy-node"></select>
+              </label>
+            </details>
+            <details class="fold" style="margin-top:10px" open>
+              <summary>从模板安装（http-serve / train / vllm …）</summary>
+              <p class="meta">框架不预装业务 Job；需要时安装到 config/local/jobs/</p>
               <div class="compact-fields" style="margin-top:8px">
                 <label class="field"><span>模板</span><select id="job-template" data-keep-enabled="1"></select></label>
                 <label class="field"><span>安装为名</span><input id="job-template-name" placeholder="可选，默认模板名" data-keep-enabled="1" /></label>
-                <button id="btn-install-job-template" class="primary tiny" data-keep-enabled="1">安装到 local/jobs</button>
+                <button id="btn-install-job-template" class="primary tiny" data-keep-enabled="1">安装</button>
               </div>
               <span class="meta" id="job-templates-meta"></span>
             </details>
-            <hr />
-            <label class="field">
-              <span>部署方式</span>
-              <select id="deploy-mode">
-                <option value="gpus">按 GPU 数自动选机</option>
-                <option value="node">指定节点</option>
-              </select>
-            </label>
-            <label class="field" id="deploy-gpus-wrap">
-              <span>部署 GPU 数</span>
-              <input id="deploy-gpus" type="number" min="1" step="1" value="4" />
-            </label>
-            <label class="field" id="deploy-node-wrap" hidden>
-              <span>指定节点</span>
-              <select id="deploy-node"></select>
-            </label>
-            <button id="btn-deploy" class="primary wide">部署</button>
-            <div id="jobs" class="list"></div>
+            <div id="jobs" class="list" style="margin-top:12px"></div>
           </div>
           <div class="panel">
             <div class="panel-h">
@@ -331,7 +428,10 @@
               <label class="field"><span>本地 ID</span><input id="pull-id" placeholder="可选，默认 org-name" data-keep-enabled="1" /></label>
             </div>
             <label class="field"><span>目标节点</span><select id="model-node"><option value="">全部节点</option></select></label>
-            <label class="check-row"><input type="checkbox" id="pull-register" checked data-keep-enabled="1" /> 拉取后登记到模型目录</label>
+            <label class="check-row" for="pull-register">
+              <input type="checkbox" id="pull-register" checked data-keep-enabled="1" />
+              <span>拉取后登记到模型目录</span>
+            </label>
             <div class="btn-row">
               <button id="btn-models-download" class="primary" data-keep-enabled="1">开始下载</button>
               <button id="btn-models-install" class="ghost" data-keep-enabled="1">安装拉取工具</button>
@@ -467,7 +567,7 @@
               <input id="py-cuda" placeholder="CUDA_VISIBLE_DEVICES" />
               <input id="py-cwd" placeholder="工作目录" />
             </div>
-            <label class="check"><input type="checkbox" id="py-bg" /><span>后台 nohup</span></label>
+            <label class="check" for="py-bg"><input type="checkbox" id="py-bg" /><span>后台 nohup</span></label>
             <button id="btn-run-py" class="primary wide">运行 Python</button>
           </div>
         </div>
@@ -490,7 +590,19 @@ gpu-control models deps
 gpu-control models verify
 gpu-control deploy &lt;job&gt; --gpus 4
 gpu-control free --node 名称 --wait 30
+gpu-control auth issue-token
 gpu-control ui --background</pre>
+        </div>
+        <div class="panel">
+          <div class="panel-h">
+            <h2>API / MCP 文档</h2>
+          </div>
+          <p class="meta">OpenAPI、鉴权说明与 MCP 环境变量。</p>
+          <div class="btn-row">
+            <a class="btn primary" href="/api/docs" target="_blank" rel="noopener">接口文档</a>
+            <a class="btn ghost" href="/api/openapi.json" target="_blank" rel="noopener">openapi.json</a>
+            <a class="btn ghost" href="/api" target="_blank" rel="noopener">/api 目录</a>
+          </div>
         </div>
       </section>
 

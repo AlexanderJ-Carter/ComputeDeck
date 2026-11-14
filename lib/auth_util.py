@@ -1,16 +1,16 @@
-"""Control-plane authentication (pluggable).
+"""控制面鉴权（可插拔）。
 
-Modes
------
+模式
+----
 ``none``
-    Open access (legacy / SSH-tunnel only). Doctor warns.
+    开放访问（仅适合 SSH 隧道）。doctor 会告警。
 ``password``
-    Single admin password (scrypt hash) + signed HttpOnly session cookie.
-    Optional long-lived API bearer token for MCP / scripts.
+    单管理员密码（scrypt）+ 签名 HttpOnly Session Cookie；
+    可选长期 API Bearer Token（MCP / 脚本）。
 ``oidc``
-    Reserved stub — configure ``control.auth.oidc``; not implemented yet.
+    预留：配置 ``control.auth.oidc``，尚未实现。
 
-Secrets live under ``config/local/secrets/`` (gitignored).
+密钥目录：``config/local/secrets/``（gitignore）。
 """
 
 from __future__ import annotations
@@ -36,11 +36,13 @@ AUTH_PUBLIC_PATHS = frozenset({
     "/api/auth/login",
     "/api/auth/logout",
 })
-# Catalog / OpenAPI stay reachable so agents can discover login requirements.
+# 目录 / OpenAPI / 文档页保持可达，便于 Agent 发现鉴权要求。
 AUTH_DISCOVERY_PATHS = frozenset({
     "/api",
     "/api/",
     "/api/openapi.json",
+    "/api/docs",
+    "/docs",
 })
 
 DEFAULT_TTL_HOURS = 168

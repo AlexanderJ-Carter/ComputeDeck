@@ -1,0 +1,17 @@
+{
+  "description": "可选：复制到 config/local/toolkits.json 覆盖/扩展内置工具栈",
+  "toolkits": [
+    {
+      "id": "llamafactory",
+      "install_pip": ["llamafactory[torch,metrics]"]
+    }
+  ],
+  "bundles": [
+    {
+      "id": "train-stack",
+      "name": "微调栈",
+      "description": "LLaMA-Factory + DeepSpeed + Accelerate + PEFT",
+      "toolkits": ["accelerate", "deepspeed", "peft", "llamafactory"]
+    }
+  ]
+}

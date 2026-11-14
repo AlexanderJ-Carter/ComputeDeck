@@ -14,6 +14,58 @@
 
 ---
 
+## [0.17.0] - 2026-11-14
+
+### Added
+
+- 运行日志：`state/runlog.jsonl` · `gpu-control logs` · `GET /api/runlog` · 看板「运行日志」
+- 一键检测 / 安全修复：`gpu-control diagnose check|repair` · 看板按钮 · 可自动修 inventory/endpoints/残留 pid
+- 看板完善：集群信息 · Edge/LiteLLM/nginx 状态与链接 · 机器占用/Lease · overview 内嵌 `ingress` 快照
+
+### Changed
+
+- 内置 Job 收敛为仅 `shell-job`；`http-serve` / `vllm-docker` / `train-job` 改为模板安装
+- 任务页：主操作精简为状态/启动/停止/部署；模板安装区说明「不预装业务 Job」
+- `/api/gateway/status` 改为直接读状态文件（不再起 CLI 子进程）
+
+---
+
+## [0.16.0] - 2026-11-14
+
+### Added
+
+- 一站式 AI 工具栈：`gpu-control toolkits list|probe|install`；内置 LLaMA-Factory / DeepSpeed / Accelerate / PEFT / vLLM 等
+- Bundle：`train-stack` · `serve-stack`；HTTP `/api/toolkits*` · MCP `gc_toolkits` · UI「工具栈」页
+- 首页改为数据看板：GPU 池、节点状态、负载/入口、工具栈就绪、SSH 延迟；运维动作收入折叠区
+
+### Changed
+
+- 导航「一键运维」→「看板」；原「总览」更名为「节点矩阵」
+
+---
+
+## [0.15.0] - 2026-11-14
+
+### Added
+
+- 微调/分布式训练：模板 `train-job` · `llamafactory-train` · `deepspeed-train` · `torchrun-train`（后续版本仅模板、不内置）
+- `examples/train_manager.py`：统一 launcher（llamafactory / deepspeed / torchrun / accelerate / raw）
+- Job 字段 `kind` · `distributed` · `nproc_per_node` · `master_port`；manage-job 按选中节点注入 `NNODES`/`NODE_RANK`/`MASTER_*`
+- DeepSpeed 示例配置 `examples/deepspeed/ds_z{2,3}_config.json`；LLaMA-Factory YAML 骨架
+- 远程命令预设：训练进程、NCCL/分布式环境、训练日志尾
+- OpenAPI 3 完善：`bearerAuth` / `cookieAuth`、请求体 schema、鉴权元数据；文档页 `GET /api/docs`
+- MCP：`gc_auth_status`；工具说明中文化；目录与鉴权/环境变量对齐
+
+### Fixed
+
+- 模型页「拉取后登记」复选框被全局 input 样式拉成全宽输入框
+
+### Notes
+
+- 不内置安装 LLaMA-Factory/DeepSpeed；节点自备环境。控制面负责选机、多机环境与启停
+
+---
+
 ## [0.14.0] - 2026-11-14
 
 ### Added

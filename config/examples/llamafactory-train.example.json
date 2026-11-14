@@ -1,0 +1,22 @@
+{
+  "name": "llamafactory-train",
+  "description": "LLaMA-Factory 微调（单机多卡 / 多机；需节点已 pip install llamafactory[+deepspeed]）",
+  "kind": "train",
+  "gpus_per_node": 8,
+  "distributed": true,
+  "master_port": 29500,
+  "runtime": "process",
+  "python": "${paths.python}",
+  "script": "${paths.repo}/examples/train_manager.py",
+  "extra_args": [
+    "--launcher",
+    "llamafactory",
+    "--config",
+    "${paths.model_root}/train/your_sft.yaml"
+  ],
+  "env": {
+    "GPU_CONTROL_JOB_NAME": "llamafactory-train",
+    "GPU_CONTROL_JOB_RUNTIME": "/tmp/gpu-control-train/llamafactory-train"
+  },
+  "actions": ["start", "stop", "restart", "status", "wait"]
+}

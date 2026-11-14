@@ -1,4 +1,4 @@
-"""Per-node path merge and ${paths.*} substitution."""
+"""节点路径合并与 ``${paths.*}`` 占位符展开。"""
 
 from __future__ import annotations
 

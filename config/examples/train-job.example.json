@@ -1,0 +1,21 @@
+{
+  "name": "train-job",
+  "description": "通用微调/训练：LLaMA-Factory / DeepSpeed / torchrun（distributed=true 自动注入多机环境）",
+  "kind": "train",
+  "gpus_per_node": 8,
+  "distributed": true,
+  "master_port": 29500,
+  "runtime": "process",
+  "python": "${paths.python}",
+  "script": "${paths.repo}/examples/train_manager.py",
+  "extra_args": [
+    "--launcher",
+    "llamafactory",
+    "--config",
+    "${paths.repo}/examples/train/llamafactory_lora_sft.example.yaml"
+  ],
+  "env": {
+    "GPU_CONTROL_JOB_NAME": "train-job"
+  },
+  "actions": ["start", "stop", "restart", "status", "wait"]
+}

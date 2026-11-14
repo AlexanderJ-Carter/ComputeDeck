@@ -1,15 +1,19 @@
 # jobs/
 
-框架自带的**通用 Job**（可直接出现在 UI「任务」下拉框）：
+框架**只内置一个通用 Job**，避免预制一堆业务任务：
 
 | 文件 | 用途 |
 |------|------|
-| `shell-job.json` | 任意进程管理脚本 |
-| `http-serve.json` | HTTP / 推理服务管理脚本模板 |
-| `vllm-docker.json` | Docker + vLLM 示例 |
+| `shell-job.json` | 任意 start/stop/status 管理脚本（契约示例） |
 
-场景专用 Job（如 Decider）只放 `config/local/jobs/`，不要写进本目录。
+推理、微调、Docker 等一律从模板安装到 `config/local/jobs/`：
 
-- 覆盖：同名文件在 `config/local/jobs/` 优先于 `jobs/`
-- 更多模板：`config/examples/*.example.json`
-- 安装模板：`gpu-control jobs install <template>` 或 UI「从模板添加」
+```bash
+gpu-control jobs templates
+gpu-control jobs install http-serve --name my-api
+gpu-control jobs install train-job --name sft
+gpu-control jobs install vllm-docker --name vllm
+```
+
+- 同名时 `config/local/jobs/` 优先于 `jobs/`
+- 模板目录：`config/examples/*.example.json`

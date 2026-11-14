@@ -1,0 +1,23 @@
+{
+  "name": "torchrun-train",
+  "description": "torchrun 分布式训练入口（DDP / FSDP 脚本自备）",
+  "kind": "train",
+  "gpus_per_node": 8,
+  "distributed": true,
+  "master_port": 29500,
+  "runtime": "process",
+  "python": "${paths.python}",
+  "script": "${paths.repo}/examples/train_manager.py",
+  "extra_args": [
+    "--launcher",
+    "torchrun",
+    "--",
+    "${paths.model_root}/train/train.py",
+    "--output_dir",
+    "${paths.model_root}/saves/torchrun-run"
+  ],
+  "env": {
+    "GPU_CONTROL_JOB_NAME": "torchrun-train"
+  },
+  "actions": ["start", "stop", "restart", "status", "wait"]
+}

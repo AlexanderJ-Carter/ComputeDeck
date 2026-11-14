@@ -1,0 +1,25 @@
+{
+  "name": "deepspeed-train",
+  "description": "DeepSpeed 启动任意 train.py（ZeRO-2/3 配置见 examples/deepspeed/）",
+  "kind": "train",
+  "gpus_per_node": 8,
+  "distributed": true,
+  "master_port": 29500,
+  "runtime": "process",
+  "python": "${paths.python}",
+  "script": "${paths.repo}/examples/train_manager.py",
+  "extra_args": [
+    "--launcher",
+    "deepspeed",
+    "--deepspeed",
+    "${paths.repo}/examples/deepspeed/ds_z2_config.json",
+    "--",
+    "${paths.model_root}/train/train.py",
+    "--output_dir",
+    "${paths.model_root}/saves/ds-run"
+  ],
+  "env": {
+    "GPU_CONTROL_JOB_NAME": "deepspeed-train"
+  },
+  "actions": ["start", "stop", "restart", "status", "wait"]
+}

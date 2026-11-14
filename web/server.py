@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Lightweight cluster control-plane web UI (stdlib only)."""
+"""轻量控制面 Web UI（仅标准库）。
+
+提供静态页面、``/api/*`` JSON、OpenAPI / 文档页与终端 WebSocket。
+"""
 
 from __future__ import annotations
 
@@ -47,6 +50,8 @@ from jobs_util import (  # noqa: E402
     load_job_summaries,
 )
 from api_catalog import catalog_payload, openapi_payload  # noqa: E402
+from toolkits_util import catalog_payload as toolkits_catalog_payload  # noqa: E402
+from toolkits_util import load_toolkit_state  # noqa: E402
 from auth_util import (  # noqa: E402
     COOKIE_NAME,
     AuthPrincipal,
@@ -68,6 +73,7 @@ from render_gateway import (  # noqa: E402
     build_payload as build_gateway_payload,
     write_artifacts as write_gateway_artifacts,
 )
+from gateway_ops import status_payload as gateway_status_payload  # noqa: E402
 from model_ops import (  # noqa: E402
     cache_entries,
     load_models,
@@ -141,6 +147,26 @@ EXEC_PRESETS = {
         "label": "推理进程",
         "command": (
             "pgrep -af 'python|torch|sglang|vllm|uvicorn|gunicorn|decider' | head -50 || true"
+        ),
+    },
+    "train-procs": {
+        "label": "训练进程",
+        "command": (
+            "pgrep -af 'torchrun|deepspeed|llamafactory|accelerate|train_manager' | head -50 || true"
+        ),
+    },
+    "nccl-env": {
+        "label": "NCCL/分布式环境",
+        "command": (
+            "env | grep -E '^(NCCL_|MASTER_|NNODES|NODE_RANK|NPROC_|CUDA_VISIBLE)' | sort || "
+            "echo 'no dist env in this shell'"
+        ),
+    },
+    "train-log": {
+        "label": "最近训练日志尾",
+        "command": (
+            "ls -t /tmp/gpu-control-train/*/job.log 2>/dev/null | head -1 | "
+            "xargs -r tail -n 40 || echo 'no train log under /tmp/gpu-control-train'"
         ),
     },
     "ports": {
@@ -220,6 +246,46 @@ def node_registry() -> dict:
 
 def list_jobs() -> list[dict]:
     return load_job_summaries()
+
+
+def _toolkit_ready_count(state: dict) -> dict:
+    """汇总工具栈探测：{nodes, ok_items, total_items}。"""
+    nodes = state.get("nodes") or {}
+    ok_items = 0
+    total_items = 0
+    for entry in nodes.values():
+        for item in entry.get("toolkits") or []:
+            total_items += 1
+            if item.get("ok"):
+                ok_items += 1
+    return {
+        "nodes": len(nodes),
+        "ok": ok_items,
+        "total": total_items,
+        "generated_at": state.get("generated_at"),
+    }
+
+
+def _toolkit_overview(state: dict) -> dict:
+    ready = _toolkit_ready_count(state)
+    by_id: dict[str, dict] = {}
+    for entry in (state.get("nodes") or {}).values():
+        for item in entry.get("toolkits") or []:
+            tid = item.get("id") or "?"
+            slot = by_id.setdefault(tid, {"id": tid, "ok": 0, "fail": 0, "versions": []})
+            if item.get("ok"):
+                slot["ok"] += 1
+                ver = item.get("version")
+                if ver and ver not in slot["versions"]:
+                    slot["versions"].append(ver)
+            else:
+                slot["fail"] += 1
+    return {
+        "summary": ready,
+        "by_id": sorted(by_id.values(), key=lambda x: x["id"]),
+        "nodes": state.get("nodes") or {},
+        "generated_at": state.get("generated_at"),
+    }
 
 
 def build_models_payload(node: str | None = None) -> dict:
@@ -443,10 +509,15 @@ def build_overview(*, light: bool = False) -> dict:
             "api_total": endpoint_health.get("total"),
             "host_metrics_at": host_metrics.get("generated_at"),
             "control": control_name,
+            "toolkits_ready": _toolkit_ready_count(load_toolkit_state()),
+            "busy_nodes": sum(1 for n in nodes if n.get("used")),
+            "free_nodes": sum(1 for n in nodes if not n.get("used") and not n.get("cordoned")),
         },
         "nodes": nodes,
         "leases": leases,
         "jobs": jobs,
+        "toolkits": _toolkit_overview(load_toolkit_state()),
+        "ingress": gateway_status_payload(),
         "queue": queue,
         "cordoned": cordoned,
         "endpoint_health": endpoint_health,
@@ -492,7 +563,7 @@ def build_overview(*, light: bool = False) -> dict:
     return payload
 
 
-def run_cli(args: list[str], timeout: int = 900) -> dict:
+def run_cli(args: list[str], timeout: int = 900, *, log: bool = True) -> dict:
     cmd = [str(VENV_PYTHON), str(CLI), *args]
     completed = subprocess.run(
         cmd,
@@ -506,12 +577,17 @@ def run_cli(args: list[str], timeout: int = 900) -> dict:
             "PATH": f"{PROJECT_DIR / '.venv' / 'bin'}:{os.environ.get('PATH', '')}",
         },
     )
-    return {
+    result = {
         "cmd": cmd,
         "rc": completed.returncode,
         "stdout": completed.stdout,
         "stderr": completed.stderr,
     }
+    if log and args and args[0] not in {"logs"}:
+        from runlog_util import record_cli
+
+        record_cli(args, result, source="api")
+    return result
 
 
 SETUP_GUIDE = [
@@ -538,11 +614,11 @@ SETUP_GUIDE = [
     {
         "id": "job",
         "title": "注册 Job（可选）",
-        "body": "复制模板到 config/local/jobs/；路径用 ${paths.*}。",
+        "body": "框架仅内置 shell-job；推理/微调从模板安装到 config/local/jobs/。",
         "cli": [
-            "cp config/examples/shell-job.example.json config/local/jobs/myjob.json",
-            "# edit python/script/extra_args for your workload",
-            "gpu-control status myjob --nodes all",
+            "gpu-control jobs templates",
+            "gpu-control jobs install http-serve --name my-api",
+            "gpu-control jobs install train-job --name sft",
         ],
     },
     {
@@ -934,10 +1010,23 @@ def run_oneclick(action: str, body: dict | None = None) -> dict:
             }
 
         step("模型缓存检查", model_check)
+    elif action == "diagnose":
+        step("一键检测", lambda: run_cli(["diagnose", "check"], timeout=60))
+    elif action == "repair":
+        step("一键修复", lambda: run_cli(["diagnose", "repair"], timeout=120))
     else:
         return {"ok": False, "error": f"未知动作: {action}", "steps": []}
 
     ok = all(s.get("ok") for s in steps) if steps else False
+    from runlog_util import append_runlog
+
+    append_runlog(
+        "oneclick",
+        ok=ok,
+        summary=action,
+        detail={"steps": [{"name": s.get("name"), "ok": s.get("ok"), "ms": s.get("ms")} for s in steps]},
+        source="ui",
+    )
     return {
         "ok": ok,
         "action": action,
@@ -1231,12 +1320,40 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, openapi_payload())
             return
 
+        if path in {"/api/docs", "/docs"}:
+            docs = STATIC_DIR / "api-docs.html"
+            self._send(
+                200,
+                docs.read_bytes(),
+                "text/html; charset=utf-8",
+                cache_control="public, max-age=30",
+            )
+            return
+
         if path == "/api/doctor":
             result = run_cli(["doctor", "--json"], timeout=30)
             try:
                 payload = json.loads(result["stdout"] or "{}")
             except json.JSONDecodeError:
                 payload = {"ok": False, "error": "doctor parse failed", "result": result}
+            self._json(200, payload)
+            return
+
+        if path == "/api/runlog":
+            from runlog_util import list_runlog
+
+            qs = parse_qs(parsed.query)
+            limit = int((qs.get("limit") or ["50"])[0])
+            kind = (qs.get("kind") or [None])[0]
+            self._json(200, list_runlog(limit=limit, kind=kind))
+            return
+
+        if path == "/api/diagnose":
+            result = run_cli(["diagnose", "check"], timeout=60)
+            try:
+                payload = json.loads(result["stdout"] or "{}")
+            except json.JSONDecodeError:
+                payload = {"ok": False, "error": "diagnose parse failed", "result": result}
             self._json(200, payload)
             return
 
@@ -1287,6 +1404,10 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, build_models_payload(node))
             return
 
+        if path == "/api/toolkits":
+            self._json(200, toolkits_catalog_payload())
+            return
+
         if path == "/api/leases":
             self._json(200, _read_json(LEASES_FILE, {"leases": []}))
             return
@@ -1322,12 +1443,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/gateway/status":
-            result = run_cli(["gateway", "status"], timeout=30)
-            try:
-                status = json.loads(result["stdout"] or "{}")
-            except json.JSONDecodeError:
-                status = {"ok": False, "error": "status parse failed", "result": result}
-            self._json(200 if result["rc"] == 0 else 500, status)
+            self._json(200, gateway_status_payload())
             return
 
         if path == "/api/setup/guide":
@@ -1489,6 +1605,41 @@ class Handler(BaseHTTPRequestHandler):
                     "models": build_models_payload(body.get("node")),
                 },
             )
+            return
+
+        if path in {"/api/toolkits/probe", "/api/toolkits/install"}:
+            action = "probe" if path.endswith("/probe") else "install"
+            args = ["toolkits", action]
+            ids_raw = body.get("ids")
+            if ids_raw is None:
+                ids_raw = body.get("id")
+            id_list: list[str] = []
+            if isinstance(ids_raw, list):
+                id_list = [str(x) for x in ids_raw if x]
+            elif isinstance(ids_raw, str) and ids_raw.strip():
+                id_list = [ids_raw.strip()]
+            for tid in id_list:
+                args.extend(["--id", tid])
+            if body.get("bundle"):
+                args.extend(["--bundle", str(body["bundle"])])
+            if body.get("node"):
+                args.extend(["--node", body["node"]])
+            elif body.get("nodes"):
+                args.extend(["--nodes", body["nodes"]])
+            if action == "install" and body.get("dry_run"):
+                args.append("--dry-run")
+            if action == "install" and not body.get("bundle") and not id_list:
+                self._json(400, {"error": "install 需要 bundle 或 ids"})
+                return
+            timeout = int(body.get("timeout") or (1800 if action == "install" else 300))
+            with _action_lock:
+                result = run_cli(args, timeout=timeout)
+            payload = {
+                "result": result,
+                "toolkits": toolkits_catalog_payload(),
+                "overview": build_overview(light=True),
+            }
+            self._json(200 if result["rc"] == 0 else 500, payload)
             return
 
         if path == "/api/models/secrets":
@@ -1938,6 +2089,28 @@ class Handler(BaseHTTPRequestHandler):
             with _action_lock:
                 payload = run_oneclick(action, body)
             self._json(200, payload)
+            return
+
+        if path == "/api/diagnose/repair":
+            args = ["diagnose", "repair"]
+            for fid in body.get("ids") or []:
+                if isinstance(fid, str) and fid:
+                    args.extend(["--id", fid])
+            with _action_lock:
+                result = run_cli(args, timeout=120)
+            try:
+                payload = json.loads(result["stdout"] or "{}")
+            except json.JSONDecodeError:
+                payload = {"ok": False, "error": "repair parse failed", "result": result}
+            payload["result"] = result
+            payload["overview"] = build_overview(light=True)
+            self._json(200 if result["rc"] == 0 else 500, payload)
+            return
+
+        if path == "/api/runlog/clear":
+            from runlog_util import clear_runlog
+
+            self._json(200, clear_runlog())
             return
 
         if path == "/api/metrics/refresh":

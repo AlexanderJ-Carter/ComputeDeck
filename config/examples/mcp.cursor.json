@@ -7,5 +7,11 @@
         "GPU_CONTROL_API_TOKEN": ""
       }
     }
-  }
+  },
+  "_gpu_control_notes": [
+    "把 command 换成主控上的绝对路径",
+    "鉴权启用后：GPU_CONTROL_API_TOKEN = `gpu-control auth issue-token` 产物",
+    "不设 GPU_CONTROL_API_BASE 时走本机 CLI，不依赖 UI",
+    "文档：GET /api · /api/openapi.json · /api/docs · docs/ai-接入.md"
+  ]
 }

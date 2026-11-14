@@ -1,1 +1,1 @@
-"""MCP server package for gpu-control."""
+"""gpu-control MCP 服务包（stdio）。"""

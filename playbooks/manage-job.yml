@@ -10,6 +10,10 @@
     job_script: ""
     job_extra_args: []
     job_env: {}
+    job_kind: service
+    distributed: false
+    nproc_per_node: 1
+    master_port: 29500
     docker_image: ""
     docker_name: ""
     docker_gpus: all
@@ -25,6 +29,44 @@
           - job_action in ['start', 'stop', 'restart', 'status', 'wait']
           - runtime in ['process', 'docker']
 
+    - name: Resolve distributed topology
+      when: distributed | bool
+      ansible.builtin.set_fact:
+        dist_nnodes: "{{ ansible_play_hosts_all | length }}"
+        dist_node_rank: "{{ ansible_play_hosts_all.index(inventory_hostname) }}"
+        dist_master_addr: "{{ hostvars[ansible_play_hosts_all[0]].ansible_host | default(ansible_play_hosts_all[0]) }}"
+        dist_master_port: "{{ master_port | default(29500) }}"
+        dist_nproc: "{{ nproc_per_node | default(1) }}"
+
+    - name: Build distributed env export
+      when: distributed | bool
+      ansible.builtin.set_fact:
+        dist_export: >-
+          export NNODES={{ dist_nnodes }};
+          export NODE_RANK={{ dist_node_rank }};
+          export MASTER_ADDR={{ dist_master_addr }};
+          export MASTER_PORT={{ dist_master_port }};
+          export NPROC_PER_NODE={{ dist_nproc }};
+          export GPU_CONTROL_NNODES={{ dist_nnodes }};
+          export GPU_CONTROL_NODE_RANK={{ dist_node_rank }};
+          export GPU_CONTROL_MASTER_ADDR={{ dist_master_addr }};
+          export GPU_CONTROL_MASTER_PORT={{ dist_master_port }};
+          export GPU_CONTROL_NPROC_PER_NODE={{ dist_nproc }};
+          export FORCE_TORCHRUN=${FORCE_TORCHRUN:-1};
+        dist_docker_env_flags: >-
+          -e NNODES={{ dist_nnodes }}
+          -e NODE_RANK={{ dist_node_rank }}
+          -e MASTER_ADDR={{ dist_master_addr }}
+          -e MASTER_PORT={{ dist_master_port }}
+          -e NPROC_PER_NODE={{ dist_nproc }}
+          -e FORCE_TORCHRUN=1
+
+    - name: Clear distributed env when disabled
+      when: not (distributed | bool)
+      ansible.builtin.set_fact:
+        dist_export: ""
+        dist_docker_env_flags: ""
+
     - name: Build env prefix
       ansible.builtin.set_fact:
         env_prefix: >-
@@ -34,7 +76,7 @@
       when: runtime == 'process'
       ansible.builtin.set_fact:
         remote_cmd: >-
-          {{ env_prefix }}{{ job_python }} {{ job_script }} {{ job_action }}
+          {{ dist_export }}{{ env_prefix }}{{ job_python }} {{ job_script }} {{ job_action }}
           {{ job_extra_args | join(' ') }}
 
     - name: Docker availability
@@ -68,6 +110,7 @@
           {{ docker_port_flags }}
           {{ docker_vol_flags }}
           {{ docker_env_flags }}
+          {{ dist_docker_env_flags }}
           {{ docker_image }}
           {{ docker_cmd_flags }}
 

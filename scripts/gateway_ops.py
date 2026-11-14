@@ -95,7 +95,8 @@ def cmd_render(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_status(_: argparse.Namespace) -> int:
+def status_payload() -> dict:
+    """统一入口状态快照（供 CLI / overview / 看板，不启子进程）。"""
     cluster = _load_cluster()
     gateway = _gateway_cfg(cluster)
     ingress = _ingress_cfg(gateway)
@@ -105,10 +106,14 @@ def cmd_status(_: argparse.Namespace) -> int:
     if EDGE_STATUS.is_file():
         edge_status = json.loads(EDGE_STATUS.read_text(encoding="utf-8"))
     public = ingress.get("public_base_url") or f"http://<control>:{ingress['port']}"
-    control = (cluster.get("control") or {})
+    control = cluster.get("control") or {}
     if not ingress.get("public_base_url") and control.get("host"):
         public = f"http://{control['host']}:{ingress['port']}"
-    payload = {
+    litellm_port = int(gateway.get("openai_proxy_port") or gateway.get("litellm_port") or 4000)
+    litellm_public = ""
+    if control.get("host"):
+        litellm_public = f"http://{control['host']}:{litellm_port}"
+    return {
         "ok": True,
         "ingress": ingress,
         "public_base_url": public,
@@ -119,11 +124,13 @@ def cmd_status(_: argparse.Namespace) -> int:
             "status": edge_status,
             "log": str(EDGE_LOG),
             "healthz": f"{public}/_gpu_control/health",
+            "url": public,
         },
         "litellm": {
             "running": bool(litellm_pid),
             "pid": litellm_pid,
-            "port": int(gateway.get("openai_proxy_port") or gateway.get("litellm_port") or 4000),
+            "port": litellm_port,
+            "url": litellm_public or f"http://127.0.0.1:{litellm_port}",
             "dir": gateway.get("openai_proxy_dir") or gateway.get("litellm_dir"),
             "runtime_config": str(LITELLM_RUNTIME),
             "log": str(LITELLM_LOG),
@@ -132,10 +139,14 @@ def cmd_status(_: argparse.Namespace) -> int:
             "binary": bool(shutil.which("nginx")),
             "artifact": str(OUT_DIR / "nginx-inference-pool.conf"),
             "listen": int(gateway.get("nginx_listen") or ingress["port"]),
+            "hint": "include state/gateway/nginx-inference-pool.conf 后 reload",
         },
         "artifacts": sorted(p.name for p in OUT_DIR.glob("*")) if OUT_DIR.is_dir() else [],
     }
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+def cmd_status(_: argparse.Namespace) -> int:
+    print(json.dumps(status_payload(), ensure_ascii=False, indent=2))
     return 0
 
 
