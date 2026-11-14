@@ -1,0 +1,19 @@
+{
+  "description": "Optional model cache roots on shared storage. Copy to ../local/models.json",
+  "caches": [
+    {
+      "id": "hf-hub",
+      "path": "${HOME}/.cache/huggingface/hub",
+      "note": "Hugging Face hub cache"
+    },
+    {
+      "id": "shared-weights",
+      "path": "/path/to/shared/models",
+      "note": "Team shared weights directory"
+    }
+  ],
+  "pull": {
+    "tool": "huggingface-cli",
+    "default_cache": "shared-weights"
+  }
+}

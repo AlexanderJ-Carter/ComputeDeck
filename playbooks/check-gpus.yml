@@ -1,0 +1,17 @@
+---
+- name: Check GPU status
+  hosts: gpu_workers
+  gather_facts: false
+
+  tasks:
+    - name: Query GPU information
+      ansible.builtin.raw: >-
+        nvidia-smi
+        --query-gpu=index,name,memory.total,memory.used,utilization.gpu
+        --format=csv
+      register: gpu_info
+      changed_when: false
+
+    - name: Display GPU information
+      ansible.builtin.debug:
+        var: gpu_info.stdout_lines

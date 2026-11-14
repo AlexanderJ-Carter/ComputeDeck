@@ -1,0 +1,39 @@
+---
+- name: Run the same command on selected GPU nodes
+  hosts: gpu_workers
+  gather_facts: false
+
+  vars:
+    remote_command: hostname
+    exec_result_dir: "{{ playbook_dir }}/../state/exec"
+
+  tasks:
+    - name: Ensure structured result directory on control plane
+      ansible.builtin.file:
+        path: "{{ exec_result_dir }}"
+        state: directory
+      run_once: true
+      delegate_to: localhost
+
+    - name: Clear previous result for this host
+      ansible.builtin.file:
+        path: "{{ exec_result_dir }}/{{ inventory_hostname }}.json"
+        state: absent
+      delegate_to: localhost
+
+    - name: Execute command
+      ansible.builtin.raw: "{{ remote_command }}"
+      register: exec_result
+      changed_when: false
+      failed_when: false
+
+    - name: Persist structured result
+      ansible.builtin.copy:
+        dest: "{{ exec_result_dir }}/{{ inventory_hostname }}.json"
+        content: "{{ {'node': inventory_hostname, 'rc': exec_result.rc | default(-1), 'stdout': exec_result.stdout | default(''), 'stderr': exec_result.stderr | default(''), 'command': remote_command} | to_nice_json }}"
+      delegate_to: localhost
+
+    - name: Fail play when remote command failed
+      ansible.builtin.fail:
+        msg: "{{ inventory_hostname }} command failed rc={{ exec_result.rc }}"
+      when: (exec_result.rc | default(1)) != 0

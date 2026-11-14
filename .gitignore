@@ -1,0 +1,36 @@
+# Python / venv
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+uv.lock
+
+# Local machine configs & secrets (do not publish)
+config/local/**
+!config/local/.gitkeep
+
+# Root compat symlinks → config/local (machine-specific)
+/cluster.json
+/nodes.json
+
+# Generated / runtime state
+state/**
+!state/.gitkeep
+snapshots/**
+!snapshots/.gitkeep
+inventory.ini
+resources.json
+*.pid
+*.log
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Temporary
+*.tmp

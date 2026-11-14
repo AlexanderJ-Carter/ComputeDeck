@@ -1,0 +1,69 @@
+---
+- name: Probe local inference API health on each GPU node
+  hosts: gpu_workers
+  gather_facts: false
+
+  vars:
+    base_port: 30000
+    ports_per_node: 4
+    api_key_file: ""
+    health_path: /health
+    result_dir: "{{ playbook_dir }}/../state/endpoint_probe"
+
+  tasks:
+    - name: Ensure result dir on control plane
+      ansible.builtin.file:
+        path: "{{ result_dir }}"
+        state: directory
+      run_once: true
+      delegate_to: localhost
+
+    - name: Probe local ports with python
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import json, os, time, urllib.request
+            base={{ base_port }}
+            n={{ ports_per_node }}
+            path="{{ health_path }}"
+            key_file="{{ api_key_file }}"
+            token=open(key_file).read().strip() if key_file and os.path.isfile(key_file) else ""
+            out=[]
+            for i in range(n):
+              port=base+i
+              url=f"http://127.0.0.1:{port}{path}"
+              t0=time.time()
+              headers={"Authorization": f"Bearer {token}"} if token else {}
+              try:
+                req=urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=2) as resp:
+                  body=resp.read(512)
+                  ok=200<=resp.status<300
+                  detail=f"http_{resp.status}"
+                  try:
+                    payload=json.loads(body.decode("utf-8","replace"))
+                    if isinstance(payload, dict) and "ok" in payload:
+                      ok=bool(payload.get("ok")) and ok
+                      detail="ok" if payload.get("ok") else "health.ok=false"
+                  except Exception:
+                    pass
+                  out.append({"gpu":i,"port":port,"ok":ok,"latency_ms":int((time.time()-t0)*1000),"detail":detail})
+              except Exception as exc:
+                out.append({"gpu":i,"port":port,"ok":False,"latency_ms":int((time.time()-t0)*1000),"detail":type(exc).__name__})
+            print(json.dumps(out, ensure_ascii=False))
+      register: probe_raw
+      changed_when: false
+      failed_when: false
+
+    - name: Persist node probe
+      ansible.builtin.copy:
+        dest: "{{ result_dir }}/{{ inventory_hostname }}.json"
+        content: >-
+          {{ {
+            'node': inventory_hostname,
+            'host': hostvars[inventory_hostname].ansible_host | default(''),
+            'results': (probe_raw.stdout | default('[]') | from_json)
+          } | to_nice_json }}
+      delegate_to: localhost

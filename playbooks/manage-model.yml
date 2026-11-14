@@ -1,0 +1,30 @@
+---
+- name: Manage GPU model services
+  hosts: gpu_workers
+  gather_facts: false
+
+  vars:
+    model_action: status
+    base_port: 30000
+    python_bin: /tmp/sgl-workspace/dsv4-sglang/bin/python
+    manager_script: /opt/meituan/dolphinfs_huanghaoyu05/huggingface.co/Mapika/start_model.py
+
+  tasks:
+    - name: Validate action
+      ansible.builtin.assert:
+        that:
+          - model_action in ['start', 'stop', 'restart', 'status', 'wait']
+
+    - name: Manage model
+      ansible.builtin.raw: >-
+        {{ python_bin }} {{ manager_script }}
+        {{ model_action }} --base-port {{ base_port }}
+      register: model_result
+      changed_when: model_action in ['start', 'stop', 'restart'] and model_result.rc == 0
+      failed_when: >-
+        model_result.rc != 0
+        and not (model_action == 'status' and model_result.rc == 1)
+
+    - name: Display result
+      ansible.builtin.debug:
+        var: model_result.stdout_lines

@@ -1,0 +1,1322 @@
+#!/usr/bin/env python3
+"""Unified CLI for multi-node GPU cluster control via Ansible."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+from paths import (  # noqa: E402
+    ANSIBLE,
+    INVENTORY_FILE,
+    PROJECT_DIR,
+    RESOURCES_FILE,
+    STATE_DIR,
+    VENV_PYTHON,
+    ansible_cmd,
+    cluster_file,
+    ensure_runtime_dirs,
+    expand_path,
+    job_file,
+    list_job_files,
+    nodes_file,
+)
+
+LEASES_FILE = STATE_DIR / "leases.json"
+QUEUE_FILE = STATE_DIR / "queue.json"
+PROBE_FILE = STATE_DIR / "probe.json"
+NODE_STATE_FILE = STATE_DIR / "node_state.json"
+ENDPOINTS_FILE = STATE_DIR / "endpoints.json"
+INVENTORY = INVENTORY_FILE
+
+
+def die(message: str, code: int = 1) -> None:
+    print(message, file=sys.stderr)
+    raise SystemExit(code)
+
+
+def ensure_runtime() -> None:
+    if not ANSIBLE.is_file():
+        die(
+            f"Ansible not found: {ANSIBLE}\n"
+            "On the Control node, create .venv with ansible installed."
+        )
+    ensure_runtime_dirs()
+
+
+def load_job(name: str) -> dict:
+    path = job_file(name)
+    if path is None:
+        available = ", ".join(p.stem for p in list_job_files()) or "(none)"
+        die(f"Unknown job '{name}'. Available: {available}")
+    job = json.loads(path.read_text(encoding="utf-8"))
+    for key in ("python", "script"):
+        if key in job and isinstance(job[key], str):
+            job[key] = expand_path(job[key])
+    return job
+
+
+def load_cluster() -> dict:
+    path = cluster_file()
+    if not path.is_file():
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    api = data.get("api") or {}
+    if api.get("api_key_file"):
+        api["api_key_file"] = expand_path(api["api_key_file"])
+        data["api"] = api
+    return data
+
+
+def select_nodes_cli_args(gpus: int) -> list[str]:
+    """Build select_nodes.py args using cluster scheduling preferences."""
+    args = ["--gpus", str(gpus), "--json"]
+    scheduling = (load_cluster().get("scheduling") or {})
+    prefer = scheduling.get("prefer_labels") or []
+    avoid = scheduling.get("avoid_labels") or []
+    if prefer:
+        args.extend(["--prefer-labels", ",".join(prefer)])
+    if avoid:
+        args.extend(["--avoid-labels", ",".join(avoid)])
+    return args
+
+
+def list_jobs() -> list[dict]:
+    jobs = []
+    for path in list_job_files():
+        job = json.loads(path.read_text(encoding="utf-8"))
+        for key in ("python", "script"):
+            if key in job and isinstance(job[key], str):
+                job[key] = expand_path(job[key])
+        jobs.append(job)
+    return jobs
+
+
+def load_leases() -> dict:
+    if not LEASES_FILE.is_file():
+        return {"leases": []}
+    return json.loads(LEASES_FILE.read_text(encoding="utf-8"))
+
+
+def save_leases(data: dict) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    LEASES_FILE.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
+def load_resources() -> dict:
+    if not RESOURCES_FILE.is_file():
+        return {}
+    return json.loads(RESOURCES_FILE.read_text(encoding="utf-8"))
+
+
+def load_queue() -> dict:
+    if not QUEUE_FILE.is_file():
+        return {"workloads": []}
+    return json.loads(QUEUE_FILE.read_text(encoding="utf-8"))
+
+
+def save_queue(data: dict) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    QUEUE_FILE.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
+def now_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def inventory_hosts() -> dict[str, str]:
+    hosts: dict[str, str] = {}
+    in_workers = False
+    for line in INVENTORY.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("["):
+            in_workers = line == "[gpu_workers]"
+            continue
+        if not in_workers:
+            continue
+        parts = line.split()
+        name = parts[0]
+        host = name
+        for part in parts[1:]:
+            if part.startswith("ansible_host="):
+                host = part.split("=", 1)[1]
+        hosts[name] = host
+    return hosts
+
+
+def ansible_env(*, quiet: bool = False) -> dict[str, str]:
+    env = os.environ.copy()
+    if quiet:
+        env["ANSIBLE_STDOUT_CALLBACK"] = "minimal"
+        env["ANSIBLE_DISPLAY_SKIPPED_HOSTS"] = "false"
+        env["ANSIBLE_DISPLAY_OK_HOSTS"] = "true"
+    return env
+
+
+def ansible_playbook(
+    playbook: str,
+    *,
+    extra: dict | None = None,
+    limit: str | None = None,
+    quiet: bool = False,
+) -> int:
+    ensure_runtime()
+    cmd = ansible_cmd("-i", str(INVENTORY), str(PROJECT_DIR / "playbooks" / playbook))
+    if limit:
+        cmd.extend(["--limit", limit])
+    if extra:
+        cmd.extend(["-e", json.dumps(extra, ensure_ascii=False)])
+    if not quiet:
+        print("+", " ".join(cmd))
+    return subprocess.call(cmd, cwd=PROJECT_DIR, env=ansible_env(quiet=quiet))
+
+
+def run_python(script: str, *args: str) -> subprocess.CompletedProcess[str]:
+    ensure_runtime()
+    return subprocess.run(
+        [str(VENV_PYTHON), str(PROJECT_DIR / "scripts" / script), *args],
+        cwd=PROJECT_DIR,
+        check=False,
+        text=True,
+        capture_output=False,
+    )
+
+
+def run_python_capture(script: str, *args: str) -> subprocess.CompletedProcess[str]:
+    ensure_runtime()
+    return subprocess.run(
+        [str(VENV_PYTHON), str(PROJECT_DIR / "scripts" / script), *args],
+        cwd=PROJECT_DIR,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+
+def resolve_limit(node: str | None, nodes: str | None) -> str | None:
+    # --node wins when both appear (exec defaults --nodes=all).
+    if node:
+        return node
+    if nodes and nodes != "all":
+        return nodes
+    return None
+
+
+def load_nodes_registry() -> dict:
+    path = nodes_file()
+    if path.is_file():
+        data = json.loads(path.read_text(encoding="utf-8"))
+        defaults = data.setdefault("defaults", {})
+        if defaults.get("ansible_ssh_private_key_file"):
+            defaults["ansible_ssh_private_key_file"] = expand_path(
+                defaults["ansible_ssh_private_key_file"]
+            )
+        return data
+    # Fallback: synthesize from inventory.ini
+    return {
+        "defaults": {},
+        "nodes": {
+            name: {"ansible_host": host}
+            for name, host in inventory_hosts().items()
+        },
+    }
+
+
+def save_nodes_registry(data: dict) -> None:
+    path = nodes_file(write=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    # keep root symlink/file in sync for older tools
+    root = PROJECT_DIR / "nodes.json"
+    if root.is_symlink() or not root.exists():
+        if root.exists() or root.is_symlink():
+            root.unlink()
+        root.symlink_to(path.relative_to(PROJECT_DIR))
+    run_python("render_inventory.py")
+
+
+def load_node_state() -> dict:
+    if not NODE_STATE_FILE.is_file():
+        return {"cordoned": {}}
+    return json.loads(NODE_STATE_FILE.read_text(encoding="utf-8"))
+
+
+def save_node_state(data: dict) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    NODE_STATE_FILE.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
+def inventory_nodes() -> list[str]:
+    registry = load_nodes_registry()
+    names = sorted(registry.get("nodes", {}).keys())
+    if names:
+        return names
+    nodes: list[str] = []
+    in_workers = False
+    for line in INVENTORY.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("["):
+            in_workers = line == "[gpu_workers]"
+            continue
+        if not in_workers:
+            continue
+        name = line.split()[0]
+        if name.startswith("ansible_"):
+            continue
+        nodes.append(name)
+    return nodes
+
+
+def refresh_resources(*, quiet: bool = False) -> int:
+    code = ansible_playbook("collect-resources.yml", quiet=quiet)
+    if code != 0:
+        return code
+    return run_python("parse_resources.py").returncode
+
+
+def acquire_lease(
+    job: str,
+    nodes: list[str],
+    gpus: int,
+    note: str = "",
+    owner: str | None = None,
+) -> dict:
+    data = load_leases()
+    leases: list[dict] = data.setdefault("leases", [])
+    occupied = {n for lease in leases for n in lease["nodes"]}
+    conflict = sorted(set(nodes) & occupied)
+    if conflict:
+        die(f"Nodes already leased: {', '.join(conflict)}")
+    lease = {
+        "id": f"lease-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
+        "job": job,
+        "nodes": nodes,
+        "gpus": gpus,
+        "owner": owner or os.environ.get("USER", "unknown"),
+        "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "note": note,
+    }
+    leases.append(lease)
+    save_leases(data)
+    return lease
+
+
+def release_lease_nodes(nodes: list[str]) -> int:
+    data = load_leases()
+    leases: list[dict] = data.setdefault("leases", [])
+    drop = set(nodes)
+    before = len(leases)
+    leases[:] = [lease for lease in leases if not drop.intersection(lease["nodes"])]
+    save_leases(data)
+    return before - len(leases)
+
+
+def job_manager_extra(job: dict, action: str) -> dict:
+    return {
+        "job_action": action,
+        "job_python": job["python"],
+        "job_script": job["script"],
+        "job_extra_args": job.get("extra_args", []),
+    }
+
+
+def cmd_jobs(_: argparse.Namespace) -> int:
+    jobs = list_jobs()
+    if not jobs:
+        print("No jobs registered under jobs/")
+        return 0
+    for job in jobs:
+        print(
+            f"{job['name']}: {job.get('description', '')} "
+            f"(gpus_per_node={job.get('gpus_per_node', '?')})"
+        )
+    return 0
+
+
+def cmd_job_action(args: argparse.Namespace) -> int:
+    job = load_job(args.job)
+    action = args.action
+    allowed = job.get("actions", ["start", "stop", "restart", "status", "wait"])
+    if action not in allowed:
+        die(f"Job '{job['name']}' does not support action '{action}'")
+
+    limit = resolve_limit(getattr(args, "node", None), getattr(args, "nodes", None))
+    quiet = bool(getattr(args, "quiet", False))
+    code = ansible_playbook(
+        "manage-job.yml",
+        limit=limit,
+        extra=job_manager_extra(job, action),
+        quiet=quiet,
+    )
+    if action in {"stop", "restart"} and code == 0 and limit:
+        nodes = [n.strip() for n in limit.split(",") if n.strip()]
+        released = release_lease_nodes(nodes)
+        if released:
+            print(f"Released {released} lease(s) covering: {', '.join(nodes)}")
+    return code
+
+
+def cmd_gpu(args: argparse.Namespace) -> int:
+    quiet = bool(getattr(args, "quiet", False))
+    if args.refresh or args.action == "refresh":
+        return refresh_resources(quiet=quiet)
+
+    if args.action in {None, "list"}:
+        return ansible_playbook(
+            "check-gpus.yml",
+            limit=resolve_limit(args.node, args.nodes),
+            quiet=quiet,
+        )
+
+    die(f"Unknown gpu action: {args.action}")
+    return 1
+
+
+def cmd_plan(args: argparse.Namespace) -> int:
+    quiet = bool(getattr(args, "quiet", False))
+    code = refresh_resources(quiet=quiet)
+    if code != 0:
+        return code
+    select_args = select_nodes_cli_args(args.gpus)
+    # human-readable: drop --json
+    human = [a for a in select_args if a != "--json"]
+    return run_python("select_nodes.py", *human).returncode
+
+
+def cmd_status_default(args: argparse.Namespace) -> int:
+    args.action = "status"
+    if not args.job:
+        args.job = "decider"
+    return cmd_job_action(args)
+
+
+def cmd_overview(args: argparse.Namespace) -> int:
+    """One-screen cluster view: GPUs + leases + optional job readiness."""
+    quiet = True
+    if not args.cached:
+        code = refresh_resources(quiet=quiet)
+        if code != 0:
+            return code
+
+    resources = load_resources()
+    leases = load_leases().get("leases", [])
+    lease_by_node = {
+        node: lease
+        for lease in leases
+        for node in lease.get("nodes", [])
+    }
+
+    cordoned = load_node_state().get("cordoned", {})
+    print("=== Cluster Overview ===")
+    print(
+        f"{'NODE':<12} {'FREE':>4} {'USED':>4} {'TOTAL':>5}  "
+        f"{'STATE':<10} {'LEASE':<24} GPU MEM/UTIL"
+    )
+    for name in inventory_nodes():
+        node = resources.get(name, {})
+        gpus = node.get("gpus", [])
+        free = node.get("free_count", sum(1 for g in gpus if g.get("status") == "free"))
+        used = node.get("occupied_count", sum(1 for g in gpus if g.get("status") == "occupied"))
+        total = node.get("gpu_count", len(gpus))
+        lease = lease_by_node.get(name)
+        lease_text = f"{lease['job']}({lease['id']})" if lease else "-"
+        state = "cordoned" if name in cordoned else "ready"
+        mem = ",".join(str(g.get("memory_used_mib", "?")) for g in gpus) or "-"
+        util = ",".join(str(g.get("utilization_percent", "?")) for g in gpus) or "-"
+        print(
+            f"{name:<12} {free:>4} {used:>4} {total:>5}  "
+            f"{state:<10} {lease_text:<24} mem={mem} util={util}"
+        )
+
+    if leases:
+        print("\n=== Active Leases ===")
+        for lease in leases:
+            print(
+                f"- {lease['id']}: job={lease['job']} nodes={','.join(lease['nodes'])} "
+                f"gpus={lease['gpus']} owner={lease.get('owner', '-')} note={lease.get('note') or '-'}"
+            )
+    else:
+        print("\nActive leases: (none)")
+
+    if args.job:
+        print(f"\n=== Job status: {args.job} ===")
+        job = load_job(args.job)
+        return ansible_playbook(
+            "manage-job.yml",
+            extra=job_manager_extra(job, "status"),
+            quiet=False,
+        )
+    return 0
+
+
+def deploy_job(
+    job_name: str,
+    *,
+    gpus: int = 4,
+    nodes: str | None = None,
+    restart: bool = False,
+    no_wait: bool = False,
+    note: str = "",
+    quiet: bool = False,
+    selected: list[str] | None = None,
+) -> tuple[int, list[str]]:
+    """Deploy a job and return (exit_code, selected_nodes)."""
+    job = load_job(job_name)
+
+    if selected is None:
+        if nodes:
+            if nodes == "all":
+                selected = inventory_nodes()
+            else:
+                selected = [n.strip() for n in nodes.split(",") if n.strip()]
+        else:
+            code = refresh_resources(quiet=quiet)
+            if code != 0:
+                return code, []
+            result = run_python_capture(
+                "select_nodes.py", *select_nodes_cli_args(gpus)
+            )
+            print(result.stdout, end="")
+            if result.stderr:
+                print(result.stderr, end="", file=sys.stderr)
+            if result.returncode != 0:
+                return result.returncode, []
+            payload = json.loads(result.stdout.strip().splitlines()[-1])
+            selected = payload["selected"]
+
+    if not selected:
+        return 1, []
+
+    limit = ",".join(selected)
+    print(f"Deploying job={job['name']} nodes={limit}")
+
+    if restart:
+        code = ansible_playbook(
+            "manage-job.yml",
+            limit=limit,
+            extra=job_manager_extra(job, "stop"),
+            quiet=quiet,
+        )
+        if code != 0:
+            return code, selected
+
+    code = ansible_playbook(
+        "manage-job.yml",
+        limit=limit,
+        extra=job_manager_extra(job, "start"),
+        quiet=quiet,
+    )
+    if code != 0:
+        return code, selected
+
+    if not no_wait:
+        code = ansible_playbook(
+            "manage-job.yml",
+            limit=limit,
+            extra=job_manager_extra(job, "wait"),
+            quiet=quiet,
+        )
+        if code != 0:
+            return code, selected
+
+    lease_gpus = gpus if not nodes else len(selected) * int(job.get("gpus_per_node", 4))
+    existing = {
+        node
+        for lease in load_leases().get("leases", [])
+        for node in lease["nodes"]
+    }
+    to_lease = [n for n in selected if n not in existing]
+    if to_lease:
+        lease = acquire_lease(job["name"], to_lease, gpus=lease_gpus, note=note or "deploy")
+        print("Lease acquired:")
+        print(json.dumps(lease, ensure_ascii=False, indent=2))
+    else:
+        print("Nodes already leased; skipped acquire")
+    print(f"Deploy done: {job['name']} on {limit}")
+    return 0, selected
+
+
+def cmd_deploy(args: argparse.Namespace) -> int:
+    code, _selected = deploy_job(
+        args.job,
+        gpus=args.gpus,
+        nodes=args.nodes,
+        restart=args.restart,
+        no_wait=args.no_wait,
+        note=args.note,
+        quiet=bool(args.quiet),
+    )
+    if code != 0 and not _selected:
+        die("No nodes selected for deployment")
+    return code
+
+def cmd_exec(args: argparse.Namespace) -> int:
+    parts = list(args.command or [])
+    if parts and parts[0] == "--":
+        parts = parts[1:]
+    command = " ".join(parts) if isinstance(parts, list) else str(parts)
+    if not command.strip():
+        die("exec requires a remote command")
+    exec_dir = STATE_DIR / "exec"
+    if exec_dir.is_dir():
+        for stale in exec_dir.glob("*.json"):
+            stale.unlink()
+    code = ansible_playbook(
+        "exec.yml",
+        limit=resolve_limit(args.node, args.nodes),
+        extra={"remote_command": command},
+        quiet=bool(args.quiet),
+    )
+    collect = run_python("collect_exec.py")
+    if collect.returncode != 0 and code == 0:
+        return collect.returncode
+    return code
+
+
+def cmd_ui(args: argparse.Namespace) -> int:
+    """Start the local cluster web console on the Control node."""
+    ensure_runtime()
+    server = PROJECT_DIR / "web" / "server.py"
+    if not server.is_file():
+        die(f"UI server missing: {server}")
+    env = os.environ.copy()
+    env["GPU_CONTROL_UI_HOST"] = args.host
+    env["GPU_CONTROL_UI_PORT"] = str(args.port)
+    url = f"http://{args.host}:{args.port}"
+    cmd = [str(VENV_PYTHON), str(server)]
+
+    if args.background:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        pid_file = STATE_DIR / "ui.pid"
+        log_file = STATE_DIR / "ui.log"
+        if pid_file.is_file():
+            old = pid_file.read_text().strip()
+            if old.isdigit() and (Path("/proc") / old).exists():
+                print(f"UI already running pid={old} log={log_file}")
+                print(f"Open {url} (or SSH tunnel to localhost:{args.port})")
+                return 0
+        with log_file.open("a", encoding="utf-8") as log:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=PROJECT_DIR,
+                env=env,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        pid_file.write_text(f"{proc.pid}\n", encoding="utf-8")
+        print(f"UI started pid={proc.pid} log={log_file}")
+        print(f"Open {url} (or: ssh -L {args.port}:127.0.0.1:{args.port} <control>)")
+        return 0
+
+    print(f"Starting UI at {url}")
+    print("Open via Codelab port forward / SSH tunnel if needed.")
+    return subprocess.call(cmd, cwd=PROJECT_DIR, env=env)
+
+
+def cmd_probe(args: argparse.Namespace) -> int:
+    """Probe TCP connectivity among GPU nodes (distributed readiness check)."""
+    ensure_runtime()
+    peers = inventory_hosts()
+    if len(peers) < 2:
+        die("Need at least 2 nodes in inventory to probe")
+    code = ansible_playbook(
+        "probe-network.yml",
+        extra={
+            "peer_map": peers,
+            "probe_port": args.port,
+            "probe_timeout": args.timeout,
+        },
+        quiet=bool(args.quiet),
+    )
+    if code != 0:
+        return code
+    return run_python("merge_probe.py").returncode
+
+
+def cmd_free(args: argparse.Namespace) -> int:
+    """Stop jobs on a node, release leases, optionally cordon for others."""
+    node = args.node
+    if node not in inventory_nodes():
+        die(f"Unknown node: {node}. Known: {', '.join(inventory_nodes())}")
+
+    quiet = bool(args.quiet)
+    jobs = [args.job] if args.job else [job["name"] for job in list_jobs()]
+    print(f"Freeing node={node} jobs={jobs}")
+
+    for job_name in jobs:
+        job = load_job(job_name)
+        code = ansible_playbook(
+            "manage-job.yml",
+            limit=node,
+            extra=job_manager_extra(job, "stop"),
+            quiet=quiet,
+        )
+        if code != 0:
+            print(f"warning: stop {job_name} on {node} rc={code}", file=sys.stderr)
+
+    released = release_lease_nodes([node])
+    print(f"Released {released} lease(s) covering {node}")
+
+    if args.cordon:
+        state = load_node_state()
+        state.setdefault("cordoned", {})[node] = {
+            "reason": args.reason or "freed for external use",
+            "at": now_utc(),
+            "owner": args.owner or os.environ.get("USER", "unknown"),
+        }
+        save_node_state(state)
+        print(f"Cordoned {node}: schedulers will skip it until uncordon")
+
+    refresh_resources(quiet=quiet)
+    print(f"Node {node} is free" + (" and cordoned" if args.cordon else ""))
+    return 0
+
+
+def cmd_node(args: argparse.Namespace) -> int:
+    registry = load_nodes_registry()
+    nodes = registry.setdefault("nodes", {})
+    defaults = registry.setdefault("defaults", {})
+    state = load_node_state()
+    cordoned = state.setdefault("cordoned", {})
+
+    if args.node_action == "list":
+        print(f"{'NAME':<14} {'HOST':<16} {'GPUS':>4}  {'STATE':<10} LABELS")
+        for name, meta in sorted(nodes.items()):
+            status = "cordoned" if name in cordoned else "schedulable"
+            labels = ",".join(meta.get("labels") or []) or "-"
+            print(
+                f"{name:<14} {meta.get('ansible_host', '-'):<16} "
+                f"{meta.get('gpus_per_node', defaults.get('gpus_per_node', 4)):>4}  "
+                f"{status:<10} {labels}"
+            )
+        return 0
+
+    if args.node_action == "add":
+        if not args.name or not args.host:
+            die("node add requires NAME and --host")
+        if args.name in nodes:
+            die(f"Node already exists: {args.name}")
+        nodes[args.name] = {
+            "ansible_host": args.host,
+            "gpus_per_node": args.gpus or defaults.get("gpus_per_node", 4),
+            "labels": [x.strip() for x in (args.labels or "").split(",") if x.strip()],
+        }
+        save_nodes_registry(registry)
+        print(f"Added {args.name} ({args.host}); inventory regenerated")
+        return 0
+
+    if args.node_action == "remove":
+        if not args.name:
+            die("node remove requires NAME")
+        if args.name not in nodes:
+            die(f"Unknown node: {args.name}")
+        del nodes[args.name]
+        cordoned.pop(args.name, None)
+        save_node_state(state)
+        save_nodes_registry(registry)
+        print(f"Removed {args.name}; inventory regenerated")
+        return 0
+
+    if args.node_action == "cordon":
+        if not args.name:
+            die("node cordon requires NAME")
+        if args.name not in nodes:
+            die(f"Unknown node: {args.name}")
+        cordoned[args.name] = {
+            "reason": args.reason or "maintenance",
+            "at": now_utc(),
+            "owner": args.owner or os.environ.get("USER", "unknown"),
+        }
+        save_node_state(state)
+        print(f"Cordoned {args.name}")
+        return 0
+
+    if args.node_action == "uncordon":
+        if not args.name:
+            die("node uncordon requires NAME")
+        if args.name in cordoned:
+            del cordoned[args.name]
+            save_node_state(state)
+            print(f"Uncordoned {args.name}")
+        else:
+            print(f"{args.name} was not cordoned")
+        return 0
+
+    if args.node_action == "render":
+        return run_python("render_inventory.py", "--write-ssh-snippet").returncode
+
+    die(f"Unknown node action: {args.node_action}")
+    return 1
+
+
+def cmd_endpoints(args: argparse.Namespace) -> int:
+    """Render and show the inference endpoint catalog."""
+    code = run_python("render_endpoints.py", "--write").returncode
+    if code != 0:
+        return code
+    data = json.loads(ENDPOINTS_FILE.read_text(encoding="utf-8"))
+    if args.json:
+        print(json.dumps(data, ensure_ascii=False, indent=2))
+        return 0
+    print(f"job={data.get('job')} strategy={data.get('strategy')} count={data.get('count')}")
+    print(f"api_key_file={data.get('api_key_file')}")
+    print(f"{'NODE':<12} {'GPU':>3} {'URL'}")
+    for ep in data.get("endpoints") or []:
+        print(f"{ep['node']:<12} {ep['gpu']:>3} {ep['url']}")
+    return 0
+
+
+def cmd_health(args: argparse.Namespace) -> int:
+    """Probe inference endpoints (default: local curl via Ansible on each node)."""
+    run_python_capture("render_endpoints.py", "--write")
+    cmd = [
+        "--mode",
+        args.mode,
+        "--timeout",
+        str(args.timeout),
+        "--workers",
+        str(args.workers),
+        "--write",
+    ]
+    if args.json:
+        cmd.append("--json")
+    return run_python("probe_endpoints.py", *cmd).returncode
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """Validate config / runtime readiness before publish or handoff."""
+    extra = ["--json"] if args.json else []
+    return run_python("validate_config.py", *extra).returncode
+
+
+def cmd_models(args: argparse.Namespace) -> int:
+    """Optional models module: cache check / pull on workers."""
+    ensure_runtime()
+    cmd = [args.models_action]
+    if args.models_action == "pull":
+        if not args.name:
+            die("models pull 需要 --name")
+        cmd.extend(["--name", args.name])
+        if args.cache:
+            cmd.extend(["--cache", args.cache])
+        if args.node:
+            cmd.extend(["--node", args.node])
+        elif args.nodes:
+            cmd.extend(["--nodes", args.nodes])
+        cmd.extend(["--timeout", str(args.timeout)])
+    return run_python("model_ops.py", *cmd).returncode
+
+
+def cmd_metrics(_: argparse.Namespace) -> int:
+    """Collect host CPU/memory/load from all nodes."""
+    ensure_runtime()
+    return run_python("collect_host_metrics.py").returncode
+
+
+def cmd_watchdog(args: argparse.Namespace) -> int:
+    ensure_runtime()
+    script = PROJECT_DIR / "scripts" / "watchdog.py"
+    cmd = [str(VENV_PYTHON), str(script), "--interval", str(args.interval), "--max-restarts", str(args.max_restarts)]
+    for job in args.jobs or ["decider"]:
+        cmd.extend(["--job", job])
+    if args.nodes:
+        cmd.extend(["--nodes", args.nodes])
+    if args.once:
+        cmd.append("--once")
+    if args.background:
+        log_path = STATE_DIR / "watchdog.log"
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a", encoding="utf-8") as log_fh:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=PROJECT_DIR,
+                stdout=log_fh,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        pid_file = STATE_DIR / "watchdog.pid"
+        pid_file.write_text(str(proc.pid), encoding="utf-8")
+        print(f"Watchdog started pid={proc.pid} log={log_path}")
+        return 0
+    print("+", " ".join(cmd))
+    return subprocess.call(cmd, cwd=PROJECT_DIR)
+
+
+def cmd_queue(args: argparse.Namespace) -> int:
+    data = load_queue()
+    workloads: list[dict] = data.setdefault("workloads", [])
+
+    if args.queue_action == "list":
+        if not workloads:
+            print("Queue empty")
+            return 0
+        print(f"{'ID':<22} {'STATUS':<10} {'JOB':<12} {'GPUS':>4}  NODES  NOTE")
+        for wl in workloads:
+            nodes = ",".join(wl.get("selected_nodes") or []) or (wl.get("nodes") or "-")
+            print(
+                f"{wl['id']:<22} {wl['status']:<10} {wl['job']:<12} "
+                f"{wl.get('gpus', 0):>4}  {nodes}  {wl.get('note') or '-'}"
+            )
+        return 0
+
+    if args.queue_action == "submit":
+        if not args.job:
+            die("queue submit requires a job name")
+        load_job(args.job)
+        wl = {
+            "id": f"wl-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
+            "job": args.job,
+            "gpus": args.gpus,
+            "nodes": args.nodes,
+            "status": "pending",
+            "selected_nodes": [],
+            "owner": args.owner or os.environ.get("USER", "unknown"),
+            "note": args.note or "",
+            "message": "",
+            "created_at": now_utc(),
+            "updated_at": now_utc(),
+        }
+        workloads.append(wl)
+        save_queue(data)
+        print(json.dumps(wl, ensure_ascii=False, indent=2))
+        if args.schedule:
+            args.queue_action = "schedule"
+            return cmd_queue(args)
+        return 0
+
+    if args.queue_action == "cancel":
+        if not args.workload_id:
+            die("queue cancel requires --id")
+        found = False
+        for wl in workloads:
+            if wl["id"] == args.workload_id and wl["status"] in {"pending", "admitted"}:
+                wl["status"] = "cancelled"
+                wl["updated_at"] = now_utc()
+                wl["message"] = "cancelled by user"
+                found = True
+        if not found:
+            die(f"No cancellable workload: {args.workload_id}")
+        save_queue(data)
+        print(f"Cancelled {args.workload_id}")
+        return 0
+
+    if args.queue_action == "schedule":
+        pending = [wl for wl in workloads if wl["status"] == "pending"]
+        if not pending:
+            print("No pending workloads")
+            return 0
+        quiet = bool(args.quiet)
+        code = refresh_resources(quiet=quiet)
+        if code != 0:
+            return code
+
+        admitted = 0
+        for wl in pending:
+            print(f"\n--- scheduling {wl['id']} job={wl['job']} gpus={wl['gpus']} ---")
+            wl["status"] = "admitted"
+            wl["updated_at"] = now_utc()
+            save_queue(data)
+
+            selected = None
+            if wl.get("nodes"):
+                if wl["nodes"] == "all":
+                    selected = inventory_nodes()
+                else:
+                    selected = [n.strip() for n in wl["nodes"].split(",") if n.strip()]
+            else:
+                result = run_python_capture(
+                    "select_nodes.py", *select_nodes_cli_args(wl["gpus"])
+                )
+                print(result.stdout, end="")
+                if result.returncode != 0:
+                    wl["status"] = "pending"
+                    wl["message"] = "insufficient free GPUs; kept pending"
+                    wl["updated_at"] = now_utc()
+                    save_queue(data)
+                    print(f"{wl['id']}: still pending (no capacity)")
+                    continue
+                selected = json.loads(result.stdout.strip().splitlines()[-1])["selected"]
+
+            wl["status"] = "running"
+            wl["selected_nodes"] = selected
+            wl["updated_at"] = now_utc()
+            save_queue(data)
+
+            rc, selected_nodes = deploy_job(
+                wl["job"],
+                gpus=wl["gpus"],
+                nodes=None,
+                selected=selected,
+                restart=False,
+                no_wait=False,
+                note=wl.get("note") or f"queue:{wl['id']}",
+                quiet=quiet,
+            )
+            if rc == 0:
+                wl["status"] = "ready"
+                wl["selected_nodes"] = selected_nodes
+                wl["message"] = "deployed"
+                admitted += 1
+            else:
+                wl["status"] = "failed"
+                wl["message"] = f"deploy failed rc={rc}"
+            wl["updated_at"] = now_utc()
+            save_queue(data)
+            # Refresh after each admission so next pending sees new leases/usage
+            refresh_resources(quiet=quiet)
+
+        print(f"\nSchedule finished: admitted/ready={admitted}, pending_left="
+              f"{sum(1 for wl in workloads if wl['status'] == 'pending')}")
+        return 0
+
+    die(f"Unknown queue action: {args.queue_action}")
+    return 1
+
+
+def cmd_lease(args: argparse.Namespace) -> int:
+    data = load_leases()
+    leases: list[dict] = data.setdefault("leases", [])
+
+    if args.lease_action == "list":
+        if not leases:
+            print("No active leases")
+            return 0
+        for lease in leases:
+            print(
+                f"{lease['id']}: job={lease['job']} nodes={','.join(lease['nodes'])} "
+                f"gpus={lease['gpus']} owner={lease.get('owner', '-')} "
+                f"since={lease.get('created_at', '-')}"
+            )
+        return 0
+
+    if args.lease_action == "acquire":
+        if not args.job or not args.nodes:
+            die("lease acquire requires --job and --nodes")
+        node_list = [n.strip() for n in args.nodes.split(",") if n.strip()]
+        lease = acquire_lease(
+            args.job,
+            node_list,
+            gpus=args.gpus or len(node_list) * 4,
+            note=args.note or "",
+            owner=args.owner,
+        )
+        print(json.dumps(lease, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.lease_action == "release":
+        if not args.lease_id and not args.nodes:
+            die("lease release requires --id or --nodes")
+        before = len(leases)
+        if args.lease_id:
+            leases[:] = [lease for lease in leases if lease["id"] != args.lease_id]
+            save_leases(data)
+            print(f"Released {before - len(leases)} lease(s)")
+        else:
+            released = release_lease_nodes(
+                [n.strip() for n in args.nodes.split(",") if n.strip()]
+            )
+            print(f"Released {released} lease(s)")
+        return 0
+
+    die(f"Unknown lease action: {args.lease_action}")
+    return 1
+
+
+def cmd_get(args: argparse.Namespace) -> int:
+    """kubectl-style resource listing."""
+    kind = args.resource
+    if kind in {"nodes", "node"}:
+        args.node_action = "list"
+        return cmd_node(args)
+    if kind in {"jobs", "job"}:
+        return cmd_jobs(args)
+    if kind in {"leases", "lease"}:
+        args.lease_action = "list"
+        return cmd_lease(args)
+    if kind in {"queue", "workloads"}:
+        args.queue_action = "list"
+        return cmd_queue(args)
+    if kind in {"endpoints", "endpoint"}:
+        return cmd_endpoints(args)
+    if kind in {"cluster", "overview"}:
+        args.cached = True
+        args.job = None
+        return cmd_overview(args)
+    die(f"Unknown resource: {kind}. Try: nodes|jobs|leases|queue|endpoints|cluster")
+    return 1
+
+
+def cmd_describe(args: argparse.Namespace) -> int:
+    """kubectl-style resource detail."""
+    kind = args.resource
+    name = args.name
+    if kind in {"node", "nodes"}:
+        if not name:
+            die("describe node requires NAME")
+        registry = load_nodes_registry().get("nodes", {})
+        if name not in registry:
+            die(f"Unknown node: {name}")
+        resources = json.loads(RESOURCES_FILE.read_text(encoding="utf-8")) if RESOURCES_FILE.is_file() else {}
+        leases = load_leases().get("leases", [])
+        cordoned = load_node_state().get("cordoned", {})
+        node = resources.get(name, {})
+        meta = registry[name]
+        lease = next((l for l in leases if name in l.get("nodes", [])), None)
+        print(f"Name:        {name}")
+        print(f"Host:        {meta.get('ansible_host')}")
+        print(f"GPUs:        {meta.get('gpus_per_node', 4)}")
+        print(f"Labels:      {','.join(meta.get('labels') or []) or '-'}")
+        print(f"Role:        {meta.get('role') or '-'}")
+        print(f"Note:        {meta.get('note') or '-'}")
+        print(f"State:       {'cordoned' if name in cordoned else 'schedulable'}")
+        if name in cordoned:
+            print(f"Cordon:      {cordoned[name]}")
+        print(f"Lease:       {lease['id'] + ' / ' + lease['job'] if lease else '-'}")
+        print(f"Free/Used:   {node.get('free_count', '?')}/{node.get('occupied_count', '?')}")
+        print("GPUs detail:")
+        for gpu in node.get("gpus") or []:
+            print(
+                f"  - index={gpu.get('index')} status={gpu.get('status')} "
+                f"mem={gpu.get('memory_used_mib')}/{gpu.get('memory_total_mib')} "
+                f"util={gpu.get('utilization_percent')}%"
+            )
+        return 0
+    if kind in {"job", "jobs"}:
+        if not name:
+            die("describe job requires NAME")
+        job = load_job(name)
+        print(json.dumps(job, ensure_ascii=False, indent=2))
+        return 0
+    die(f"Unknown resource: {kind}. Try: node|job")
+    return 1
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="gpu-control",
+        description=(
+            "GPU 集群控制面（CLI + Web）。\n"
+            "理念借鉴：kubectl 资源动词 / Ray 可观测分层 / Slurm cordon&队列。"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "常用（CLI）:\n"
+            "  gpu-control get nodes\n"
+            "  gpu-control describe node deepseek-1\n"
+            "  gpu-control get endpoints\n"
+            "  gpu-control health\n"
+            "  gpu-control deploy decider --gpus 4\n"
+            "  gpu-control free --node deepseek-2 --cordon\n"
+            "  gpu-control ui --background\n"
+        ),
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_get = sub.add_parser("get", help="列出资源（kubectl 风格）：nodes|jobs|leases|queue|endpoints|cluster")
+    p_get.add_argument(
+        "resource",
+        help="nodes|jobs|leases|queue|endpoints|cluster",
+    )
+    p_get.set_defaults(func=cmd_get)
+
+    p_describe = sub.add_parser("describe", help="查看资源详情（kubectl 风格）：node|job")
+    p_describe.add_argument("resource", help="node|job")
+    p_describe.add_argument("name", nargs="?", help="资源名")
+    p_describe.set_defaults(func=cmd_describe)
+
+    p_overview = sub.add_parser("overview", aliases=["cluster"], help="集群总览（GPU + lease）")
+    p_overview.add_argument("--cached", action="store_true", help="不刷新，使用已有 resources.json")
+    p_overview.add_argument("--job", help="同时查询某任务就绪状态")
+    p_overview.set_defaults(func=cmd_overview)
+
+    p_status = sub.add_parser("status", help="查看任务状态（默认 decider）")
+    p_status.add_argument("job", nargs="?", default=None)
+    p_status.add_argument("--node")
+    p_status.add_argument("--nodes")
+    p_status.add_argument("--quiet", action="store_true")
+    p_status.set_defaults(func=cmd_status_default)
+
+    for name, help_text in (
+        ("start", "在选定节点启动任务"),
+        ("stop", "在选定节点停止任务"),
+        ("restart", "在选定节点重启任务"),
+        ("wait", "等待任务就绪"),
+    ):
+        p = sub.add_parser(name, help=help_text)
+        p.add_argument("job")
+        p.add_argument("--node")
+        p.add_argument("--nodes", help="逗号分隔，或 all")
+        p.add_argument("--quiet", action="store_true")
+        p.set_defaults(func=cmd_job_action, action=name)
+
+    p_deploy = sub.add_parser("deploy", help="选节点 → 启动 → 等待 → 登记占用（一键）")
+    p_deploy.add_argument("job")
+    p_deploy.add_argument("--gpus", type=int, choices=[4, 8, 12, 16], default=4)
+    p_deploy.add_argument("--nodes", help="指定节点；不填则自动挑选空闲节点")
+    p_deploy.add_argument("--restart", action="store_true", help="部署前先 stop")
+    p_deploy.add_argument("--no-wait", action="store_true")
+    p_deploy.add_argument("--note", default="")
+    p_deploy.add_argument("--quiet", action="store_true")
+    p_deploy.set_defaults(func=cmd_deploy)
+
+    p_jobs = sub.add_parser("jobs", help="列出已注册任务")
+    p_jobs.set_defaults(func=cmd_jobs)
+
+    p_gpu = sub.add_parser("gpu", help="查看 / 刷新 GPU 资源")
+    p_gpu.add_argument("action", nargs="?", default="list", choices=["list", "refresh"])
+    p_gpu.add_argument("--node")
+    p_gpu.add_argument("--nodes")
+    p_gpu.add_argument("--refresh", action="store_true")
+    p_gpu.add_argument("--quiet", action="store_true")
+    p_gpu.set_defaults(func=cmd_gpu)
+
+    p_plan = sub.add_parser("plan", help="刷新资源并挑选空闲节点")
+    p_plan.add_argument("--gpus", type=int, choices=[4, 8, 12, 16], default=8)
+    p_plan.add_argument("--quiet", action="store_true")
+    p_plan.set_defaults(func=cmd_plan)
+
+    p_exec = sub.add_parser("exec", help="在多个节点并行执行同一命令")
+    p_exec.add_argument("command", nargs=argparse.REMAINDER, help="远端命令，建议加 -- 分隔")
+    p_exec.add_argument("--node")
+    p_exec.add_argument("--nodes", default="all")
+    p_exec.add_argument("--quiet", action="store_true")
+    p_exec.set_defaults(func=cmd_exec)
+
+    p_lease = sub.add_parser("lease", help="节点占用登记（防抢占）")
+    p_lease.add_argument("lease_action", choices=["list", "acquire", "release"])
+    p_lease.add_argument("--id", dest="lease_id")
+    p_lease.add_argument("--job")
+    p_lease.add_argument("--nodes")
+    p_lease.add_argument("--gpus", type=int)
+    p_lease.add_argument("--owner")
+    p_lease.add_argument("--note")
+    p_lease.set_defaults(func=cmd_lease)
+
+    p_ui = sub.add_parser("ui", help="启动 Web 管理台（默认 :8787）")
+    p_ui.add_argument("--host", default="0.0.0.0")
+    p_ui.add_argument("--port", type=int, default=8787)
+    p_ui.add_argument("--background", action="store_true", help="后台守护并写 state/ui.pid")
+    p_ui.set_defaults(func=cmd_ui)
+
+    p_queue = sub.add_parser("queue", help="简易工作负载队列（pending→ready）")
+    p_queue.add_argument("queue_action", choices=["list", "submit", "cancel", "schedule"])
+    p_queue.add_argument("job", nargs="?", help="submit 时的任务名")
+    p_queue.add_argument("--gpus", type=int, choices=[4, 8, 12, 16], default=4)
+    p_queue.add_argument("--nodes", help="指定节点；不填则调度时自动挑选")
+    p_queue.add_argument("--id", dest="workload_id", help="cancel 用")
+    p_queue.add_argument("--note", default="")
+    p_queue.add_argument("--owner")
+    p_queue.add_argument("--schedule", action="store_true", help="submit 后立刻尝试调度")
+    p_queue.add_argument("--quiet", action="store_true")
+    p_queue.set_defaults(func=cmd_queue)
+
+    p_probe = sub.add_parser("probe", help="探测节点间 TCP 互通（分布式前置检查）")
+    p_probe.add_argument("--port", type=int, default=8416)
+    p_probe.add_argument("--timeout", type=float, default=3.0)
+    p_probe.add_argument("--quiet", action="store_true")
+    p_probe.set_defaults(func=cmd_probe)
+
+    p_endpoints = sub.add_parser("endpoints", help="列出推理池 API 端点（16 路）")
+    p_endpoints.add_argument("--json", action="store_true")
+    p_endpoints.set_defaults(func=cmd_endpoints)
+
+    p_health = sub.add_parser("health", help="探测全部推理 API 健康（默认各节点本地探测）")
+    p_health.add_argument("--mode", choices=["local", "direct"], default="local")
+    p_health.add_argument("--timeout", type=float, default=2.0)
+    p_health.add_argument("--workers", type=int, default=16)
+    p_health.add_argument("--json", action="store_true")
+    p_health.set_defaults(func=cmd_health)
+
+    p_doctor = sub.add_parser("doctor", help="配置与运行环境自检（发布前）")
+    p_doctor.add_argument("--json", action="store_true")
+    p_doctor.set_defaults(func=cmd_doctor)
+
+    p_free = sub.add_parser("free", help="腾空某个节点 GPU（停任务 + 释放 lease，可 cordon）")
+    p_free.add_argument("--node", required=True, help="要腾空的节点")
+    p_free.add_argument("--job", help="只停指定任务；默认停掉所有已注册任务")
+    p_free.add_argument("--cordon", action="store_true", help="腾空后禁止调度器再选中该节点")
+    p_free.add_argument("--reason", default="")
+    p_free.add_argument("--owner")
+    p_free.add_argument("--quiet", action="store_true")
+    p_free.set_defaults(func=cmd_free)
+
+    p_node = sub.add_parser("node", help="节点清单管理（扩展集群 / cordon）")
+    p_node.add_argument(
+        "node_action",
+        choices=["list", "add", "remove", "cordon", "uncordon", "render"],
+    )
+    p_node.add_argument("name", nargs="?", help="节点名")
+    p_node.add_argument("--host", help="ansible_host / IP")
+    p_node.add_argument("--gpus", type=int, help="该节点 GPU 数")
+    p_node.add_argument("--labels", help="逗号分隔标签")
+    p_node.add_argument("--reason", default="")
+    p_node.add_argument("--owner")
+    p_node.set_defaults(func=cmd_node)
+
+    p_watch = sub.add_parser("watchdog", help="任务挂了自动重启")
+    p_watch.add_argument("--job", action="append", dest="jobs", help="可重复指定多个任务")
+    p_watch.add_argument("--nodes", help="只监控这些节点")
+    p_watch.add_argument("--interval", type=int, default=60)
+    p_watch.add_argument("--max-restarts", type=int, default=3)
+    p_watch.add_argument("--once", action="store_true", help="只检查一轮")
+    p_watch.add_argument("--background", action="store_true", help="后台守护")
+    p_watch.set_defaults(func=cmd_watchdog)
+
+    p_metrics = sub.add_parser("metrics", help="采集各节点 CPU / 内存 / 负载")
+    p_metrics.set_defaults(func=cmd_metrics)
+
+    p_models = sub.add_parser(
+        "models",
+        help="可选模块：模型缓存检查 / 拉取（需 config/local/models.json）",
+    )
+    p_models.add_argument(
+        "models_action",
+        choices=["show", "check", "pull"],
+        help="show|check|pull",
+    )
+    p_models.add_argument("--name", help="pull 时的仓库 id")
+    p_models.add_argument("--cache", help="caches[].id")
+    p_models.add_argument("--node")
+    p_models.add_argument("--nodes", default="all")
+    p_models.add_argument("--timeout", type=int, default=3600)
+    p_models.set_defaults(func=cmd_models)
+
+    return parser
+
+
+def main() -> int:
+    os.chdir(PROJECT_DIR)
+    parser = build_parser()
+    args = parser.parse_args()
+    # argparse.REMAINDER keeps a leading '--' sometimes
+    if getattr(args, "command", None) and isinstance(args.command, list):
+        if args.command and args.command[0] == "--":
+            args.command = args.command[1:]
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

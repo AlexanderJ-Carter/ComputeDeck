@@ -1,0 +1,32 @@
+{
+  "name": "my-gpu-pool",
+  "strategy": "inference-pool",
+  "description": "N nodes × M GPUs inference pool. Copy to ../local/cluster.json and edit.",
+  "default_job": "decider",
+  "api": {
+    "base_port": 30000,
+    "ports_per_node": 4,
+    "health_path": "/health",
+    "auth_header": "Authorization",
+    "api_key_file": "${GPU_CONTROL_API_KEY_FILE}"
+  },
+  "watchdog": {
+    "enabled": true,
+    "jobs": ["decider"],
+    "interval_sec": 60,
+    "max_restarts": 3,
+    "nodes": "all"
+  },
+  "scheduling": {
+    "prefer_labels": ["serving"],
+    "avoid_labels": ["shared"],
+    "unit_gpus": 4
+  },
+  "collaboration": {
+    "mode": "horizontal-scale",
+    "notes": [
+      "Horizontal replica pool; clients round-robin endpoints.",
+      "Borrow a whole node with: gpu-control free --node X --cordon"
+    ]
+  }
+}

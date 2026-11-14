@@ -1,0 +1,9 @@
+{
+  "name": "decider",
+  "description": "Example job: 4 GPUs per node, OpenAI-compatible API ports 30000-30003",
+  "gpus_per_node": 4,
+  "python": "${GPU_CONTROL_PYTHON}",
+  "script": "${GPU_CONTROL_JOB_SCRIPT}",
+  "extra_args": ["--base-port", "30000"],
+  "actions": ["start", "stop", "restart", "status", "wait"]
+}

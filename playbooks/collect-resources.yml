@@ -1,0 +1,43 @@
+---
+- name: Collect GPU resource snapshots
+  hosts: gpu_workers
+  gather_facts: false
+
+  tasks:
+    - name: Query GPU information
+      ansible.builtin.raw: >-
+        nvidia-smi
+        --query-gpu=index,uuid,memory.total,memory.used,utilization.gpu
+        --format=csv,noheader,nounits
+      register: gpu_info
+      changed_when: false
+
+    - name: Query GPU processes
+      ansible.builtin.raw: >-
+        nvidia-smi
+        --query-compute-apps=gpu_uuid,pid,process_name,used_gpu_memory
+        --format=csv,noheader,nounits || true
+      register: process_info
+      changed_when: false
+      failed_when: false
+
+    - name: Create local snapshot directory
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/../snapshots"
+        state: directory
+        mode: "0755"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Save resource snapshot
+      ansible.builtin.copy:
+        dest: "{{ playbook_dir }}/../snapshots/{{ inventory_hostname }}.json"
+        content: "{{ snapshot | to_nice_json }}"
+        mode: "0644"
+      vars:
+        snapshot:
+          node: "{{ inventory_hostname }}"
+          collected_at: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+          gpu_rows: "{{ gpu_info.stdout_lines | default([]) | select('truthy') | list }}"
+          process_rows: "{{ process_info.stdout_lines | default([]) | select('truthy') | list }}"
+      delegate_to: localhost

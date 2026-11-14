@@ -1,0 +1,30 @@
+---
+- name: Manage a registered GPU job
+  hosts: gpu_workers
+  gather_facts: false
+
+  vars:
+    job_action: status
+    job_python: /tmp/sgl-workspace/dsv4-sglang/bin/python
+    job_script: /opt/meituan/dolphinfs_huanghaoyu05/huggingface.co/Mapika/start_model.py
+    job_extra_args: []
+
+  tasks:
+    - name: Validate action
+      ansible.builtin.assert:
+        that:
+          - job_action in ['start', 'stop', 'restart', 'status', 'wait']
+
+    - name: Run job manager
+      ansible.builtin.raw: >-
+        {{ job_python }} {{ job_script }} {{ job_action }}
+        {{ job_extra_args | join(' ') }}
+      register: job_result
+      changed_when: job_action in ['start', 'stop', 'restart'] and job_result.rc == 0
+      failed_when: >-
+        job_result.rc != 0
+        and not (job_action == 'status' and job_result.rc == 1)
+
+    - name: Display result
+      ansible.builtin.debug:
+        var: job_result.stdout_lines
