@@ -92,12 +92,10 @@ body {
   letter-spacing: -0.01em;
   background-color: var(--bg);
   background-image:
-    radial-gradient(980px 520px at -8% -12%, var(--glow-a), transparent 58%),
-    radial-gradient(720px 420px at 108% -5%, var(--glow-b), transparent 52%),
-    linear-gradient(var(--grid) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid) 1px, transparent 1px),
-    linear-gradient(165deg, var(--bg-deep), var(--bg) 42%, var(--bg-deep));
-  background-size: auto, auto, 28px 28px, 28px 28px, auto;
+    radial-gradient(900px 480px at -6% -10%, var(--glow-a), transparent 62%),
+    radial-gradient(640px 380px at 110% 0%, var(--glow-b), transparent 58%),
+    linear-gradient(165deg, var(--bg-deep), var(--bg) 48%, var(--bg-deep));
+  background-size: auto, auto, auto;
   transition: background-color 0.25s ease, color 0.2s ease;
 }
 
@@ -963,42 +961,21 @@ hr {
   height: 18px;
   margin-left: 6px;
   border-radius: 999px;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line);
   color: var(--muted);
   font-size: 11px;
   font-weight: 700;
   line-height: 1;
   cursor: help;
-  position: relative;
   vertical-align: middle;
   user-select: none;
 }
 
-.tip::after {
-  content: attr(data-tip);
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 8px);
-  transform: translateX(-50%);
-  width: max(180px, max-content);
-  max-width: 280px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: var(--ink);
-  color: var(--panel-solid);
+.section-note {
+  margin: 0;
+  color: var(--muted);
   font-size: 12px;
   font-weight: 500;
-  line-height: 1.4;
-  white-space: normal;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s ease;
-  z-index: 20;
-}
-
-.tip:hover::after,
-.tip:focus::after {
-  opacity: 1;
 }
 
 .fold {
@@ -1327,16 +1304,14 @@ code {
 .ops-hero,
 .quality-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.7fr);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(240px, 0.65fr);
+  gap: 18px;
   align-items: center;
-  margin-bottom: 16px;
-  padding: 16px 18px;
+  margin-bottom: 18px;
+  padding: 18px 20px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background:
-    linear-gradient(120deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 42%),
-    var(--panel);
+  background: var(--panel-solid);
   box-shadow: var(--shadow-soft);
 }
 
@@ -1349,31 +1324,17 @@ code {
 }
 
 .score-ring {
-  width: 84px;
-  height: 84px;
+  width: 88px;
+  height: 88px;
   flex: 0 0 auto;
   border-radius: 50%;
-  border: 3px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  border: 2px solid color-mix(in srgb, var(--accent) 55%, var(--line));
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background:
-    radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--accent-hot) 18%, transparent), transparent 55%),
-    var(--panel-2);
-  animation: ring-breathe 3.6s ease-in-out infinite;
-}
-
-@keyframes ring-breathe {
-  0%,
-  100% {
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
-  }
-  50% {
-    box-shadow:
-      inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent),
-      0 0 18px color-mix(in srgb, var(--accent) 16%, transparent);
-  }
+  background: var(--panel-2);
+  box-shadow: inset 0 0 0 6px color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .score-ring strong {
@@ -1448,7 +1409,7 @@ code {
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  margin: 4px 0 10px;
+  margin: 8px 0 12px;
 }
 
 .section-head h2 {
@@ -1458,52 +1419,54 @@ code {
   letter-spacing: -0.02em;
 }
 
-.section-head p {
+.section-head p,
+.section-head .section-note {
   margin: 0;
   color: var(--muted);
   font-size: 12px;
+  font-weight: 500;
 }
 
 .action-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   grid-auto-rows: 1fr;
-  gap: 10px;
-  margin-bottom: 14px;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
 .action-card {
   text-align: left;
   border: 1px solid var(--line);
-  background: var(--panel);
+  background: var(--panel-solid);
   border-radius: 12px;
-  padding: 14px;
-  min-height: 108px;
+  padding: 16px;
+  min-height: 112px;
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   box-shadow: none;
-  transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .action-card:hover {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
-  transform: translateY(-1px);
-  background: color-mix(in srgb, var(--accent) 4%, var(--panel));
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  transform: none;
+  background: color-mix(in srgb, var(--accent) 5%, var(--panel-solid));
   box-shadow: none;
 }
 
 .action-card.primary-card {
-  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
-  border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
+  background: color-mix(in srgb, var(--accent) 7%, var(--panel-solid));
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
 }
 
 .action-card .action-tag {
   color: var(--muted);
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
@@ -1517,7 +1480,7 @@ code {
   margin: auto 0 0;
   color: var(--muted);
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
 .ops-deck {
