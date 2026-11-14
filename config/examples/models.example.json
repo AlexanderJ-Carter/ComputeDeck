@@ -1,10 +1,10 @@
 {
-  "description": "模型目录与缓存。path 可用 ${paths.*}（见 nodes.json defaults.paths）。复制到 ../local/models.json",
+  "description": "模型目录 / 缓存 / 校验 / 拉取。path 可用 ${paths.*}。复制到 ../local/models.json",
   "caches": [
     {
       "id": "hf-hub",
       "path": "${paths.cache}",
-      "note": "Hugging Face / 共享权重根"
+      "note": "HF / 共享权重缓存根"
     }
   ],
   "models": [
@@ -13,16 +13,21 @@
       "repo": "Mapika/decider-2b",
       "path": "${paths.model_root}/Mapika/decider-2b",
       "cache": "hf-hub",
-      "note": "示例：决策模型权重目录",
+      "note": "示例权重目录",
       "launch": {
         "job": "decider",
         "runtime": "process",
         "extra_args": ["--base-port", "30000"]
+      },
+      "verify": {
+        "expect_files": ["config.json"],
+        "min_bytes": 1000000
       }
     }
   ],
   "pull": {
-    "tool": "huggingface-cli",
-    "default_cache": "hf-hub"
+    "tool": "auto",
+    "default_cache": "hf-hub",
+    "note": "auto = 优先 huggingface-cli，否则 modelscope"
   }
 }

@@ -106,6 +106,19 @@ def main() -> int:
     if STATE_DIR.is_dir():
         notes.append("state/ present")
 
+    paths = (defaults.get("paths") or {}) if defaults else {}
+    if paths:
+        notes.append(f"defaults.paths: {', '.join(sorted(paths))}")
+    else:
+        notes.append("defaults.paths unset（Job/models 若用 ${paths.*} 需配置）")
+
+    models_path = LOCAL_DIR / "models.json"
+    if models_path.is_file():
+        notes.append("models.json present（可选模块）")
+    handbook = PROJECT_DIR / "docs" / "手册.md"
+    if handbook.is_file():
+        notes.append("docs/手册.md present")
+
     payload = {
         "ok": not issues,
         "issues": issues,

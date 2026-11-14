@@ -1,18 +1,6 @@
 # config/
 
-| 路径 | 提交 | 说明 |
-|------|------|------|
-| `examples/*.example.json` | ✅ | 脱敏模板（cluster / nodes / job / models） |
-| `local/*` | ❌ | 本机真实配置 |
-| `ansible.cfg` | ✅ | Ansible 通用设置 |
+- `examples/`：可提交模板  
+- `local/`：本机真实配置（gitignore）  
 
-```bash
-mkdir -p config/local/jobs
-cp config/examples/cluster.example.json config/local/cluster.json
-cp config/examples/nodes.example.json   config/local/nodes.json
-# 可选
-cp config/examples/decider.example.json config/local/jobs/decider.json
-cp config/examples/models.example.json  config/local/models.json
-```
-
-查找顺序：`config/local/` → `config/` → 仓库根。
+复制与字段说明见 [docs/手册.md](../docs/手册.md)。

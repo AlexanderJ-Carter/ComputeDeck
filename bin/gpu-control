@@ -988,7 +988,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def cmd_models(args: argparse.Namespace) -> int:
-    """Optional models module: catalog / cache check / pull / paths."""
+    """Optional models module: catalog / deps / verify / pull / paths."""
     ensure_runtime()
     action = args.models_action
     cmd = [action]
@@ -1001,16 +1001,22 @@ def cmd_models(args: argparse.Namespace) -> int:
             cmd.extend(["--model", args.model])
         if args.cache:
             cmd.extend(["--cache", args.cache])
+        if getattr(args, "tool", None):
+            cmd.extend(["--tool", args.tool])
         if args.node:
             cmd.extend(["--node", args.node])
         elif args.nodes:
             cmd.extend(["--nodes", args.nodes])
         cmd.extend(["--timeout", str(args.timeout)])
-    elif action == "check":
+    elif action in {"check", "deps", "verify", "install-tools"}:
+        if getattr(args, "model", None) and action == "verify":
+            cmd.extend(["--model", args.model])
         if args.node:
             cmd.extend(["--node", args.node])
         elif args.nodes:
             cmd.extend(["--nodes", args.nodes])
+        if action == "install-tools":
+            cmd.extend(["--timeout", str(args.timeout)])
     elif action == "paths":
         if args.node:
             cmd.extend(["--node", args.node])
@@ -1529,16 +1535,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_models = sub.add_parser(
         "models",
-        help="可选模块：模型目录 / 路径 / 缓存检查 / 拉取",
+        help="可选模块：目录/依赖/校验/拉取（见 docs/手册.md）",
     )
     p_models.add_argument(
         "models_action",
-        choices=["show", "list", "check", "pull", "paths"],
-        help="show|list|check|pull|paths",
+        choices=["show", "list", "check", "verify", "deps", "install-tools", "pull", "paths"],
+        help="show|list|check|verify|deps|install-tools|pull|paths",
     )
     p_models.add_argument("--name", help="pull 时的仓库 id")
     p_models.add_argument("--model", help="models[].id")
     p_models.add_argument("--cache", help="caches[].id")
+    p_models.add_argument(
+        "--tool",
+        choices=["auto", "huggingface-cli", "modelscope"],
+        help="pull 工具（默认看 models.json pull.tool）",
+    )
     p_models.add_argument("--node")
     p_models.add_argument("--nodes", default="all")
     p_models.add_argument("--timeout", type=int, default=3600)

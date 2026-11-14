@@ -1,0 +1,5 @@
+# 工作节点「拉模型」可选依赖（装在节点，不要装进主控 .venv）
+# 安装：gpu-control models install-tools
+# 或：  <paths.python> -m pip install -r requirements-models-worker.txt
+huggingface_hub[cli]>=0.24.0
+modelscope>=1.18.0

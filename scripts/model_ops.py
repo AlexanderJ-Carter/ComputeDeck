@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Model module: catalog, cache check, pull, path resolve."""
+"""Model module: catalog, deps, path check, verify, pull, install-tools."""
 
 from __future__ import annotations
 
@@ -74,6 +74,7 @@ def model_entries(data: dict, *, node: str | None = None) -> list[dict]:
         else:
             path = ""
         launch = item.get("launch") or {}
+        verify = item.get("verify") or {}
         rows.append({
             "id": mid,
             "repo": item.get("repo") or "",
@@ -85,36 +86,12 @@ def model_entries(data: dict, *, node: str | None = None) -> list[dict]:
                 "extra_args": list(launch.get("extra_args") or []),
                 "runtime": launch.get("runtime") or "process",
             },
+            "verify": {
+                "expect_files": list(verify.get("expect_files") or []),
+                "min_bytes": int(verify.get("min_bytes") or 0),
+            },
         })
     return rows
-
-
-def build_check_command(caches: list[dict], models: list[dict]) -> str:
-    parts = [
-        "echo HOST=$(hostname)",
-        "echo DOCKER=$(command -v docker >/dev/null && echo yes || echo no)",
-    ]
-    for c in caches:
-        p = shlex.quote(c["path"])
-        cid = shlex.quote(c["id"])
-        parts.append(
-            f"echo CACHE:{cid}; "
-            f"if [ -e {p} ]; then "
-            f"du -sh {p} 2>/dev/null | awk '{{print \"size\", $1}}'; "
-            f"df -h {p} 2>/dev/null | awk 'NR==2{{print \"disk\", $4 \" free of \" $2}}'; "
-            f"else echo missing; fi"
-        )
-    for m in models:
-        p = shlex.quote(m["path"])
-        mid = shlex.quote(m["id"])
-        parts.append(
-            f"echo MODEL:{mid}; "
-            f"if [ -e {p} ]; then echo path_ok {p}; "
-            f"du -sh {p} 2>/dev/null | awk '{{print \"size\", $1}}'; "
-            f"else echo missing {p}; fi"
-        )
-    parts.append("df -h / /tmp 2>/dev/null | head -5")
-    return "; ".join(parts)
 
 
 def run_cli(args: list[str], timeout: int = 300) -> dict:
@@ -144,6 +121,105 @@ def collect_exec() -> list[dict]:
     return results
 
 
+def print_exec_rows(rows: list[dict]) -> int:
+    if not rows:
+        return 1
+    for item in rows:
+        print(f"===== {item.get('node')} (rc={item.get('rc')}) =====")
+        print((item.get("stdout") or "").rstrip())
+        if item.get("stderr"):
+            print((item.get("stderr") or "").rstrip())
+    return 0 if all(int(r.get("rc", 1)) == 0 for r in rows) else 1
+
+
+def exec_limit(args: argparse.Namespace) -> list[str]:
+    if args.node:
+        return ["--node", args.node]
+    return ["--nodes", args.nodes or "all"]
+
+
+def build_check_command(caches: list[dict], models: list[dict]) -> str:
+    parts = [
+        "echo HOST=$(hostname)",
+        "echo HF=$(command -v huggingface-cli >/dev/null && echo yes || echo no)",
+        "echo MS=$(command -v modelscope >/dev/null && echo yes || echo no)",
+        "echo DOCKER=$(command -v docker >/dev/null && echo yes || echo no)",
+    ]
+    for c in caches:
+        p = shlex.quote(c["path"])
+        cid = shlex.quote(c["id"])
+        parts.append(
+            f"echo CACHE:{cid}; "
+            f"if [ -e {p} ]; then "
+            f"du -sh {p} 2>/dev/null | awk '{{print \"size\", $1}}'; "
+            f"df -h {p} 2>/dev/null | awk 'NR==2{{print \"disk\", $4 \" free of \" $2}}'; "
+            f"else echo missing; fi"
+        )
+    for m in models:
+        p = shlex.quote(m["path"])
+        mid = shlex.quote(m["id"])
+        parts.append(
+            f"echo MODEL:{mid}; "
+            f"if [ -e {p} ]; then echo path_ok {p}; "
+            f"du -sh {p} 2>/dev/null | awk '{{print \"size\", $1}}'; "
+            f"else echo missing {p}; fi"
+        )
+    parts.append("df -h / /tmp 2>/dev/null | head -5")
+    return "; ".join(parts)
+
+
+def build_verify_command(models: list[dict]) -> str:
+    parts = ["echo HOST=$(hostname)", "fail=0"]
+    for m in models:
+        p = shlex.quote(m["path"])
+        mid = shlex.quote(m["id"])
+        parts.append(f"echo VERIFY:{mid}")
+        parts.append(
+            f"if [ ! -e {p} ]; then echo FAIL missing_path; fail=1; "
+            f"else echo path_ok; "
+            f"bytes=$(du -sb {p} 2>/dev/null | awk '{{print $1}}'); "
+            f"echo bytes=$bytes; fi"
+        )
+        for name in m.get("verify", {}).get("expect_files") or []:
+            fn = shlex.quote(name)
+            parts.append(
+                f"if [ -e {p} ] && [ ! -e {p}/{fn} ]; then echo FAIL missing_file {fn}; fail=1; "
+                f"elif [ -e {p}/{fn} ]; then echo file_ok {fn}; fi"
+            )
+        min_b = int((m.get("verify") or {}).get("min_bytes") or 0)
+        if min_b > 0:
+            parts.append(
+                f"if [ -e {p} ]; then bytes=$(du -sb {p} 2>/dev/null | awk '{{print $1}}'); "
+                f"if [ \"${{bytes:-0}}\" -lt {min_b} ]; then echo FAIL min_bytes want>={min_b}; fail=1; "
+                f"else echo size_ok; fi; fi"
+            )
+    parts.append("exit $fail")
+    return "; ".join(parts)
+
+
+def build_deps_command(python_bin: str) -> str:
+    py = shlex.quote(python_bin or "python3")
+    return (
+        "echo HOST=$(hostname); "
+        f"echo PYTHON={py}; "
+        "echo HF_CLI=$(command -v huggingface-cli || command -v hf || echo missing); "
+        "echo MODELSCOPE=$(command -v modelscope || echo missing); "
+        "echo DOCKER=$(command -v docker || echo missing); "
+        f"{py} - <<'PY'\n"
+        "import importlib.util as u\n"
+        "print('pkg_huggingface_hub', bool(u.find_spec('huggingface_hub')))\n"
+        "print('pkg_modelscope', bool(u.find_spec('modelscope')))\n"
+        "print('can_snapshot_download', bool(u.find_spec('huggingface_hub')))\n"
+        "PY"
+    )
+
+
+def resolve_python_for_node(node: str | None) -> str:
+    data = load_nodes_data()
+    paths = node_paths(node, data) if node else default_paths(data)
+    return paths.get("python") or "python3"
+
+
 def cmd_show(_: argparse.Namespace) -> int:
     path = models_file()
     data = load_models()
@@ -162,13 +238,14 @@ def cmd_list(_: argparse.Namespace) -> int:
     data = load_models()
     models = model_entries(data)
     if not models:
-        print("未声明 models[]。编辑 config/local/models.json")
+        print("未声明 models[]。编辑 config/local/models.json（见 docs/手册.md）")
         return 1
     for m in models:
         args = " ".join(m["launch"]["extra_args"])
+        vf = ",".join(m["verify"]["expect_files"]) or "-"
         print(
             f"{m['id']}\tpath={m['path']}\trepo={m['repo'] or '-'}"
-            f"\tjob={m['launch']['job'] or '-'}\targs={args or '-'}"
+            f"\tjob={m['launch']['job'] or '-'}\targs={args or '-'}\tverify_files={vf}"
         )
     return 0
 
@@ -180,30 +257,70 @@ def cmd_check(args: argparse.Namespace) -> int:
     models = model_entries(data, node=node)
     if not caches and not models:
         example = LOCAL_DIR.parent / "examples" / "models.example.json"
-        print(
-            "未配置 models.json。复制示例后编辑路径：\n"
-            f"  cp {example} {LOCAL_DIR / 'models.json'}"
-        )
+        print(f"未配置 models.json。\n  cp {example} {LOCAL_DIR / 'models.json'}")
         return 1
     remote = build_check_command(caches, models)
-    limit = ["--node", node] if node else ["--nodes", args.nodes or "all"]
-    result = run_cli(["exec", "--quiet", *limit, "--", remote], timeout=180)
+    result = run_cli(["exec", "--quiet", *exec_limit(args), "--", remote], timeout=180)
     rows = collect_exec()
     if rows:
-        for item in rows:
-            print(f"===== {item.get('node')} (rc={item.get('rc')}) =====")
-            print((item.get("stdout") or "").rstrip())
-            if item.get("stderr"):
-                print((item.get("stderr") or "").rstrip())
-        ok = all(int(r.get("rc", 1)) == 0 for r in rows)
-        return 0 if ok else 1
+        return print_exec_rows(rows)
     print(result["stdout"] or result["stderr"] or "无结果")
+    return int(result["rc"] or 1)
+
+
+def cmd_verify(args: argparse.Namespace) -> int:
+    data = load_models()
+    models = model_entries(data, node=args.node)
+    if args.model:
+        models = [m for m in models if m["id"] == args.model]
+    if not models:
+        print("没有可校验的 models[]（或 --model 不匹配）")
+        return 1
+    remote = build_verify_command(models)
+    result = run_cli(["exec", "--quiet", *exec_limit(args), "--", remote], timeout=180)
+    rows = collect_exec()
+    if rows:
+        return print_exec_rows(rows)
+    print(result["stdout"] or result["stderr"] or "无结果")
+    return int(result["rc"] or 1)
+
+
+def cmd_deps(args: argparse.Namespace) -> int:
+    py = resolve_python_for_node(args.node)
+    remote = build_deps_command(py)
+    result = run_cli(["exec", "--quiet", *exec_limit(args), "--", remote], timeout=120)
+    rows = collect_exec()
+    if rows:
+        return print_exec_rows(rows)
+    print(result["stdout"] or result["stderr"] or "无结果")
+    return int(result["rc"] or 1)
+
+
+def cmd_install_tools(args: argparse.Namespace) -> int:
+    py = resolve_python_for_node(args.node)
+    py_q = shlex.quote(py)
+    pkgs = "huggingface_hub[cli] modelscope"
+    remote = (
+        f"echo HOST=$(hostname); "
+        f"{py_q} -m pip install -U {pkgs} && "
+        f"command -v huggingface-cli; command -v modelscope; "
+        f"echo DONE"
+    )
+    result = run_cli(
+        ["exec", "--quiet", *exec_limit(args), "--", remote],
+        timeout=args.timeout,
+    )
+    rows = collect_exec()
+    if rows:
+        return print_exec_rows(rows)
+    print(result["stdout"] or result["stderr"])
     return int(result["rc"] or 1)
 
 
 def cmd_pull(args: argparse.Namespace) -> int:
     data = load_models()
     pull = data.get("pull") or {}
+    tool = (args.tool or pull.get("tool") or "auto").lower()
     caches = {c["id"]: c for c in cache_entries(data, node=args.node)}
     models = {m["id"]: m for m in model_entries(data, node=args.node)}
 
@@ -218,7 +335,7 @@ def cmd_pull(args: argparse.Namespace) -> int:
         cache_id = args.cache or m.get("cache") or cache_id
 
     if not repo:
-        print("需要 --name <repo_id> 或 --model <models[].id>（且声明 repo）")
+        print("需要 --name <repo_id> 或 --model <id>（且声明 repo）")
         return 1
 
     if dest:
@@ -231,22 +348,45 @@ def cmd_pull(args: argparse.Namespace) -> int:
 
     dest_q = shlex.quote(target)
     repo_q = shlex.quote(repo)
-    remote = (
-        f"mkdir -p {dest_q} && "
-        f"if command -v huggingface-cli >/dev/null 2>&1; then "
-        f"HF_HUB_CACHE={dest_q} huggingface-cli download {repo_q}; "
-        f"elif command -v modelscope >/dev/null 2>&1; then "
-        f"modelscope download --model {repo_q} --local_dir {dest_q}/{repo_q}; "
-        f"else echo '需要 huggingface-cli 或 modelscope'; exit 127; fi"
+    py = shlex.quote(resolve_python_for_node(args.node))
+    hf_py = (
+        f"{py} -c \"from huggingface_hub import snapshot_download; "
+        f"print(snapshot_download(repo_id={repo!r}, local_dir={target!r}))\""
     )
-    limit = ["--node", args.node] if args.node else ["--nodes", args.nodes or "all"]
-    result = run_cli(["exec", "--quiet", *limit, "--", remote], timeout=args.timeout)
+    if tool == "huggingface-cli":
+        remote = (
+            f"mkdir -p {dest_q} && "
+            f"if command -v huggingface-cli >/dev/null 2>&1; then "
+            f"HF_HUB_CACHE={dest_q} huggingface-cli download {repo_q}; "
+            f"elif command -v hf >/dev/null 2>&1; then "
+            f"hf download {repo_q} --local-dir {dest_q}; "
+            f"else {hf_py}; fi"
+        )
+    elif tool == "modelscope":
+        remote = (
+            f"mkdir -p {dest_q} && "
+            f"command -v modelscope >/dev/null || "
+            f"{{ echo '缺少 modelscope；先: gpu-control models install-tools'; exit 127; }}; "
+            f"modelscope download --model {repo_q} --local_dir {dest_q}"
+        )
+    else:
+        remote = (
+            f"mkdir -p {dest_q} && "
+            f"if command -v huggingface-cli >/dev/null 2>&1; then "
+            f"HF_HUB_CACHE={dest_q} huggingface-cli download {repo_q}; "
+            f"elif command -v hf >/dev/null 2>&1; then "
+            f"hf download {repo_q} --local-dir {dest_q}; "
+            f"elif {py} -c 'import huggingface_hub' >/dev/null 2>&1; then "
+            f"{hf_py}; "
+            f"elif command -v modelscope >/dev/null 2>&1; then "
+            f"modelscope download --model {repo_q} --local_dir {dest_q}; "
+            f"else echo '需要 huggingface_hub 或 modelscope；"
+            f"运行: gpu-control models install-tools'; exit 127; fi"
+        )
+    result = run_cli(["exec", "--quiet", *exec_limit(args), "--", remote], timeout=args.timeout)
     rows = collect_exec()
     if rows:
-        for item in rows:
-            print(f"===== {item.get('node')} (rc={item.get('rc')}) =====")
-            print((item.get("stdout") or item.get("stderr") or "").rstrip())
-        return 0 if all(int(r.get("rc", 1)) == 0 for r in rows) else 1
+        return print_exec_rows(rows)
     print(result["stdout"] or result["stderr"])
     return int(result["rc"] or 1)
 
@@ -269,21 +409,43 @@ def main() -> int:
     sub = parser.add_subparsers(dest="action", required=True)
     sub.add_parser("show", help="显示 models 配置").set_defaults(func=cmd_show)
     sub.add_parser("list", help="列出已声明模型").set_defaults(func=cmd_list)
-    p_check = sub.add_parser("check", help="各节点检查缓存 / 模型路径 / docker")
+
+    p_check = sub.add_parser("check", help="检查缓存/模型路径与磁盘")
     p_check.add_argument("--node")
     p_check.add_argument("--nodes", default="all")
     p_check.set_defaults(func=cmd_check)
+
+    p_verify = sub.add_parser("verify", help="按 verify 规则校验模型目录")
+    p_verify.add_argument("--model", help="只校验某个 models[].id")
+    p_verify.add_argument("--node")
+    p_verify.add_argument("--nodes", default="all")
+    p_verify.set_defaults(func=cmd_verify)
+
+    p_deps = sub.add_parser("deps", help="检查节点 HF / ModelScope / docker")
+    p_deps.add_argument("--node")
+    p_deps.add_argument("--nodes", default="all")
+    p_deps.set_defaults(func=cmd_deps)
+
+    p_install = sub.add_parser("install-tools", help="在节点 pip 安装 huggingface_hub + modelscope")
+    p_install.add_argument("--node")
+    p_install.add_argument("--nodes", default="all")
+    p_install.add_argument("--timeout", type=int, default=900)
+    p_install.set_defaults(func=cmd_install_tools)
+
     p_pull = sub.add_parser("pull", help="在节点上拉取模型权重")
-    p_pull.add_argument("--name", help="仓库 id，如 org/model")
+    p_pull.add_argument("--name", help="仓库 id")
     p_pull.add_argument("--model", help="models[].id")
     p_pull.add_argument("--cache", help="caches[].id")
+    p_pull.add_argument("--tool", choices=["auto", "huggingface-cli", "modelscope"])
     p_pull.add_argument("--node")
     p_pull.add_argument("--nodes", default="all")
     p_pull.add_argument("--timeout", type=int, default=3600)
     p_pull.set_defaults(func=cmd_pull)
+
     p_paths = sub.add_parser("paths", help="显示 defaults/节点路径合并结果")
     p_paths.add_argument("--node")
     p_paths.set_defaults(func=cmd_paths)
+
     args = parser.parse_args()
     return int(args.func(args))
 

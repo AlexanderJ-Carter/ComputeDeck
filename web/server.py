@@ -471,8 +471,8 @@ def run_cli(args: list[str], timeout: int = 900) -> dict:
 SETUP_GUIDE = [
     {
         "id": "clone",
-        "title": "准备控制面（Core）",
-        "body": "安装依赖、生成 config/local、把 CLI 放进 PATH。这是通用控制面，不绑定某个模型。",
+        "title": "主控依赖与配置",
+        "body": "仅在 control 安装 ansible/paramiko；生成 config/local。完整说明见 docs/手册.md。",
         "cli": [
             "uv venv .venv && uv pip install -r requirements.txt",
             "./examples/quickstart.sh",
@@ -481,27 +481,18 @@ SETUP_GUIDE = [
     },
     {
         "id": "ssh",
-        "title": "配置 SSH",
-        "body": "在「配置」向导点选私钥、填用户/端口，保存并测试连通。",
-        "cli": [
-            "gpu-control ui --background",
-            "# 或：ssh -i <key> -p <port> <user>@<host> hostname",
-        ],
-    },
-    {
-        "id": "nodes",
-        "title": "登记节点",
-        "body": "通用能力：节点清单 → inventory → 远程命令 / GPU 快照 / 腾空隔离。",
+        "title": "SSH 与节点",
+        "body": "配置私钥与节点清单，渲染 inventory，确认连通。",
         "cli": [
             "gpu-control node render",
             "gpu-control get nodes",
-            "gpu-control exec --nodes all -- 'nvidia-smi -L'",
+            "gpu-control exec --nodes all -- hostname",
         ],
     },
     {
         "id": "job",
-        "title": "注册工作负载（可选）",
-        "body": "任意 Job：推理服务、评测、预处理均可。复制 example 到 config/local/jobs/。",
+        "title": "注册 Job（可选）",
+        "body": "复制模板到 config/local/jobs/；路径用 ${paths.*}。",
         "cli": [
             "cp config/examples/decider.example.json config/local/jobs/myjob.json",
             "gpu-control status myjob --nodes all",
@@ -509,11 +500,12 @@ SETUP_GUIDE = [
     },
     {
         "id": "models",
-        "title": "模型工具（可选模块）",
-        "body": "需要权重管理时再配 models.json：缓存检查 / 拉取。不做模型部署也能用 Core。",
+        "title": "模型工具（可选）",
+        "body": "节点需 huggingface-cli 或 modelscope 才能 pull；先 deps 再 install-tools。",
         "cli": [
             "cp config/examples/models.example.json config/local/models.json",
-            "gpu-control models check",
+            "gpu-control models deps",
+            "gpu-control models verify",
         ],
     },
 ]
@@ -1262,8 +1254,11 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200 if result["rc"] == 0 else 500, {"result": result})
             return
 
-        if path == "/api/models/check":
-            args = ["models", "check"]
+        if path in {"/api/models/check", "/api/models/verify", "/api/models/deps"}:
+            action = path.rsplit("/", 1)[-1]
+            args = ["models", action]
+            if body.get("model") and action == "verify":
+                args.extend(["--model", body["model"]])
             if body.get("node"):
                 args.extend(["--node", body["node"]])
             elif body.get("nodes"):
@@ -1273,6 +1268,20 @@ class Handler(BaseHTTPRequestHandler):
             self._json(
                 200 if result["rc"] == 0 else 500,
                 {"result": result, "results": collect_exec_results(), "models": build_models_payload(body.get("node"))},
+            )
+            return
+
+        if path == "/api/models/install-tools":
+            args = ["models", "install-tools"]
+            if body.get("node"):
+                args.extend(["--node", body["node"]])
+            elif body.get("nodes"):
+                args.extend(["--nodes", body["nodes"]])
+            with _action_lock:
+                result = run_cli(args, timeout=int(body.get("timeout") or 900))
+            self._json(
+                200 if result["rc"] == 0 else 500,
+                {"result": result, "results": collect_exec_results()},
             )
             return
 

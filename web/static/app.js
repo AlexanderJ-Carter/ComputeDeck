@@ -29,7 +29,7 @@ const VIEW_CLI = {
   cluster: "gpu-control get nodes",
   nodes: "gpu-control node render",
   workloads: "gpu-control get jobs",
-  models: "gpu-control models list && gpu-control models check",
+  models: "gpu-control models deps && gpu-control models verify",
   endpoints: "gpu-control health",
   ops: "gpu-control exec --nodes all -- ...",
   terminal: "ssh <node>  # Web 内置 PTY",
@@ -759,6 +759,12 @@ function syncModelDetail() {
   document.getElementById("model-repo").textContent = m?.repo || "-";
   document.getElementById("model-job").textContent = m?.launch?.job || "-";
   document.getElementById("model-args").textContent = (m?.launch?.extra_args || []).join(" ") || "-";
+  const verifyEl = document.getElementById("model-verify");
+  if (verifyEl) {
+    const files = (m?.verify?.expect_files || []).join(", ") || "-";
+    const minB = m?.verify?.min_bytes || 0;
+    verifyEl.textContent = minB ? `${files} · min_bytes=${minB}` : files;
+  }
 }
 
 async function refreshModels() {
@@ -1637,20 +1643,37 @@ async function boot() {
   document.getElementById("btn-models-refresh")?.addEventListener("click", () => refreshModels());
   document.getElementById("model-select")?.addEventListener("change", syncModelDetail);
   document.getElementById("model-node")?.addEventListener("change", () => refreshModels());
-  document.getElementById("btn-models-check")?.addEventListener("click", async () => {
+  const runModelsAction = async (path, label, extra = {}) => {
     const node = document.getElementById("model-node")?.value;
+    const model = document.getElementById("model-select")?.value;
     setBusy(true);
     try {
-      const body = node ? { node } : { nodes: "all" };
-      const data = await api("/api/models/check", { method: "POST", body: JSON.stringify(body) });
-      showResults(data.results, "models check");
+      const body = { ...extra };
+      if (node) body.node = node;
+      else body.nodes = "all";
+      if (path.endsWith("/verify") && model) body.model = model;
+      const data = await api(path, { method: "POST", body: JSON.stringify(body) });
+      showResults(data.results, label);
       if (data.models) renderModels(data.models);
-      toast(data.result?.rc === 0 ? "检查完成" : "检查有失败");
+      toast(data.result?.rc === 0 ? `${label}完成` : `${label}有失败`);
     } catch (err) {
       log(String(err.message || err));
     } finally {
       setBusy(false);
     }
+  };
+  document.getElementById("btn-models-deps")?.addEventListener("click", () =>
+    runModelsAction("/api/models/deps", "依赖检查")
+  );
+  document.getElementById("btn-models-check")?.addEventListener("click", () =>
+    runModelsAction("/api/models/check", "路径检查")
+  );
+  document.getElementById("btn-models-verify")?.addEventListener("click", () =>
+    runModelsAction("/api/models/verify", "模型校验")
+  );
+  document.getElementById("btn-models-install")?.addEventListener("click", async () => {
+    if (!confirm("确认在目标节点 pip 安装 huggingface_hub + modelscope？")) return;
+    await runModelsAction("/api/models/install-tools", "安装拉取工具");
   });
   document.getElementById("btn-models-pull")?.addEventListener("click", async () => {
     const model = document.getElementById("model-select")?.value;
