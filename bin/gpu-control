@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -427,6 +428,11 @@ def cmd_job_action(args: argparse.Namespace) -> int:
     limit = resolve_limit(getattr(args, "node", None), getattr(args, "nodes", None))
     quiet = bool(getattr(args, "quiet", False))
     override_args = getattr(args, "extra_args", None)
+    if action in {"start", "restart"}:
+        refuse_cordoned(
+            target_worker_nodes(limit),
+            allow_cordoned=bool(getattr(args, "allow_cordoned", False)),
+        )
     code = run_job_on_nodes(
         job,
         action,
@@ -541,6 +547,7 @@ def deploy_job(
     note: str = "",
     quiet: bool = False,
     selected: list[str] | None = None,
+    allow_cordoned: bool = False,
 ) -> tuple[int, list[str]]:
     """Deploy a job and return (exit_code, selected_nodes)."""
     job = load_job(job_name)
@@ -569,6 +576,7 @@ def deploy_job(
     if not selected:
         return 1, []
 
+    refuse_cordoned(selected, allow_cordoned=allow_cordoned)
     limit = ",".join(selected)
     print(f"Deploying job={job['name']} nodes={limit}")
 
@@ -612,6 +620,7 @@ def cmd_deploy(args: argparse.Namespace) -> int:
         no_wait=args.no_wait,
         note=args.note,
         quiet=bool(args.quiet),
+        allow_cordoned=bool(getattr(args, "allow_cordoned", False)),
     )
     if code != 0 and not _selected:
         die("No nodes selected for deployment")
@@ -701,24 +710,112 @@ def cmd_probe(args: argparse.Namespace) -> int:
     return run_python("merge_probe.py").returncode
 
 
+def cordoned_names() -> set[str]:
+    return set((load_node_state().get("cordoned") or {}).keys())
+
+
+def filter_schedulable(nodes: list[str], *, allow_cordoned: bool = False) -> list[str]:
+    if allow_cordoned:
+        return list(nodes)
+    blocked = cordoned_names()
+    return [n for n in nodes if n not in blocked]
+
+
+def refuse_cordoned(nodes: list[str], *, allow_cordoned: bool = False) -> None:
+    if allow_cordoned:
+        return
+    blocked = sorted(set(nodes) & cordoned_names())
+    if blocked:
+        die(
+            "节点已隔离（cordon），调度/启动已拒绝: "
+            + ", ".join(blocked)
+            + "\n取消隔离: gpu-control node uncordon <name>"
+            + "\n强制操作: 加 --allow-cordoned"
+        )
+
+
+def gpu_occupancy(node: str) -> dict:
+    resources = load_resources()
+    info = resources.get(node) or {}
+    gpus = info.get("gpus") or []
+    return {
+        "node": node,
+        "free": int(info.get("free_count", sum(1 for g in gpus if g.get("status") == "free"))),
+        "occupied": int(
+            info.get("occupied_count", sum(1 for g in gpus if g.get("status") == "occupied"))
+        ),
+        "total": int(info.get("gpu_count", len(gpus))),
+        "processes": [
+            {
+                "gpu": g.get("index"),
+                "pid": p.get("pid"),
+                "name": p.get("name"),
+                "memory_mib": p.get("memory_mib"),
+            }
+            for g in gpus
+            for p in (g.get("processes") or [])
+        ],
+    }
+
+
+FORCE_KILL_GPU_CMD = (
+    "echo HOST=$(hostname); "
+    "pids=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader,nounits 2>/dev/null "
+    "| tr -d ' ' | awk 'NF' | sort -u); "
+    "if [ -z \"$pids\" ]; then echo NO_GPU_PIDS; "
+    "else echo KILL_PIDS=$pids; kill $pids 2>/dev/null || true; sleep 2; "
+    "for p in $pids; do kill -0 $p 2>/dev/null && kill -9 $p 2>/dev/null || true; done; fi; "
+    "nvidia-smi --query-compute-apps=pid,process_name,used_gpu_memory --format=csv || true"
+)
+
+
 def cmd_free(args: argparse.Namespace) -> int:
-    """Stop jobs on a node, release leases, optionally cordon for others."""
+    """Stop jobs on a node, optionally force-kill GPU procs, release leases, cordon, verify."""
     node = args.node
     if node not in inventory_nodes():
         die(f"Unknown node: {node}. Known: {', '.join(inventory_nodes())}")
 
     quiet = bool(args.quiet)
     jobs = [args.job] if args.job else [job["name"] for job in list_jobs()]
-    print(f"Freeing node={node} jobs={jobs}")
+    stop_errors: list[str] = []
+
+    print(f"Freeing node={node}")
+    print(f"  jobs: {', '.join(jobs) or '(none)'}")
+    print(f"  force_kill_gpu: {bool(args.force)}")
+    print(f"  cordon: {bool(args.cordon)}")
+    if args.dry_run:
+        occ = gpu_occupancy(node) if RESOURCES_FILE.is_file() else {}
+        print("  dry-run: 不会执行 stop/kill/cordon")
+        if occ:
+            print(
+                f"  snapshot: free={occ.get('free')} occupied={occ.get('occupied')} "
+                f"total={occ.get('total')} procs={len(occ.get('processes') or [])}"
+            )
+        return 0
 
     for job_name in jobs:
         job = load_job(job_name)
         code = run_job_on_nodes(job, "stop", limit=node, quiet=quiet)
         if code != 0:
+            stop_errors.append(f"{job_name}:rc={code}")
             print(f"warning: stop {job_name} on {node} rc={code}", file=sys.stderr)
+        else:
+            print(f"  stopped job={job_name}")
+
+    if args.force:
+        print("  force: killing remaining GPU compute processes")
+        code = ansible_playbook(
+            "exec.yml",
+            limit=node,
+            extra={"remote_command": FORCE_KILL_GPU_CMD},
+            quiet=quiet,
+        )
+        if code != 0:
+            stop_errors.append(f"force-kill:rc={code}")
+            print(f"warning: force kill on {node} rc={code}", file=sys.stderr)
 
     released = release_lease_nodes([node])
-    print(f"Released {released} lease(s) covering {node}")
+    print(f"  released leases: {released}")
 
     if args.cordon:
         state = load_node_state()
@@ -728,11 +825,40 @@ def cmd_free(args: argparse.Namespace) -> int:
             "owner": args.owner or os.environ.get("USER", "unknown"),
         }
         save_node_state(state)
-        print(f"Cordoned {node}: schedulers will skip it until uncordon")
+        print(f"  cordoned: yes ({state['cordoned'][node]['reason']})")
 
-    refresh_resources(quiet=quiet)
-    print(f"Node {node} is free" + (" and cordoned" if args.cordon else ""))
-    return 0
+    deadline = time.time() + max(0, int(args.wait or 0))
+    while True:
+        refresh_resources(quiet=quiet)
+        occ = gpu_occupancy(node)
+        print(
+            f"  verify: free={occ['free']}/{occ['total']} occupied={occ['occupied']} "
+            f"procs={len(occ['processes'])}"
+        )
+        for proc in occ["processes"][:12]:
+            print(
+                f"    gpu{proc['gpu']} pid={proc['pid']} "
+                f"{proc['name']} mem={proc['memory_mib']}MiB"
+            )
+        if occ["occupied"] == 0:
+            print(f"Node {node} is free" + (" and cordoned" if args.cordon else ""))
+            return 0
+        if time.time() >= deadline:
+            break
+        time.sleep(5)
+
+    msg = (
+        f"Node {node} still busy after free "
+        f"(occupied={occ['occupied']}/{occ['total']})"
+    )
+    if stop_errors:
+        msg += f"; stop_errors={stop_errors}"
+    if args.allow_busy:
+        print(f"warning: {msg}", file=sys.stderr)
+        return 0
+    print(msg, file=sys.stderr)
+    print("提示: 加 --force 强杀残留 GPU 进程；或 --wait 30 等待显存释放", file=sys.stderr)
+    return 1
 
 
 def cmd_node(args: argparse.Namespace) -> int:
@@ -1244,6 +1370,11 @@ def build_parser() -> argparse.ArgumentParser:
             default=None,
             help="覆盖 job.extra_args，可重复，如 --arg --base-port --arg 30000",
         )
+        p.add_argument(
+            "--allow-cordoned",
+            action="store_true",
+            help="允许在已隔离节点上 start/restart",
+        )
         p.add_argument("--quiet", action="store_true")
         p.set_defaults(func=cmd_job_action, action=name)
 
@@ -1254,6 +1385,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_deploy.add_argument("--restart", action="store_true", help="部署前先 stop")
     p_deploy.add_argument("--no-wait", action="store_true")
     p_deploy.add_argument("--note", default="")
+    p_deploy.add_argument(
+        "--allow-cordoned",
+        action="store_true",
+        help="允许部署到已隔离节点（默认拒绝）",
+    )
     p_deploy.add_argument("--quiet", action="store_true")
     p_deploy.set_defaults(func=cmd_deploy)
 
@@ -1337,10 +1473,30 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor.add_argument("--json", action="store_true")
     p_doctor.set_defaults(func=cmd_doctor)
 
-    p_free = sub.add_parser("free", help="腾空某个节点 GPU（停任务 + 释放 lease，可 cordon）")
+    p_free = sub.add_parser(
+        "free",
+        help="腾空节点：停 Job →（可选）强杀 GPU 进程 → 释 lease →（可选）cordon → 校验空闲",
+    )
     p_free.add_argument("--node", required=True, help="要腾空的节点")
     p_free.add_argument("--job", help="只停指定任务；默认停掉所有已注册任务")
     p_free.add_argument("--cordon", action="store_true", help="腾空后禁止调度器再选中该节点")
+    p_free.add_argument(
+        "--force",
+        action="store_true",
+        help="停 Job 后仍占用时，强杀 nvidia-smi 列出的 compute 进程",
+    )
+    p_free.add_argument(
+        "--wait",
+        type=int,
+        default=0,
+        help="校验前等待秒数（循环刷新，直到空闲或超时）",
+    )
+    p_free.add_argument(
+        "--allow-busy",
+        action="store_true",
+        help="校验仍占用时不返回失败（默认占用则 rc=1）",
+    )
+    p_free.add_argument("--dry-run", action="store_true", help="只打印计划，不执行")
     p_free.add_argument("--reason", default="")
     p_free.add_argument("--owner")
     p_free.add_argument("--quiet", action="store_true")

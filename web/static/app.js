@@ -527,26 +527,32 @@ function renderDrawer() {
   }
   const node = (state.overview.nodes || []).find((n) => n.name === name);
   if (!node) return;
+  const cordon = node.cordon || {};
   const actions = node.cordoned
     ? `<button data-uncordon="${node.name}">取消隔离</button>
-       <button data-free="${node.name}" class="danger">腾空</button>`
+       <button data-free="${node.name}" class="danger">腾空</button>
+       <button data-free-force="${node.name}" class="danger">强杀腾空</button>`
     : `<button data-cordon="${node.name}">隔离</button>
        <button data-free="${node.name}" class="danger">腾空</button>
+       <button data-free-force="${node.name}" class="danger">强杀腾空</button>
        <button data-free-cordon="${node.name}" class="danger">腾空并隔离</button>`;
   body.innerHTML = `
     <h3>${escapeHtml(node.name)}</h3>
     <div class="kv"><b>地址</b> ${escapeHtml(node.host || "-")}</div>
     <div class="kv"><b>角色</b> ${escapeHtml(node.role || "-")}</div>
     <div class="kv"><b>标签</b> ${escapeHtml((node.labels || []).join(", ") || "-")}</div>
+    <div class="kv"><b>状态</b> ${node.cordoned ? "已隔离" : node.used ? "占用中" : "可调度"}</div>
     <div class="kv"><b>GPU</b> 空闲 ${node.free} / 占用 ${node.used} / 共 ${node.total}</div>
     <div class="kv"><b>CPU</b> ${node.cpu_percent ?? "-"}% · 负载 ${node.load1 ?? "-"} / ${node.cores ?? "-"} 核</div>
     <div class="kv"><b>内存</b> ${node.mem_used_mb ?? "-"} / ${node.mem_total_mb ?? "-"} MB</div>
     <div class="kv"><b>占用</b> ${escapeHtml(node.lease ? node.lease.job + " / " + node.lease.id : "-")}</div>
+    <div class="kv"><b>隔离原因</b> ${escapeHtml(node.cordoned ? (cordon.reason || "cordoned") : "-")}</div>
     <div class="kv"><b>备注</b> ${escapeHtml(node.note || "-")}</div>
+    <p class="muted tiny">腾空 = 停注册 Job + 释 lease + 校验 GPU；强杀会再 kill nvidia-smi 残留进程。</p>
     <div class="actions">${actions}
       <button data-open-term="${node.name}" class="primary">打开终端</button>
     </div>
-    <p class="meta" style="margin-top:12px">CLI: gpu-control describe node ${escapeHtml(node.name)}</p>`;
+    <p class="meta" style="margin-top:12px">CLI: gpu-control free --node ${escapeHtml(node.name)} [--force] [--cordon]</p>`;
   bindNodeActions(body);
   body.querySelectorAll("[data-open-term]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -608,32 +614,47 @@ function bindNodeActions(root) {
       setBusy(false);
     }
   };
+  const runFree = async (node, opts = {}) => {
+    const data = await api("/api/free", {
+      method: "POST",
+      body: JSON.stringify({
+        node,
+        wait: 20,
+        ...opts,
+      }),
+    });
+    const text = [data.result?.stdout, data.result?.stderr].filter(Boolean).join("\n") || "free done";
+    document.getElementById("console").classList.remove("empty");
+    document.getElementById("console").textContent = text;
+    log(text.split("\n").slice(-3).join(" | "));
+    if (data.overview) applyOverview(data.overview);
+    if (data.result?.rc !== 0) throw new Error(text || "腾空未完全空闲");
+    toast(opts.cordon ? "已腾空并隔离" : "已腾空");
+  };
   root.querySelectorAll("button[data-free]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (!confirm(`确认腾空 ${btn.dataset.free}？`)) return;
-      wrap(`free ${btn.dataset.free}`, async () => {
-        const data = await api("/api/free", {
-          method: "POST",
-          body: JSON.stringify({ node: btn.dataset.free }),
-        });
-        log(data.result.stdout || "已腾空");
-      });
+      if (!confirm(`确认腾空 ${btn.dataset.free}？（停 Job + 释 lease + 校验）`)) return;
+      wrap(`free ${btn.dataset.free}`, () => runFree(btn.dataset.free));
+    });
+  });
+  root.querySelectorAll("button[data-free-force]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!confirm(`确认强杀腾空 ${btn.dataset.freeForce}？会 kill 残留 GPU 进程`)) return;
+      wrap(`free --force ${btn.dataset.freeForce}`, () =>
+        runFree(btn.dataset.freeForce, { force: true })
+      );
     });
   });
   root.querySelectorAll("button[data-free-cordon]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (!confirm(`确认腾空并隔离 ${btn.dataset.freeCordon}？`)) return;
-      wrap(`free+cordon ${btn.dataset.freeCordon}`, async () => {
-        const data = await api("/api/free", {
-          method: "POST",
-          body: JSON.stringify({
-            node: btn.dataset.freeCordon,
-            cordon: true,
-            reason: "freed for external use",
-          }),
-        });
-        log(data.result.stdout || "已腾空并隔离");
-      });
+      if (!confirm(`确认腾空并隔离 ${btn.dataset.freeCordon}？调度器将跳过该节点`)) return;
+      wrap(`free+cordon ${btn.dataset.freeCordon}`, () =>
+        runFree(btn.dataset.freeCordon, {
+          cordon: true,
+          force: true,
+          reason: "freed for external use",
+        })
+      );
     });
   });
   root.querySelectorAll("button[data-cordon]").forEach((btn) => {
@@ -644,6 +665,8 @@ function bindNodeActions(root) {
           body: JSON.stringify({ name: btn.dataset.cordon, reason: "manual from ui" }),
         });
         log(data.result.stdout || "已隔离");
+        if (data.overview) applyOverview(data.overview);
+        toast("已隔离（不自动停任务）");
       });
     });
   });
@@ -655,6 +678,8 @@ function bindNodeActions(root) {
           body: JSON.stringify({ name: btn.dataset.uncordon }),
         });
         log(data.result.stdout || "已取消隔离");
+        if (data.overview) applyOverview(data.overview);
+        toast("已取消隔离");
       });
     });
   });

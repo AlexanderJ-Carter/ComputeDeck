@@ -38,7 +38,7 @@ gpu-control ui --background    # 仅在主控 control 启动 :8787
 gpu-control overview
 gpu-control metrics               # CPU / 内存 / 负载
 gpu-control exec --nodes all -- 'nvidia-smi -L'
-gpu-control free --node <name> --cordon
+gpu-control free --node <name> --force --cordon   # 腾空并隔离，校验 GPU 空闲
 
 # Workload（示例名可换成你的 job）
 gpu-control start <job> --nodes all

@@ -10,10 +10,50 @@ import time
 from datetime import datetime, timezone
 
 import _bootstrap  # noqa: F401
-from paths import CLI, PROJECT_DIR, STATE_DIR, VENV_PYTHON
+from paths import CLI, INVENTORY_FILE, PROJECT_DIR, STATE_DIR, VENV_PYTHON
 
 LOG_FILE = STATE_DIR / "watchdog.log"
 STATE_FILE = STATE_DIR / "watchdog_state.json"
+NODE_STATE_FILE = STATE_DIR / "node_state.json"
+
+
+def cordoned_nodes() -> set[str]:
+    if not NODE_STATE_FILE.is_file():
+        return set()
+    data = json.loads(NODE_STATE_FILE.read_text(encoding="utf-8"))
+    return set((data.get("cordoned") or {}).keys())
+
+
+def inventory_workers() -> list[str]:
+    hosts: list[str] = []
+    if not INVENTORY_FILE.is_file():
+        return hosts
+    in_workers = False
+    for line in INVENTORY_FILE.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("["):
+            in_workers = line == "[gpu_workers]"
+            continue
+        if in_workers:
+            hosts.append(line.split()[0])
+    return hosts
+
+
+def schedulable_limit(nodes: str | None) -> str | None:
+    blocked = cordoned_nodes()
+    if nodes:
+        wanted = [n.strip() for n in nodes.split(",") if n.strip() and n.strip() not in blocked]
+    else:
+        wanted = [n for n in inventory_workers() if n not in blocked]
+    if blocked:
+        log(f"skip cordoned nodes={sorted(blocked)}")
+    if not wanted:
+        return ""
+    if nodes is None and len(wanted) == len(inventory_workers()):
+        return None
+    return ",".join(wanted)
 
 
 def log(message: str) -> None:
@@ -46,32 +86,40 @@ def save_state(data: dict) -> None:
 
 
 def check_and_fix(job: str, nodes: str | None, max_restarts: int) -> None:
+    limit = schedulable_limit(nodes)
+    if limit == "":
+        log(f"skip job={job}: no schedulable nodes (all cordoned?)")
+        return
     args = ["status", job]
-    if nodes:
-        args.extend(["--nodes", nodes])
+    if limit:
+        args.extend(["--nodes", limit])
     result = run_cli(args)
     healthy = result.returncode == 0
-    log(f"check job={job} nodes={nodes or 'all'} healthy={healthy} rc={result.returncode}")
+    log(f"check job={job} nodes={limit or 'all'} healthy={healthy} rc={result.returncode}")
     if healthy:
         return
 
     state = load_state()
-    key = f"{job}:{nodes or 'all'}"
+    key = f"{job}:{limit or 'all'}"
     count = int(state.setdefault("restarts", {}).get(key, 0))
     if count >= max_restarts:
         log(f"skip restart job={job} reached max_restarts={max_restarts}")
         return
 
     log(f"restarting unhealthy job={job} attempt={count + 1}/{max_restarts}")
-    restart_args = ["restart", job]
-    if nodes:
-        restart_args.extend(["--nodes", nodes])
+    restart_args = ["restart", job, "--allow-cordoned"]
+    # already filtered cordoned out of limit
+    if limit:
+        restart_args.extend(["--nodes", limit])
     restart = run_cli(restart_args)
     log(f"restart rc={restart.returncode}")
     if restart.stdout.strip():
         log(restart.stdout.strip().splitlines()[-1])
     if restart.returncode == 0:
-        wait = run_cli(["wait", job, *(["--nodes", nodes] if nodes else [])])
+        wait_args = ["wait", job]
+        if limit:
+            wait_args.extend(["--nodes", limit])
+        wait = run_cli(wait_args)
         log(f"wait rc={wait.returncode}")
         if wait.returncode == 0:
             state["restarts"][key] = 0
@@ -81,7 +129,7 @@ def check_and_fix(job: str, nodes: str | None, max_restarts: int) -> None:
         state["restarts"][key] = count + 1
     state["last_action"] = {
         "job": job,
-        "nodes": nodes,
+        "nodes": limit,
         "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "restart_rc": restart.returncode,
     }

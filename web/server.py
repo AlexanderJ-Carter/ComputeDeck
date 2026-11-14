@@ -1424,10 +1424,19 @@ class Handler(BaseHTTPRequestHandler):
                 args.extend(["--job", body["job"]])
             if body.get("cordon"):
                 args.append("--cordon")
+            if body.get("force"):
+                args.append("--force")
+            if body.get("allow_busy"):
+                args.append("--allow-busy")
+            if body.get("dry_run"):
+                args.append("--dry-run")
+            wait = body.get("wait")
+            if wait is not None and str(wait) != "":
+                args.extend(["--wait", str(int(wait))])
             if body.get("reason"):
                 args.extend(["--reason", body["reason"]])
             with _action_lock:
-                result = run_cli(args, timeout=900)
+                result = run_cli(args, timeout=1200)
             self._json(
                 200 if result["rc"] == 0 else 500,
                 {"result": result, "overview": build_overview()},
