@@ -1178,7 +1178,10 @@ def cmd_watchdog(args: argparse.Namespace) -> int:
     ensure_runtime()
     script = PROJECT_DIR / "scripts" / "watchdog.py"
     cmd = [str(VENV_PYTHON), str(script), "--interval", str(args.interval), "--max-restarts", str(args.max_restarts)]
-    for job in args.jobs or ["decider"]:
+    jobs = args.jobs or ([default_job_name()] if default_job_name() else [])
+    if not jobs:
+        die("没有可监控的 Job：注册 Job 或传入 --job")
+    for job in jobs:
         cmd.extend(["--job", job])
     if args.nodes:
         cmd.extend(["--nodes", args.nodes])
@@ -1466,7 +1469,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  gpu-control describe node deepseek-1\n"
             "  gpu-control get endpoints\n"
             "  gpu-control health\n"
-            "  gpu-control deploy decider --gpus 4\n"
+            "  gpu-control deploy <job> --gpus 4\n"
             "  gpu-control free --node deepseek-2 --cordon\n"
             "  gpu-control ui --background\n"
         ),
@@ -1490,7 +1493,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_overview.add_argument("--job", help="同时查询某任务就绪状态")
     p_overview.set_defaults(func=cmd_overview)
 
-    p_status = sub.add_parser("status", help="查看任务状态（默认 decider）")
+    p_status = sub.add_parser("status", help="查看任务状态（默认 cluster.default_job）")
     p_status.add_argument("job", nargs="?", default=None)
     p_status.add_argument("--node")
     p_status.add_argument("--nodes")
