@@ -296,12 +296,13 @@ function ensureTerminal() {
   }
   const term = new Terminal({
     cursorBlink: true,
-    fontFamily: 'JetBrains Mono, Menlo, Consolas, monospace',
+    fontFamily: '"IBM Plex Mono", Menlo, Consolas, monospace',
     fontSize: 13,
     theme: {
-      background: "#0b1017",
-      foreground: "#d7e3f4",
-      cursor: "#6aa8ff",
+      background: "#0b1210",
+      foreground: "#d5e8df",
+      cursor: "#2ec4b6",
+      selectionBackground: "rgba(46, 196, 182, 0.28)",
     },
   });
   let fit = null;

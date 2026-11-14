@@ -4,11 +4,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>GPU 控制台</title>
+  <title>gpu-control</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
-    href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600;700&display=swap"
     rel="stylesheet" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css" />
   <link rel="stylesheet" href="/static/style.css?v=__UI_VERSION__" />
@@ -27,20 +27,29 @@
       <div class="rail-brand">
         <div class="logo">gc</div>
         <div>
-          <div class="logo-title">GPU 控制台</div>
+          <div class="logo-title">gpu-control</div>
           <div class="logo-sub" id="ui-version">v__UI_VERSION__</div>
         </div>
       </div>
       <nav class="rail-nav" id="rail-nav">
-        <button class="nav-item active" data-view="actions">一键运维</button>
-        <button class="nav-item" data-view="cluster">总览</button>
-        <button class="nav-item" data-view="nodes">节点</button>
-        <button class="nav-item" data-view="workloads">任务</button>
-        <button class="nav-item" data-view="endpoints">推理池</button>
-        <button class="nav-item" data-view="ops">命令</button>
-        <button class="nav-item" data-view="terminal">终端</button>
-        <button class="nav-item" data-view="guide">指南</button>
-        <button class="nav-item" data-view="config">配置</button>
+        <div class="nav-group">
+          <span class="nav-label">运维</span>
+          <button class="nav-item active" data-view="actions">一键运维</button>
+          <button class="nav-item" data-view="cluster">总览</button>
+          <button class="nav-item" data-view="workloads">任务</button>
+        </div>
+        <div class="nav-group">
+          <span class="nav-label">集群</span>
+          <button class="nav-item" data-view="nodes">节点</button>
+          <button class="nav-item" data-view="endpoints">推理池</button>
+          <button class="nav-item" data-view="ops">命令</button>
+          <button class="nav-item" data-view="terminal">终端</button>
+        </div>
+        <div class="nav-group">
+          <span class="nav-label">系统</span>
+          <button class="nav-item" data-view="guide">指南</button>
+          <button class="nav-item" data-view="config">配置</button>
+        </div>
       </nav>
       <div class="theme-toggle" id="theme-toggle">
         <button type="button" data-theme-set="light" data-keep-enabled="1">浅色</button>
@@ -56,7 +65,7 @@
       <header class="topbar">
         <div>
           <h1 id="view-title">一键运维</h1>
-          <p id="strategy-line">控制面 → 被控节点 → 推理服务</p>
+          <p id="strategy-line">控制面编排 · 节点执行 · 推理池可观测</p>
         </div>
         <div class="topbar-actions">
           <label class="switch">
