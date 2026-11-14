@@ -15,7 +15,14 @@
     "${paths.repo}/examples/train/llamafactory_lora_sft.example.yaml"
   ],
   "env": {
-    "GPU_CONTROL_JOB_NAME": "train-job"
+    "GPU_CONTROL_JOB_NAME": "train-job",
+    "GPU_CONTROL_JOB_RUNTIME": "${paths.workdir}/gpu-control-jobs/train-job"
   },
-  "actions": ["start", "stop", "restart", "status", "wait"]
+  "actions": [
+    "start",
+    "stop",
+    "restart",
+    "status",
+    "wait"
+  ]
 }

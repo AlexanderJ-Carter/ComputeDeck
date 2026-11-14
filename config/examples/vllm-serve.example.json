@@ -1,0 +1,22 @@
+{
+  "name": "vllm-serve",
+  "description": "vLLM 进程模式（OpenAI 兼容）：把 model / TP / port 换成你的值；节点需已装 vLLM",
+  "kind": "service",
+  "gpus_per_node": 4,
+  "runtime": "process",
+  "model": "your-model",
+  "python": "${paths.python}",
+  "script": "${paths.repo}/examples/vllm_serve.py",
+  "extra_args": [
+    "--model",
+    "${paths.model_root}/your-model",
+    "--tensor-parallel-size",
+    "4",
+    "--port",
+    "8000"
+  ],
+  "env": {
+    "GPU_CONTROL_JOB_NAME": "vllm-serve"
+  },
+  "actions": ["start", "stop", "restart", "status", "wait"]
+}

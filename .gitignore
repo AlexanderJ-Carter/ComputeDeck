@@ -5,7 +5,6 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
-uv.lock
 
 # Local machine configs & secrets (do not publish)
 config/local/**

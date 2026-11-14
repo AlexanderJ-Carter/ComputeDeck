@@ -1,14 +1,18 @@
 {
   "name": "vllm-docker",
-  "description": "示例：Docker 启动 vLLM OpenAI 兼容服务（需节点 docker + nvidia toolkit）",
+  "description": "Docker 启动 vLLM OpenAI 兼容服务（需 docker + nvidia toolkit）。TP=4 时每节点通常只开 1 个端口；若使用端点健康探测，请在 nodes.json 对该节点设置 ports_per_node: 1、base_port: 8000",
   "gpus_per_node": 4,
   "runtime": "docker",
   "docker": {
     "image": "vllm/vllm-openai:latest",
     "name": "gpu-control-vllm",
     "gpus": "all",
-    "ports": ["8000:8000"],
-    "volumes": ["${paths.model_root}:/models:ro"],
+    "ports": [
+      "8000:8000"
+    ],
+    "volumes": [
+      "${paths.model_root}:/models:ro"
+    ],
     "env": {
       "HUGGING_FACE_HUB_TOKEN": ""
     },
@@ -21,5 +25,11 @@
       "8000"
     ]
   },
-  "actions": ["start", "stop", "restart", "status", "wait"]
+  "actions": [
+    "start",
+    "stop",
+    "restart",
+    "status",
+    "wait"
+  ]
 }

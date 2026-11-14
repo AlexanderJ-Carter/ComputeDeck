@@ -29,7 +29,7 @@ def _runtime_dir() -> Path:
     if raw:
         return Path(raw)
     name = os.environ.get("GPU_CONTROL_JOB_NAME", "train-job").strip() or "train-job"
-    return Path(f"/tmp/gpu-control-train/{name}")
+    return Path(f"/tmp/gpu-control-jobs/{name}")
 
 
 def _pid_file() -> Path:
@@ -117,6 +117,13 @@ def _build_command(args: argparse.Namespace) -> list[str]:
             f"--master_addr={dist['MASTER_ADDR']}",
             f"--master_port={dist['MASTER_PORT']}",
         ]
+        hostfile = os.environ.get("HOSTFILE", "").strip()
+        if not hostfile:
+            runtime = os.environ.get("GPU_CONTROL_JOB_RUNTIME", "").strip()
+            if runtime:
+                hostfile = str(Path(runtime) / "hostfile")
+        if dist["NNODES"] != "1" and hostfile and Path(hostfile).is_file():
+            cmd.extend(["--hostfile", hostfile])
         if args.deepspeed:
             # deepspeed 自身也吃 --deepspeed；训练脚本参数里再带一份亦可
             pass

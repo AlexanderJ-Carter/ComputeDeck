@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from paths import STATE_DIR
+from state_util import atomic_write_text
 
 RUNLOG_FILE = STATE_DIR / "runlog.jsonl"
 DEFAULT_LIMIT = 80
@@ -49,7 +50,7 @@ def append_runlog(
 def _trim_file() -> None:
     lines = RUNLOG_FILE.read_text(encoding="utf-8").splitlines()
     keep = lines[-max(200, len(lines) // 2) :]
-    RUNLOG_FILE.write_text("\n".join(keep) + ("\n" if keep else ""), encoding="utf-8")
+    atomic_write_text(RUNLOG_FILE, "\n".join(keep) + ("\n" if keep else ""))
 
 
 def list_runlog(*, limit: int = DEFAULT_LIMIT, kind: str | None = None) -> dict[str, Any]:
@@ -57,11 +58,19 @@ def list_runlog(*, limit: int = DEFAULT_LIMIT, kind: str | None = None) -> dict[
     if not RUNLOG_FILE.is_file():
         return {"items": [], "path": str(RUNLOG_FILE), "total": 0}
     rows: list[dict[str, Any]] = []
-    for line in RUNLOG_FILE.read_text(encoding="utf-8").splitlines():
+    skipped = 0
+    for line in RUNLOG_FILE.read_text(encoding="utf-8", errors="replace").splitlines():
         line = line.strip()
         if not line:
             continue
-        item = json.loads(line)
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            skipped += 1
+            continue
+        if not isinstance(item, dict):
+            skipped += 1
+            continue
         if kind and item.get("kind") != kind:
             continue
         rows.append(item)
@@ -72,6 +81,7 @@ def list_runlog(*, limit: int = DEFAULT_LIMIT, kind: str | None = None) -> dict[
         "path": str(RUNLOG_FILE),
         "total": len(rows),
         "limit": limit,
+        "skipped": skipped,
     }
 
 

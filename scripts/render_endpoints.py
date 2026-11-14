@@ -13,6 +13,7 @@ from paths import STATE_DIR, cluster_file, expand_path, nodes_file
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 from endpoints_util import build_endpoint_catalog  # noqa: E402
+from state_util import atomic_write_text  # noqa: E402
 
 
 def main() -> int:
@@ -31,7 +32,7 @@ def main() -> int:
     if args.write:
         STATE_DIR.mkdir(parents=True, exist_ok=True)
         out = STATE_DIR / "endpoints.json"
-        out.write_text(text, encoding="utf-8")
+        atomic_write_text(out, text)
         by_node = payload.get("by_node") or {}
         summary = ", ".join(
             f"{name}:{info.get('ports_per_node')}p@{info.get('base_port')}"

@@ -8,7 +8,7 @@
 |------|------|
 | `none` | 仅适合 SSH 隧道；不要裸暴露 `:8787` |
 | `password` | Session Cookie（浏览器）+ Bearer Token（脚本 / MCP） |
-| `oidc` | 预留，尚未实现 |
+| `oidc` | OpenID Connect 授权码 + PKCE；API 仍用 Bearer |
 
 ```bash
 gpu-control auth set-password --generate --enable
@@ -103,7 +103,7 @@ Cursor MCP 配置（示例见 `config/examples/mcp.cursor.json`）：
 | `GPU_CONTROL_API_TOKEN` | Bearer；鉴权启用时必填，否则 401 |
 | （均未设） | 工具直接调本地 CLI，不依赖 UI |
 
-常用工具：`gc_api_catalog` · `gc_auth_status` · `gc_doctor` · `gc_get_config` / `gc_put_config` · `gc_job_action` · `gc_free_node` · `gc_procs` · `gc_models` · `gc_deploy` · `gc_exec` · `gc_cli`。
+常用工具：`gc_api_catalog` · `gc_auth_status` · `gc_doctor` · `gc_get_config` / `gc_put_config` · `gc_get_jobs` · `gc_job_action` · `gc_free_node` · `gc_procs` · `gc_models` · `gc_overview` · `gc_toolkits` · `gc_deploy` · `gc_exec` · `gc_cli`。
 
 ---
 

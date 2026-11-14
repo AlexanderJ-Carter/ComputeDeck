@@ -12,6 +12,7 @@ from pathlib import Path
 
 import _bootstrap  # noqa: F401
 from paths import STATE_DIR, VENV_PYTHON, expand_path, nodes_file
+from state_util import atomic_write_json
 
 REMOTE = r"""
 python3 - <<'PY'
@@ -148,7 +149,7 @@ def main() -> int:
     }
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     out = STATE_DIR / "host_metrics.json"
-    out.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    atomic_write_json(out, report)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0 if ok == len(results) and results else 1
 

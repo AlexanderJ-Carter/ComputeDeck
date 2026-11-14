@@ -16,7 +16,13 @@
   ],
   "env": {
     "GPU_CONTROL_JOB_NAME": "llamafactory-train",
-    "GPU_CONTROL_JOB_RUNTIME": "/tmp/gpu-control-train/llamafactory-train"
+    "GPU_CONTROL_JOB_RUNTIME": "${paths.workdir}/gpu-control-jobs/llamafactory-train"
   },
-  "actions": ["start", "stop", "restart", "status", "wait"]
+  "actions": [
+    "start",
+    "stop",
+    "restart",
+    "status",
+    "wait"
+  ]
 }

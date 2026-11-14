@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -28,7 +29,12 @@ from paths import (  # noqa: E402
     list_job_files,
     nodes_file,
 )
-from node_paths import group_nodes_by_job, load_nodes_data  # noqa: E402
+from node_paths import group_nodes_by_job, load_nodes_data, resolve_job  # noqa: E402
+from state_util import (  # noqa: E402
+    atomic_write_json as _atomic_write_json,
+    read_json as _read_json_state,
+    update_json as _update_json_state,
+)
 from jobs_util import (  # noqa: E402
     default_job_name,
     install_job_template,
@@ -107,17 +113,11 @@ def list_jobs() -> list[dict]:
 
 
 def load_leases() -> dict:
-    if not LEASES_FILE.is_file():
-        return {"leases": []}
-    return json.loads(LEASES_FILE.read_text(encoding="utf-8"))
+    return _read_json_state(LEASES_FILE, {"leases": []})
 
 
 def save_leases(data: dict) -> None:
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    LEASES_FILE.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    _atomic_write_json(LEASES_FILE, data)
 
 
 def load_resources() -> dict:
@@ -127,17 +127,11 @@ def load_resources() -> dict:
 
 
 def load_queue() -> dict:
-    if not QUEUE_FILE.is_file():
-        return {"workloads": []}
-    return json.loads(QUEUE_FILE.read_text(encoding="utf-8"))
+    return _read_json_state(QUEUE_FILE, {"workloads": []})
 
 
 def save_queue(data: dict) -> None:
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    QUEUE_FILE.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    _atomic_write_json(QUEUE_FILE, data)
 
 
 def now_utc() -> str:
@@ -181,6 +175,7 @@ def ansible_playbook(
     extra: dict | None = None,
     limit: str | None = None,
     quiet: bool = False,
+    capture: bool = False,
 ) -> int:
     ensure_runtime()
     cmd = ansible_cmd("-i", str(INVENTORY), str(PROJECT_DIR / "playbooks" / playbook))
@@ -188,8 +183,18 @@ def ansible_playbook(
         cmd.extend(["--limit", limit])
     if extra:
         cmd.extend(["-e", json.dumps(extra, ensure_ascii=False)])
-    if not quiet:
+    if not quiet and not capture:
         print("+", " ".join(cmd))
+    if capture:
+        proc = subprocess.run(
+            cmd,
+            cwd=PROJECT_DIR,
+            env=ansible_env(quiet=True),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return proc.returncode
     return subprocess.call(cmd, cwd=PROJECT_DIR, env=ansible_env(quiet=quiet))
 
 
@@ -261,17 +266,11 @@ def save_nodes_registry(data: dict) -> None:
 
 
 def load_node_state() -> dict:
-    if not NODE_STATE_FILE.is_file():
-        return {"cordoned": {}}
-    return json.loads(NODE_STATE_FILE.read_text(encoding="utf-8"))
+    return _read_json_state(NODE_STATE_FILE, {"cordoned": {}})
 
 
 def save_node_state(data: dict) -> None:
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    NODE_STATE_FILE.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    _atomic_write_json(NODE_STATE_FILE, data)
 
 
 def inventory_nodes() -> list[str]:
@@ -311,34 +310,42 @@ def acquire_lease(
     note: str = "",
     owner: str | None = None,
 ) -> dict:
-    data = load_leases()
-    leases: list[dict] = data.setdefault("leases", [])
-    occupied = {n for lease in leases for n in lease["nodes"]}
-    conflict = sorted(set(nodes) & occupied)
-    if conflict:
-        die(f"Nodes already leased: {', '.join(conflict)}")
-    lease = {
-        "id": f"lease-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
-        "job": job,
-        "nodes": nodes,
-        "gpus": gpus,
-        "owner": owner or os.environ.get("USER", "unknown"),
-        "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "note": note,
-    }
-    leases.append(lease)
-    save_leases(data)
-    return lease
+    created: dict = {}
+
+    def mutate(data: dict) -> None:
+        leases: list[dict] = data.setdefault("leases", [])
+        occupied = {n for lease in leases for n in lease.get("nodes", [])}
+        conflict = sorted(set(nodes) & occupied)
+        if conflict:
+            die(f"Nodes already leased: {', '.join(conflict)}")
+        lease = {
+            "id": f"lease-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}",
+            "job": job,
+            "nodes": nodes,
+            "gpus": gpus,
+            "owner": owner or os.environ.get("USER", "unknown"),
+            "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "note": note,
+        }
+        leases.append(lease)
+        created.update(lease)
+
+    _update_json_state(LEASES_FILE, mutate, default={"leases": []})
+    return created
 
 
 def release_lease_nodes(nodes: list[str]) -> int:
-    data = load_leases()
-    leases: list[dict] = data.setdefault("leases", [])
-    drop = set(nodes)
-    before = len(leases)
-    leases[:] = [lease for lease in leases if not drop.intersection(lease["nodes"])]
-    save_leases(data)
-    return before - len(leases)
+    dropped = {"count": 0}
+
+    def mutate(data: dict) -> None:
+        leases: list[dict] = data.setdefault("leases", [])
+        drop = set(nodes)
+        before = len(leases)
+        leases[:] = [lease for lease in leases if not drop.intersection(lease.get("nodes", []))]
+        dropped["count"] = before - len(leases)
+
+    _update_json_state(LEASES_FILE, mutate, default={"leases": []})
+    return int(dropped["count"])
 
 
 def job_manager_extra(job: dict, action: str, *, extra_args: list[str] | None = None) -> dict:
@@ -422,6 +429,8 @@ def run_job_on_nodes(
 
 def cmd_jobs(args: argparse.Namespace) -> int:
     action = getattr(args, "jobs_action", None) or "list"
+    if action == "logs":
+        return cmd_jobs_logs(args)
     if action == "templates":
         rows = list_job_templates()
         if getattr(args, "json", False):
@@ -470,6 +479,43 @@ def cmd_jobs(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_jobs_logs(args: argparse.Namespace) -> int:
+    """Tail a Job's runtime log on the selected nodes."""
+    name = getattr(args, "template", None) or getattr(args, "name", None)
+    if not name:
+        die("jobs logs 需要 Job 名，如: gpu-control jobs logs sft")
+    job = load_job(name)
+    data = load_nodes_data()
+    nodes = target_worker_nodes(getattr(args, "nodes", None) or getattr(args, "node", None))
+    if not nodes:
+        die("没有可操作的 gpu_workers 节点")
+    lines = max(1, int(getattr(args, "lines", 120) or 120))
+    code = 0
+    for node in nodes:
+        resolved = resolve_job(job, node, data)
+        env = resolved.get("env") or {}
+        runtime = env.get("GPU_CONTROL_JOB_RUNTIME") or f"/tmp/gpu-control-jobs/{job.get('name') or name}"
+        log_path = env.get("GPU_CONTROL_JOB_LOG") or f"{runtime}/job.log"
+        command = (
+            f"tail -n {lines} {shlex.quote(str(log_path))} 2>/dev/null "
+            f"|| echo 'no log: {log_path}'"
+        )
+        exec_dir = STATE_DIR / "exec"
+        if exec_dir.is_dir():
+            for stale in exec_dir.glob("*.json"):
+                stale.unlink()
+        rc = ansible_playbook(
+            "exec.yml",
+            limit=node,
+            extra={"remote_command": command},
+            quiet=True,
+            capture=True,
+        )
+        collect = run_python("collect_exec.py")
+        code = max(code, rc, collect.returncode)
+    return code
+
+
 def cmd_job_action(args: argparse.Namespace) -> int:
     job = load_job(args.job)
     action = args.action
@@ -492,7 +538,7 @@ def cmd_job_action(args: argparse.Namespace) -> int:
         quiet=quiet,
         extra_args=override_args,
     )
-    if action in {"stop", "restart"} and code == 0:
+    if action == "stop" and code == 0:
         nodes = target_worker_nodes(limit)
         released = release_lease_nodes(nodes)
         if released:
@@ -648,7 +694,10 @@ def deploy_job(
         if code != 0:
             return code, selected
 
-    lease_gpus = gpus if not nodes else len(selected) * int(job.get("gpus_per_node", 4))
+    # Whole nodes are allocated by deploy; use the job's per-node GPU count
+    # (not a hard-coded 4) when a node list was supplied.
+    per_node_gpus = int(job.get("gpus_per_node") or 1)
+    lease_gpus = len(selected) * per_node_gpus if nodes else gpus
     existing = {
         node
         for lease in load_leases().get("leases", [])
@@ -703,16 +752,36 @@ def cmd_exec(args: argparse.Namespace) -> int:
     return code
 
 
+def _pid_cmdline(pid: int) -> str:
+    try:
+        return Path(f"/proc/{pid}/cmdline").read_bytes().decode("utf-8", "replace").replace("\x00", " ")
+    except OSError:
+        return ""
+
+
+def _pid_looks_like_ui(pid: int) -> bool:
+    """Guard against PID reuse when deciding whether the UI is already running."""
+    text = _pid_cmdline(pid)
+    return "web/server.py" in text or "gpu-control" in text and " ui" in text
+
+
+def _pid_looks_like_watchdog(pid: int) -> bool:
+    return "watchdog.py" in _pid_cmdline(pid)
+
+
 def cmd_ui(args: argparse.Namespace) -> int:
     """Start the local cluster web console on the Control node."""
     ensure_runtime()
     server = PROJECT_DIR / "web" / "server.py"
     if not server.is_file():
         die(f"UI server missing: {server}")
+    control = (load_cluster().get("control") or {})
+    host = args.host or control.get("ui_host") or "127.0.0.1"
+    port = int(args.port or control.get("ui_port") or 8787)
     env = os.environ.copy()
-    env["GPU_CONTROL_UI_HOST"] = args.host
-    env["GPU_CONTROL_UI_PORT"] = str(args.port)
-    url = f"http://{args.host}:{args.port}"
+    env["GPU_CONTROL_UI_HOST"] = host
+    env["GPU_CONTROL_UI_PORT"] = str(port)
+    url = f"http://{host}:{port}"
     cmd = [str(VENV_PYTHON), str(server)]
 
     if args.background:
@@ -721,10 +790,11 @@ def cmd_ui(args: argparse.Namespace) -> int:
         log_file = STATE_DIR / "ui.log"
         if pid_file.is_file():
             old = pid_file.read_text().strip()
-            if old.isdigit() and (Path("/proc") / old).exists():
+            if old.isdigit() and (Path("/proc") / old).exists() and _pid_looks_like_ui(int(old)):
                 print(f"UI already running pid={old} log={log_file}")
-                print(f"Open {url} (or SSH tunnel to localhost:{args.port})")
+                print(f"Open {url} (or SSH tunnel to localhost:{port})")
                 return 0
+            pid_file.unlink(missing_ok=True)
         with log_file.open("a", encoding="utf-8") as log:
             proc = subprocess.Popen(
                 cmd,
@@ -736,7 +806,7 @@ def cmd_ui(args: argparse.Namespace) -> int:
             )
         pid_file.write_text(f"{proc.pid}\n", encoding="utf-8")
         print(f"UI started pid={proc.pid} log={log_file}")
-        print(f"Open {url} (or: ssh -L {args.port}:127.0.0.1:{args.port} <control>)")
+        print(f"Open {url} (or: ssh -L {port}:127.0.0.1:{port} <control>)")
         return 0
 
     print(f"Starting UI at {url}")
@@ -1317,7 +1387,16 @@ def cmd_metrics(_: argparse.Namespace) -> int:
 def cmd_watchdog(args: argparse.Namespace) -> int:
     ensure_runtime()
     script = PROJECT_DIR / "scripts" / "watchdog.py"
-    cmd = [str(VENV_PYTHON), str(script), "--interval", str(args.interval), "--max-restarts", str(args.max_restarts)]
+    cmd = [
+        str(VENV_PYTHON),
+        str(script),
+        "--interval",
+        str(args.interval),
+        "--max-restarts",
+        str(args.max_restarts),
+        "--failure-threshold",
+        str(args.failure_threshold),
+    ]
     jobs = args.jobs or ([default_job_name()] if default_job_name() else [])
     if not jobs:
         die("没有可监控的 Job：注册 Job 或传入 --job")
@@ -1330,6 +1409,13 @@ def cmd_watchdog(args: argparse.Namespace) -> int:
     if args.background:
         log_path = STATE_DIR / "watchdog.log"
         STATE_DIR.mkdir(parents=True, exist_ok=True)
+        pid_file = STATE_DIR / "watchdog.pid"
+        if pid_file.is_file():
+            old = pid_file.read_text(encoding="utf-8").strip()
+            if old.isdigit() and (Path("/proc") / old).exists() and _pid_looks_like_watchdog(int(old)):
+                print(f"Watchdog already running pid={old} log={log_path}")
+                return 0
+            pid_file.unlink(missing_ok=True)
         with log_path.open("a", encoding="utf-8") as log_fh:
             proc = subprocess.Popen(
                 cmd,
@@ -1338,8 +1424,6 @@ def cmd_watchdog(args: argparse.Namespace) -> int:
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
-        pid_file = STATE_DIR / "watchdog.pid"
-        pid_file.write_text(str(proc.pid), encoding="utf-8")
         print(f"Watchdog started pid={proc.pid} log={log_path}")
         return 0
     print("+", " ".join(cmd))
@@ -1692,10 +1776,13 @@ def build_parser() -> argparse.ArgumentParser:
         "jobs_action",
         nargs="?",
         default="list",
-        choices=["list", "templates", "install"],
+        choices=["list", "templates", "install", "logs"],
     )
-    p_jobs.add_argument("template", nargs="?", help="install 时的模板 id")
+    p_jobs.add_argument("template", nargs="?", help="install 的模板 id / logs 的 Job 名")
     p_jobs.add_argument("--name", help="install 时写入的 Job 名（默认用模板名）")
+    p_jobs.add_argument("--lines", type=int, default=120, help="logs 尾部行数")
+    p_jobs.add_argument("--node", help="logs 只看一个节点")
+    p_jobs.add_argument("--nodes", help="logs 节点列表（逗号分隔）")
     p_jobs.add_argument("--json", action="store_true")
     p_jobs.set_defaults(func=cmd_jobs)
 
@@ -1730,8 +1817,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_lease.set_defaults(func=cmd_lease)
 
     p_ui = sub.add_parser("ui", help="启动 Web 管理台（默认 :8787）")
-    p_ui.add_argument("--host", default="0.0.0.0")
-    p_ui.add_argument("--port", type=int, default=8787)
+    p_ui.add_argument("--host", default=None, help="默认读 cluster.control.ui_host，否则 127.0.0.1")
+    p_ui.add_argument("--port", type=int, default=None, help="默认读 cluster.control.ui_port，否则 8787")
     p_ui.add_argument("--background", action="store_true", help="后台守护并写 state/ui.pid")
     p_ui.set_defaults(func=cmd_ui)
 
@@ -1890,6 +1977,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_watch.add_argument("--nodes", help="只监控这些节点")
     p_watch.add_argument("--interval", type=int, default=60)
     p_watch.add_argument("--max-restarts", type=int, default=3)
+    p_watch.add_argument("--failure-threshold", type=int, default=2, help="连续失败几次才重启")
     p_watch.add_argument("--once", action="store_true", help="只检查一轮")
     p_watch.add_argument("--background", action="store_true", help="后台守护")
     p_watch.set_defaults(func=cmd_watchdog)

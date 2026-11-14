@@ -21,6 +21,9 @@
     docker_volumes: []
     docker_command: []
     docker_env: {}
+    job_name: "{{ (job_env | default({})).get('GPU_CONTROL_JOB_NAME') or 'job' }}"
+    job_runtime: "{{ (job_env | default({})).get('GPU_CONTROL_JOB_RUNTIME') or ('/tmp/gpu-control-jobs/' ~ job_name) }}"
+    dist_hostfile: "{{ job_runtime ~ '/hostfile' }}"
 
   tasks:
     - name: Validate action
@@ -52,6 +55,7 @@
           export GPU_CONTROL_MASTER_ADDR={{ dist_master_addr }};
           export GPU_CONTROL_MASTER_PORT={{ dist_master_port }};
           export GPU_CONTROL_NPROC_PER_NODE={{ dist_nproc }};
+          export HOSTFILE={{ dist_hostfile }};
           export FORCE_TORCHRUN=${FORCE_TORCHRUN:-1};
         dist_docker_env_flags: >-
           -e NNODES={{ dist_nnodes }}
@@ -60,6 +64,20 @@
           -e MASTER_PORT={{ dist_master_port }}
           -e NPROC_PER_NODE={{ dist_nproc }}
           -e FORCE_TORCHRUN=1
+
+    - name: Ensure distributed runtime directory
+      when: distributed | bool
+      ansible.builtin.file:
+        path: "{{ job_runtime }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write distributed hostfile (DeepSpeed / launchers)
+      when: distributed | bool
+      ansible.builtin.copy:
+        dest: "{{ dist_hostfile }}"
+        mode: "0644"
+        content: "{% for h in ansible_play_hosts_all %}{{ hostvars[h].ansible_host | default(h) }} slots={{ nproc_per_node | default(1) }}\n{% endfor %}"
 
     - name: Clear distributed env when disabled
       when: not (distributed | bool)

@@ -14,7 +14,8 @@ import sys
 import time
 from pathlib import Path
 
-RUNTIME = Path(os.environ.get("GPU_CONTROL_JOB_RUNTIME", "/tmp/gpu-control-example-job"))
+JOB_NAME = (os.environ.get("GPU_CONTROL_JOB_NAME") or "shell-job").strip() or "shell-job"
+RUNTIME = Path(os.environ.get("GPU_CONTROL_JOB_RUNTIME") or f"/tmp/gpu-control-jobs/{JOB_NAME}")
 PID_FILE = RUNTIME / "job.pid"
 LOG_FILE = RUNTIME / "job.log"
 

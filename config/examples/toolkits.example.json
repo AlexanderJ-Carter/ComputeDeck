@@ -3,7 +3,21 @@
   "toolkits": [
     {
       "id": "llamafactory",
-      "install_pip": ["llamafactory[torch,metrics]"]
+      "install_pip": [
+        "llamafactory[torch,metrics]"
+      ]
+    },
+    {
+      "id": "ray",
+      "install_pip": [
+        "ray[default]"
+      ]
+    },
+    {
+      "id": "vllm",
+      "install_pip": [
+        "vllm"
+      ]
     }
   ],
   "bundles": [
@@ -11,7 +25,22 @@
       "id": "train-stack",
       "name": "微调栈",
       "description": "LLaMA-Factory + DeepSpeed + Accelerate + PEFT",
-      "toolkits": ["accelerate", "deepspeed", "peft", "llamafactory"]
+      "toolkits": [
+        "accelerate",
+        "deepspeed",
+        "peft",
+        "llamafactory"
+      ]
+    },
+    {
+      "id": "ray-stack",
+      "name": "Ray 分布式栈",
+      "description": "Ray + torch + transformers",
+      "toolkits": [
+        "ray",
+        "torch",
+        "transformers"
+      ]
     }
   ]
 }

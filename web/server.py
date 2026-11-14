@@ -9,7 +9,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shlex
+import signal
 import subprocess
 import sys
 import threading
@@ -43,6 +45,7 @@ from paths import (  # noqa: E402
 )
 
 from node_paths import default_paths, node_paths  # noqa: E402
+from state_util import atomic_write_json as state_atomic_write_json, read_json as state_read_json  # noqa: E402
 from jobs_util import (  # noqa: E402
     default_job_name,
     install_job_template,
@@ -79,16 +82,93 @@ from render_gateway import (  # noqa: E402
 from gateway_ops import status_payload as gateway_status_payload  # noqa: E402
 
 
-def _gateway_status_fresh() -> dict:
-    """每次走 CLI，避免长驻 UI 持有过期 gateway_ops。"""
-    result = run_cli(["gateway", "status"], timeout=20, log=False)
-    try:
-        payload = json.loads(result.get("stdout") or "{}")
-        if isinstance(payload, dict) and payload.get("ok") is not None:
+# ---------------------------------------------------------------------------
+# Small TTL caches. The dashboard polls /api/overview every 12s; spawning
+# `gpu-control gateway status` for every poll made the page feel sluggish.
+# Cache entries are invalidated by writes and by any non-read-only CLI call.
+# ---------------------------------------------------------------------------
+
+_GATEWAY_TTL = 12.0
+_GATEWAY_CACHE: dict = {"at": 0.0, "payload": None}
+_GATEWAY_LOCK = threading.Lock()
+
+_OVERVIEW_TTL = 6.0
+_OVERVIEW_CACHE: dict[str, dict] = {
+    "full": {"at": 0.0, "fingerprint": "", "payload": None},
+    "light": {"at": 0.0, "fingerprint": "", "payload": None},
+}
+_OVERVIEW_LOCK = threading.Lock()
+_last_action_at = 0.0
+
+_SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+_SAFE_HOST_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,252}$")
+
+
+class BadRequestError(Exception):
+    """Raised for user-supplied input that must be rejected with HTTP 400."""
+
+
+def require_name(value, label: str = "name") -> str:
+    name = str(value or "").strip()
+    if not name or not _SAFE_NAME_RE.match(name):
+        raise BadRequestError(f"{label} 不合法（允许字母数字开头，限 . _ -，≤64 字符）")
+    return name
+
+
+def require_host(value, label: str = "host") -> str:
+    host = str(value or "").strip()
+    if not host or not _SAFE_HOST_RE.match(host):
+        raise BadRequestError(f"{label} 不合法（仅允许主机名/IP 字符）")
+    return host
+
+
+def require_labels(value) -> str:
+    text = str(value or "").strip()
+    if any(ch in text for ch in '<>"\'\\\n\r\t'):
+        raise BadRequestError("labels 含非法字符")
+    return text
+
+
+def invalidate_overview_cache(*, gateway: bool = False) -> None:
+    with _OVERVIEW_LOCK:
+        for entry in _OVERVIEW_CACHE.values():
+            entry["at"] = 0.0
+    if gateway:
+        invalidate_gateway_cache()
+
+
+def invalidate_gateway_cache() -> None:
+    with _GATEWAY_LOCK:
+        _GATEWAY_CACHE["at"] = 0.0
+
+
+def _gateway_status_fresh(*, allow_cli: bool = True) -> dict:
+    """Return gateway status, cached for a few seconds.
+
+    ``allow_cli=False`` (light dashboard polls) never spawns a subprocess; it
+    reuses the cache or falls back to the in-process payload.
+    """
+    now = time.monotonic()
+    with _GATEWAY_LOCK:
+        payload = _GATEWAY_CACHE["payload"]
+        if payload is not None and now - _GATEWAY_CACHE["at"] < _GATEWAY_TTL:
             return payload
-    except json.JSONDecodeError:
-        pass
-    return gateway_status_payload()
+
+    payload = None
+    if allow_cli:
+        result = run_cli(["gateway", "status"], timeout=20, log=False)
+        try:
+            parsed = json.loads(result.get("stdout") or "{}")
+            if isinstance(parsed, dict) and parsed.get("ok") is not None:
+                payload = parsed
+        except json.JSONDecodeError:
+            payload = None
+    if payload is None:
+        payload = gateway_status_payload()
+    with _GATEWAY_LOCK:
+        _GATEWAY_CACHE["payload"] = payload
+        _GATEWAY_CACHE["at"] = time.monotonic()
+    return payload
 from model_ops import (  # noqa: E402
     cache_entries,
     load_models,
@@ -161,7 +241,7 @@ EXEC_PRESETS = {
     "model-procs": {
         "label": "推理进程",
         "command": (
-            "pgrep -af 'python|torch|sglang|vllm|uvicorn|gunicorn|decider' | head -50 || true"
+            "pgrep -af 'python|torch|vllm|sglang|uvicorn|gunicorn' | head -50 || true"
         ),
     },
     "train-procs": {
@@ -198,7 +278,7 @@ EXEC_PRESETS = {
     "local-health": {
         "label": "本机 /health",
         "command": (
-            "for p in 30000 8000 8080; do "
+            "for p in 8000 8080 4000 3000; do "
             "code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 1 --max-time 2 "
             "http://127.0.0.1:$p/health || echo down); "
             "echo \"127.0.0.1:$p/health -> $code\"; done"
@@ -228,9 +308,9 @@ EXEC_PRESETS = {
 
 
 def _read_json(path: Path, default):
-    if not path.is_file():
-        return default
-    return json.loads(path.read_text(encoding="utf-8"))
+    # Corrupt runtime JSON must not take the whole API down; state_util moves
+    # the bad file aside and returns a deep copy of the default.
+    return state_read_json(path, default)
 
 
 def inventory_nodes() -> list[str]:
@@ -416,7 +496,7 @@ def _build_gateway_payload(upstreams: list[dict] | None = None) -> dict:
 
 def state_fingerprint() -> str:
     parts = []
-    for path in (
+    watched = [
         RESOURCES_FILE,
         LEASES_FILE,
         QUEUE_FILE,
@@ -427,16 +507,89 @@ def state_fingerprint() -> str:
         PROBE_FILE,
         nodes_file(),
         cluster_file(),
-    ):
-        if path.is_file():
-            st = path.stat()
-            parts.append(f"{path.name}:{st.st_mtime_ns}:{st.st_size}")
-        else:
-            parts.append(f"{path.name}:missing")
+        STATE_DIR / "toolkits.json",
+        STATE_DIR / "ssh_quality.json",
+        STATE_DIR / "ingress_edge.json",
+        STATE_DIR / "ingress-edge.pid",
+        models_file(),
+        *list_job_files(),
+    ]
+    for path in watched:
+        try:
+            if path.is_file():
+                st = path.stat()
+                parts.append(f"{path.name}:{st.st_mtime_ns}:{st.st_size}")
+            else:
+                parts.append(f"{path.name}:missing")
+        except OSError:
+            parts.append(f"{path.name}:error")
     return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:16]
 
 
-def build_overview(*, light: bool = False) -> dict:
+def watchdog_status() -> dict:
+    """Automatic restart status for the dashboard (no subprocess)."""
+    cluster = _read_json(cluster_file(), {})
+    cfg = cluster.get("watchdog") or {}
+    jobs = list(cfg.get("jobs") or [])
+    if not jobs:
+        fallback = default_job_name()
+        if fallback:
+            jobs = [fallback]
+    pid = None
+    pid_file = STATE_DIR / "watchdog.pid"
+    if pid_file.is_file():
+        try:
+            candidate = int(pid_file.read_text(encoding="utf-8").strip().splitlines()[0])
+            if (Path("/proc") / str(candidate)).exists():
+                pid = candidate
+        except (OSError, ValueError, IndexError):
+            pid = None
+    state = _read_json(STATE_DIR / "watchdog_state.json", {})
+    return {
+        "enabled": bool(cfg.get("enabled", True)),
+        "running": pid is not None,
+        "pid": pid,
+        "jobs": jobs,
+        "interval_sec": int(cfg.get("interval_sec") or 60),
+        "max_restarts": int(cfg.get("max_restarts") or 3),
+        "failure_threshold": int(cfg.get("failure_threshold") or 2),
+        "last_action": state.get("last_action"),
+        "restarts": state.get("restarts") or {},
+        "log": str(STATE_DIR / "watchdog.log"),
+    }
+
+
+def build_overview(*, light: bool = False, force: bool = False) -> dict:
+    """Return the dashboard payload, reusing a short-lived cache when safe."""
+    key = "light" if light else "full"
+    fingerprint = state_fingerprint()
+    now = time.monotonic()
+    with _OVERVIEW_LOCK:
+        entry = _OVERVIEW_CACHE[key]
+        fresh = (
+            not force
+            and entry["payload"] is not None
+            and entry["fingerprint"] == fingerprint
+            and now - entry["at"] < _OVERVIEW_TTL
+            and now - _last_action_at > 1.5
+        )
+        if fresh:
+            payload = dict(entry["payload"])
+            payload["cached"] = True
+            return payload
+
+    payload = _build_overview(light=light)
+    payload["cached"] = False
+    with _OVERVIEW_LOCK:
+        _OVERVIEW_CACHE[key] = {
+            "at": time.monotonic(),
+            "fingerprint": fingerprint,
+            "payload": payload,
+        }
+    return payload
+
+
+def _build_overview(*, light: bool = False) -> dict:
     resources = _read_json(RESOURCES_FILE, {})
     registry = node_registry()
     leases = _read_json(LEASES_FILE, {"leases": []}).get("leases", [])
@@ -502,6 +655,7 @@ def build_overview(*, light: bool = False) -> dict:
     control_meta.setdefault("ui_port", 8787)
     jobs = list_jobs()
     endpoints = _read_json(ENDPOINTS_FILE, {})
+    toolkit_state = load_toolkit_state()
     payload = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "version": UI_VERSION,
@@ -524,15 +678,17 @@ def build_overview(*, light: bool = False) -> dict:
             "api_total": endpoint_health.get("total"),
             "host_metrics_at": host_metrics.get("generated_at"),
             "control": control_name,
-            "toolkits_ready": _toolkit_ready_count(load_toolkit_state()),
+            "toolkits_ready": _toolkit_ready_count(toolkit_state),
             "busy_nodes": sum(1 for n in nodes if n.get("used")),
             "free_nodes": sum(1 for n in nodes if not n.get("used") and not n.get("cordoned")),
         },
         "nodes": nodes,
         "leases": leases,
         "jobs": jobs,
-        "toolkits": _toolkit_overview(load_toolkit_state()),
-        "ingress": _gateway_status_fresh(),
+        "toolkits": _toolkit_overview(toolkit_state),
+        "ingress": _gateway_status_fresh(allow_cli=not light),
+        "quality": build_quality_report(),
+        "watchdog": watchdog_status(),
         "queue": queue,
         "cordoned": cordoned,
         "endpoint_health": endpoint_health,
@@ -563,6 +719,8 @@ def build_overview(*, light: bool = False) -> dict:
             "count": endpoints.get("count") or len(endpoints.get("endpoints") or []),
             "by_node": endpoints.get("by_node") or {},
             "endpoints": endpoints.get("endpoints") or [],
+            "urls": endpoints.get("urls")
+            or [ep.get("url") for ep in endpoints.get("endpoints") or [] if ep.get("url")],
         }
         payload["host_metrics"] = {
             "generated_at": host_metrics.get("generated_at"),
@@ -578,30 +736,75 @@ def build_overview(*, light: bool = False) -> dict:
     return payload
 
 
+_READ_ONLY_CLI = {"doctor", "logs", "get", "overview", "health"}
+
+
+def _cli_is_read_only(args: list[str]) -> bool:
+    if not args:
+        return True
+    cmd = args[0]
+    if cmd in _READ_ONLY_CLI:
+        return True
+    sub = args[1] if len(args) > 1 else ""
+    if cmd == "gateway" and sub == "status":
+        return True
+    if cmd == "models" and sub in {"show", "deps", "verify", "list"}:
+        return True
+    if cmd == "toolkits" and sub == "list":
+        return True
+    return False
+
+
+def _as_text(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", "replace")
+    return str(value)
+
+
 def run_cli(args: list[str], timeout: int = 900, *, log: bool = True) -> dict:
+    global _last_action_at
     cmd = [str(VENV_PYTHON), str(CLI), *args]
-    completed = subprocess.run(
-        cmd,
-        cwd=PROJECT_DIR,
-        text=True,
-        capture_output=True,
-        timeout=timeout,
-        check=False,
-        env={
-            **os.environ,
-            "PATH": f"{PROJECT_DIR / '.venv' / 'bin'}:{os.environ.get('PATH', '')}",
-        },
-    )
-    result = {
-        "cmd": cmd,
-        "rc": completed.returncode,
-        "stdout": completed.stdout,
-        "stderr": completed.stderr,
-    }
+    try:
+        completed = subprocess.run(
+            cmd,
+            cwd=PROJECT_DIR,
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+            env={
+                **os.environ,
+                "PATH": f"{PROJECT_DIR / '.venv' / 'bin'}:{os.environ.get('PATH', '')}",
+            },
+        )
+        result = {
+            "cmd": cmd,
+            "rc": completed.returncode,
+            "stdout": completed.stdout,
+            "stderr": completed.stderr,
+        }
+    except subprocess.TimeoutExpired as exc:
+        result = {
+            "cmd": cmd,
+            "rc": -1,
+            "stdout": _as_text(exc.stdout),
+            "stderr": (_as_text(exc.stderr) + f"\n[timeout after {timeout}s]").strip(),
+        }
+    except OSError as exc:
+        result = {"cmd": cmd, "rc": -1, "stdout": "", "stderr": f"failed to run CLI: {exc}"}
+
+    if not _cli_is_read_only(args):
+        _last_action_at = time.monotonic()
+        invalidate_overview_cache(gateway=(args and args[0] == "gateway"))
     if log and args and args[0] not in {"logs"}:
         from runlog_util import record_cli
 
-        record_cli(args, result, source="api")
+        try:
+            record_cli(args, result, source="api")
+        except Exception:  # noqa: BLE001 — logging must never break an action
+            pass
     return result
 
 
@@ -609,7 +812,7 @@ SETUP_GUIDE = [
     {
         "id": "clone",
         "title": "主控依赖与配置",
-        "body": "仅在 control 安装 ansible/paramiko；生成 config/local。完整说明见 docs/手册.md。",
+        "body": "在主控安装依赖并生成 config/local。",
         "cli": [
             "uv venv .venv && uv pip install -r requirements.txt",
             "./examples/quickstart.sh",
@@ -628,8 +831,8 @@ SETUP_GUIDE = [
     },
     {
         "id": "job",
-        "title": "注册 Job（可选）",
-        "body": "框架仅内置 shell-job；推理/微调从模板安装到 config/local/jobs/。",
+        "title": "安装 Job 模板",
+        "body": "从模板安装推理或训练 Job 到 config/local/jobs/。",
         "cli": [
             "gpu-control jobs templates",
             "gpu-control jobs install http-serve --name my-api",
@@ -639,7 +842,7 @@ SETUP_GUIDE = [
     {
         "id": "models",
         "title": "模型工具（可选）",
-        "body": "节点需 huggingface-cli 或 modelscope 才能 pull；先 deps 再 install-tools。",
+        "body": "先检查依赖；节点缺少拉取工具时再安装。",
         "cli": [
             "cp config/examples/models.example.json config/local/models.json",
             "gpu-control models deps",
@@ -650,10 +853,7 @@ SETUP_GUIDE = [
 
 
 def _atomic_write_json(path: Path, payload: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    tmp.replace(path)
+    state_atomic_write_json(path, payload)
 
 
 def discover_ssh_keys() -> list[dict]:
@@ -1007,10 +1207,22 @@ def run_oneclick(action: str, body: dict | None = None) -> dict:
         job = (body.get("job") or default_job_name() or "").strip()
         if not job:
             return {"ok": False, "error": "未指定 job，且没有已注册任务", "steps": []}
+        wd = (_read_json(cluster_file(), {}).get("watchdog") or {})
         step(
             "启动看门狗",
             lambda: run_cli(
-                ["watchdog", "--job", job, "--background"],
+                [
+                    "watchdog",
+                    "--job",
+                    job,
+                    "--background",
+                    "--interval",
+                    str(wd.get("interval_sec") or 60),
+                    "--max-restarts",
+                    str(wd.get("max_restarts") or 3),
+                    "--failure-threshold",
+                    str(wd.get("failure_threshold") or 2),
+                ],
                 timeout=30,
             ),
         )
@@ -1164,13 +1376,24 @@ class Handler(BaseHTTPRequestHandler):
         return False
 
     def _read_body(self) -> dict:
-        length = int(self.headers.get("Content-Length", "0"))
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except (TypeError, ValueError):
+            raise BadRequestError("invalid Content-Length")
         if length <= 0:
             return {}
+        if length > 8 * 1024 * 1024:
+            raise BadRequestError("request body too large (max 8 MB)")
         raw = self.rfile.read(length)
         if not raw:
             return {}
-        return json.loads(raw.decode("utf-8"))
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise BadRequestError("invalid JSON body")
+        if not isinstance(data, dict):
+            raise BadRequestError("JSON body must be an object")
+        return data
 
     def _handle_terminal_ws(self, parsed) -> None:
         if not self._auth_gate("/ws/terminal", parsed.query):
@@ -1268,6 +1491,20 @@ class Handler(BaseHTTPRequestHandler):
                 pass
 
     def do_GET(self) -> None:
+        try:
+            self._do_GET_impl()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception as exc:  # noqa: BLE001 — keep the server alive
+            import traceback
+
+            traceback.print_exc()
+            try:
+                self._json(500, {"ok": False, "error": f"internal error: {exc}"})
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
+    def _do_GET_impl(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
 
@@ -1354,27 +1591,34 @@ class Handler(BaseHTTPRequestHandler):
 
         if path.startswith("/static/"):
             rel = path[len("/static/"):]
+            root = STATIC_DIR.resolve()
             target = (STATIC_DIR / rel).resolve()
-            if not str(target).startswith(str(STATIC_DIR.resolve())) or not target.is_file():
+            if not target.is_relative_to(root) or not target.is_file():
                 self._json(404, {"error": "not found"})
                 return
             content_type = {
                 ".css": "text/css; charset=utf-8",
                 ".js": "application/javascript; charset=utf-8",
+                ".mjs": "application/javascript; charset=utf-8",
+                ".json": "application/json; charset=utf-8",
+                ".map": "application/json; charset=utf-8",
                 ".svg": "image/svg+xml",
-            }.get(target.suffix, "application/octet-stream")
+                ".png": "image/png",
+                ".jpg": "image/jpeg",
+                ".ico": "image/x-icon",
+                ".woff": "font/woff",
+                ".woff2": "font/woff2",
+                ".ttf": "font/ttf",
+                ".md": "text/markdown; charset=utf-8",
+                ".txt": "text/plain; charset=utf-8",
+            }.get(target.suffix.lower(), "application/octet-stream")
             raw = target.read_bytes()
             etag = hashlib.sha1(raw).hexdigest()[:16]
+            cache = "public, max-age=3600" if "/vendor/" in path else "public, max-age=60"
             if self.headers.get("If-None-Match") == etag:
-                self._send(304, b"", content_type, cache_control="public, max-age=60", etag=etag)
+                self._send(304, b"", content_type, cache_control=cache, etag=etag)
                 return
-            self._send(
-                200,
-                raw,
-                content_type,
-                cache_control="public, max-age=60",
-                etag=etag,
-            )
+            self._send(200, raw, content_type, cache_control=cache, etag=etag)
             return
 
         if path == "/api/health":
@@ -1405,7 +1649,7 @@ class Handler(BaseHTTPRequestHandler):
             if rel.endswith("/"):
                 rel = rel + "index.html"
             target = (help_root / rel).resolve()
-            if help_root.is_dir() and str(target).startswith(str(help_root)) and target.is_file():
+            if help_root.is_dir() and target.is_relative_to(help_root) and target.is_file():
                 content_type = {
                     ".html": "text/html; charset=utf-8",
                     ".css": "text/css; charset=utf-8",
@@ -1482,6 +1726,32 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, _read_json(ENDPOINT_HEALTH_FILE, {}))
             return
 
+        if path.startswith("/api/jobs/") and path.endswith("/logs"):
+            raw = path[len("/api/jobs/"): -len("/logs")].strip("/")
+            try:
+                job = require_name(raw, "job 名")
+            except BadRequestError as exc:
+                self._json(400, {"error": str(exc)})
+                return
+            qs = parse_qs(parsed.query)
+            lines = (qs.get("lines") or ["120"])[0]
+            try:
+                lines = max(1, min(2000, int(lines)))
+            except ValueError:
+                lines = 120
+            args = ["jobs", "logs", job, "--lines", str(lines)]
+            node = (qs.get("node") or [""])[0].strip()
+            if node and node != "all":
+                try:
+                    args.extend(["--node", require_name(node, "node 名")])
+                except BadRequestError as exc:
+                    self._json(400, {"error": str(exc)})
+                    return
+            with _action_lock:
+                result = run_cli(args, timeout=120)
+            self._json(200 if result["rc"] == 0 else 500, {"result": result, "job": job})
+            return
+
         if path == "/api/jobs":
             self._json(200, {
                 "jobs": list_jobs(),
@@ -1556,6 +1826,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if path.startswith("/api/config/job/"):
             name = path[len("/api/config/job/"):].strip("/")
+            if not _SAFE_NAME_RE.match(name):
+                self._json(400, {"error": "job 名不合法"})
+                return
             path_job = job_file(name)
             if not path_job:
                 self._json(404, {"error": f"job not found: {name}"})
@@ -1566,9 +1839,32 @@ class Handler(BaseHTTPRequestHandler):
         self._json(404, {"error": f"unknown path: {path}"})
 
     def do_POST(self) -> None:
+        try:
+            self._do_POST_impl()
+        except BadRequestError as exc:
+            try:
+                self._json(400, {"ok": False, "error": str(exc)})
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception as exc:  # noqa: BLE001 — keep the server alive on bad input
+            import traceback
+
+            traceback.print_exc()
+            try:
+                self._json(500, {"ok": False, "error": f"internal error: {exc}"})
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
+    def _do_POST_impl(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
-        body = self._read_body()
+        try:
+            body = self._read_body()
+        except BadRequestError as exc:
+            self._json(400, {"ok": False, "error": str(exc)})
+            return
 
         if path == "/api/auth/login":
             cfg = load_auth_config()
@@ -1629,7 +1925,11 @@ class Handler(BaseHTTPRequestHandler):
             if len(parts) != 4:
                 self._json(400, {"error": "bad job action path"})
                 return
-            job = parts[2]
+            try:
+                job = require_name(parts[2], "job 名")
+            except BadRequestError as exc:
+                self._json(400, {"error": str(exc)})
+                return
             action = body.get("action")
             if action not in {"start", "stop", "restart", "status", "wait"}:
                 self._json(400, {"error": "action must be start|stop|restart|status|wait"})
@@ -1777,9 +2077,10 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/deploy":
-            job = body.get("job")
-            if not job:
-                self._json(400, {"error": "job required"})
+            try:
+                job = require_name(body.get("job"), "job 名")
+            except BadRequestError as exc:
+                self._json(400, {"error": str(exc)})
                 return
             args = ["deploy", job]
             if body.get("nodes"):
@@ -2015,9 +2316,10 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/node/uncordon":
-            name = body.get("name")
-            if not name:
-                self._json(400, {"error": "name required"})
+            try:
+                name = require_name(body.get("name"), "node 名")
+            except BadRequestError as exc:
+                self._json(400, {"error": str(exc)})
                 return
             with _action_lock:
                 result = run_cli(["node", "uncordon", name])
@@ -2028,9 +2330,10 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/node/cordon":
-            name = body.get("name")
-            if not name:
-                self._json(400, {"error": "name required"})
+            try:
+                name = require_name(body.get("name"), "node 名")
+            except BadRequestError as exc:
+                self._json(400, {"error": str(exc)})
                 return
             args = ["node", "cordon", name]
             if body.get("reason"):
@@ -2044,14 +2347,24 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/node/add":
-            name = (body.get("name") or "").strip()
-            host = (body.get("host") or "").strip()
-            if not name or not host:
-                self._json(400, {"error": "name and host required"})
+            try:
+                name = require_name(body.get("name"), "node 名")
+                host = require_host(body.get("host"))
+                labels = require_labels(body.get("labels"))
+            except BadRequestError as exc:
+                self._json(400, {"error": str(exc)})
                 return
-            args = ["node", "add", name, "--host", host, "--gpus", str(body.get("gpus", 4))]
-            if body.get("labels"):
-                args.extend(["--labels", body["labels"]])
+            try:
+                gpus = int(body.get("gpus", 4))
+            except (TypeError, ValueError):
+                self._json(400, {"error": "gpus 必须是正整数"})
+                return
+            if gpus < 1 or gpus > 64:
+                self._json(400, {"error": "gpus 必须在 1..64"})
+                return
+            args = ["node", "add", name, "--host", host, "--gpus", str(gpus)]
+            if labels:
+                args.extend(["--labels", labels])
             with _action_lock:
                 result = run_cli(args)
             self._json(
@@ -2061,9 +2374,10 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/node/remove":
-            name = (body.get("name") or "").strip()
-            if not name:
-                self._json(400, {"error": "name required"})
+            try:
+                name = require_name(body.get("name"), "node 名")
+            except BadRequestError as exc:
+                self._json(400, {"error": str(exc)})
                 return
             with _action_lock:
                 result = run_cli(["node", "remove", name])
@@ -2144,14 +2458,41 @@ class Handler(BaseHTTPRequestHandler):
                 root = PROJECT_DIR / "cluster.json"
                 if not root.exists():
                     root.symlink_to(Path("config/local/cluster.json"))
+            invalidate_overview_cache()
             self._json(200, {"ok": True, "path": str(target), "setup": build_setup_status()})
             return
 
         if path == "/api/config/nodes":
             data = body.get("data")
-            if not isinstance(data, dict) or "nodes" not in data:
-                self._json(400, {"error": "data with nodes required"})
+            if not isinstance(data, dict) or not isinstance(data.get("nodes"), dict):
+                self._json(400, {"error": "data with nodes object required"})
                 return
+            try:
+                validated = {}
+                for raw_name, meta in data["nodes"].items():
+                    node_name = require_name(raw_name, "node 名")
+                    if not isinstance(meta, dict):
+                        raise BadRequestError(f"节点 {node_name} 配置必须是对象")
+                    node = dict(meta)
+                    node["ansible_host"] = require_host(meta.get("ansible_host"), f"{node_name} 地址")
+                    if "gpus_per_node" in node:
+                        try:
+                            gpus = int(node["gpus_per_node"])
+                        except (TypeError, ValueError):
+                            raise BadRequestError(f"{node_name} gpus_per_node 必须是整数")
+                        if gpus < 1 or gpus > 64:
+                            raise BadRequestError(f"{node_name} gpus_per_node 必须在 1..64")
+                        node["gpus_per_node"] = gpus
+                    labels = node.get("labels")
+                    if labels is not None:
+                        if not isinstance(labels, list) or not all(isinstance(x, str) for x in labels):
+                            raise BadRequestError(f"{node_name} labels 必须是字符串数组")
+                        require_labels(",".join(labels))
+                    validated[node_name] = node
+            except BadRequestError as exc:
+                self._json(400, {"error": str(exc)})
+                return
+            data["nodes"] = validated
             target = nodes_file(write=True)
             with _action_lock:
                 _atomic_write_json(target, data)
@@ -2159,6 +2500,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not root.exists():
                     root.symlink_to(Path("config/local/nodes.json"))
                 render = run_cli(["node", "render"], timeout=60)
+            invalidate_overview_cache()
             self._json(
                 200 if render["rc"] == 0 else 500,
                 {"ok": render["rc"] == 0, "path": str(target), "render": render, "setup": build_setup_status()},
@@ -2167,14 +2509,45 @@ class Handler(BaseHTTPRequestHandler):
 
         if path.startswith("/api/config/job/"):
             name = path[len("/api/config/job/"):].strip("/")
+            try:
+                name = require_name(name, "job 名")
+            except BadRequestError as exc:
+                self._json(400, {"error": str(exc)})
+                return
             data = body.get("data")
             if not isinstance(data, dict):
                 self._json(400, {"error": "data object required"})
                 return
-            data["name"] = data.get("name") or name
-            target = job_file(name) or (LOCAL_JOBS_DIR / f"{name}.json")
+            data = dict(data)
+            data["name"] = name
+            if data.get("gpus_per_node") is not None:
+                try:
+                    gpus = int(data["gpus_per_node"])
+                except (TypeError, ValueError):
+                    self._json(400, {"error": "gpus_per_node 必须是整数"})
+                    return
+                if gpus < 1 or gpus > 64:
+                    self._json(400, {"error": "gpus_per_node 必须在 1..64"})
+                    return
+                data["gpus_per_node"] = gpus
+            for key in ("extra_args", "actions"):
+                if data.get(key) is not None and (
+                    not isinstance(data[key], list) or not all(isinstance(x, str) for x in data[key])
+                ):
+                    self._json(400, {"error": f"{key} 必须是字符串数组"})
+                    return
+            if data.get("env") is not None and not isinstance(data["env"], dict):
+                self._json(400, {"error": "env 必须是对象"})
+                return
+            # Edits always land in config/local/jobs so built-in templates stay pristine.
+            LOCAL_JOBS_DIR.mkdir(parents=True, exist_ok=True)
+            target = (LOCAL_JOBS_DIR / f"{name}.json").resolve()
+            if not target.is_relative_to(LOCAL_JOBS_DIR.resolve()):
+                self._json(400, {"error": "job 名不合法"})
+                return
             with _action_lock:
                 _atomic_write_json(target, data)
+            invalidate_overview_cache()
             self._json(200, {"ok": True, "path": str(target), "setup": build_setup_status()})
             return
 
@@ -2289,16 +2662,43 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    host = os.environ.get("GPU_CONTROL_UI_HOST", "0.0.0.0")
+    # Safe default: loopback only. cmd_ui passes cluster.control.ui_host when
+    # the operator explicitly wants LAN exposure.
+    host = os.environ.get("GPU_CONTROL_UI_HOST", "127.0.0.1")
     port = int(os.environ.get("GPU_CONTROL_UI_PORT", "8787"))
-    httpd = ThreadingHTTPServer((host, port), Handler)
+    try:
+        httpd = ThreadingHTTPServer((host, port), Handler)
+    except OSError as exc:
+        print(f"gpu-control UI cannot bind {host}:{port}: {exc}", file=sys.stderr)
+        raise SystemExit(1)
+    pid_file = STATE_DIR / "ui.pid"
+    stopping = threading.Event()
+
+    def _stop(_signum, _frame):
+        if stopping.is_set():
+            return
+        stopping.set()
+        # shutdown() must run outside the serve_forever() thread.
+        threading.Thread(target=httpd.shutdown, daemon=True).start()
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(sig, _stop)
+        except (ValueError, OSError):
+            pass
+
     print(f"gpu-control UI listening on http://{host}:{port}")
     print(f"project: {PROJECT_DIR}")
     try:
         httpd.serve_forever()
-    except KeyboardInterrupt:
-        print("\nshutting down")
+    finally:
         httpd.server_close()
+        try:
+            if pid_file.is_file() and pid_file.read_text(encoding="utf-8").strip() == str(os.getpid()):
+                pid_file.unlink()
+        except OSError:
+            pass
+        print("shutting down")
 
 
 if __name__ == "__main__":

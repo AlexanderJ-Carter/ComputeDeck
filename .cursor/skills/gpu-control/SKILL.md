@@ -25,7 +25,7 @@ description: >-
 ## 运维
 
 - 总览：`gc_overview(refresh=true)`
-- 启停：`gc_job_action(job, action, node=…)` — Job 是插件，不绑 decider
+- 启停：`gc_job_action(job, action, node=…)` — Job 是插件，不绑定特定业务
 - 腾空：`gc_free_node` / `gc_procs(action=kill, all_procs=true)`
 - 模型：`gc_models(action=deps|check|verify|list)`
 

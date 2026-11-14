@@ -17,6 +17,7 @@ from paths import (
     cluster_file,
     list_job_files,
 )
+from state_util import atomic_write_json
 
 
 EXAMPLES_DIR = CONFIG_DIR / "examples"
@@ -144,19 +145,31 @@ def install_job_template(template_id: str, *, name: str | None = None) -> dict:
         raise FileNotFoundError(f"unknown template: {template_id}")
     src = Path(templates[template_id]["path"])
     data = json.loads(src.read_text(encoding="utf-8"))
-    dest_name = (name or data.get("name") or template_id).strip()
+    old_name = str(data.get("name") or template_id).strip()
+    dest_name = (name or old_name or template_id).strip()
     if not dest_name:
         raise ValueError("job name required")
     data["name"] = dest_name
+    env = data.get("env")
+    if isinstance(env, dict):
+        if env.get("GPU_CONTROL_JOB_NAME") == old_name:
+            env["GPU_CONTROL_JOB_NAME"] = dest_name
+        runtime = env.get("GPU_CONTROL_JOB_RUNTIME")
+        if isinstance(runtime, str) and old_name and old_name in runtime:
+            env["GPU_CONTROL_JOB_RUNTIME"] = runtime.replace(old_name, dest_name)
     LOCAL_JOBS_DIR.mkdir(parents=True, exist_ok=True)
     dest = LOCAL_JOBS_DIR / f"{dest_name}.json"
-    dest.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    atomic_write_json(dest, data)
+    try:
+        relative = str(dest.relative_to(PROJECT_DIR))
+    except ValueError:
+        relative = str(dest)
     return {
         "ok": True,
         "name": dest_name,
         "path": str(dest),
         "from": str(src),
-        "relative": str(dest.relative_to(PROJECT_DIR)),
+        "relative": relative,
     }
 
 

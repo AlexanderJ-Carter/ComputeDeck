@@ -1,0 +1,20 @@
+{
+  "name": "docker-job",
+  "description": "通用 Docker Job 示例：把 image / command / gpus 换成你的容器；也可作为 vLLM/TGI 等镜像的起点",
+  "kind": "service",
+  "gpus_per_node": 1,
+  "runtime": "docker",
+  "docker": {
+    "image": "python:3.11-slim",
+    "name": "gpu-control-docker-job",
+    "gpus": "all",
+    "ports": [],
+    "volumes": [],
+    "env": {},
+    "command": ["python", "-c", "print('hello from gpu-control docker job')"]
+  },
+  "env": {
+    "GPU_CONTROL_JOB_NAME": "docker-job"
+  },
+  "actions": ["start", "stop", "restart", "status", "wait"]
+}

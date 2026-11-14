@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import _bootstrap  # noqa: F401
+from state_util import atomic_write_json
 from paths import (
     INVENTORY_FILE,
     PLAYBOOKS_DIR,
@@ -194,7 +195,7 @@ def main() -> int:
 
     if args.write:
         OUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-        OUT_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        atomic_write_json(OUT_FILE, payload)
 
     text = json.dumps(payload, ensure_ascii=False, indent=2)
     if args.json or args.write:

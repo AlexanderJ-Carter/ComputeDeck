@@ -1,0 +1,135 @@
+/* gpu-control design tokens — single source of truth.
+ *
+ * Loaded before style.css and api-docs.css. Kept dependency-free: no webfonts,
+ * no CDNs. System CJK + mono stacks only, so the console works on intranets.
+ */
+
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* surfaces */
+  --bg: #e8ece9;
+  --bg-deep: #dfe5e1;
+  --panel: rgba(250, 252, 250, 0.86);
+  --panel-solid: #fafcfa;
+  --panel-2: #f1f5f2;
+  --input: #ffffff;
+  --console-bg: #121a16;
+  --console-ink: #d5e8df;
+  --rail-bg: rgba(244, 248, 245, 0.92);
+  --tile-stripe: #e3ebe6;
+
+  /* lines & ink */
+  --line: #c8d2cb;
+  --line-strong: #a8b6ad;
+  --ink: #15201a;
+  --muted: #5a6b61;
+
+  /* status */
+  --ok: #1a8f5c;
+  --ok-dim: rgba(26, 143, 92, 0.12);
+  --warn: #b7791f;
+  --warn-dim: rgba(183, 121, 31, 0.14);
+  --bad: #c53d4a;
+  --bad-dim: rgba(197, 61, 74, 0.12);
+  --accent: #0e7c74;
+  --accent-hot: #12a396;
+  --accent-ink: #f4fffc;
+  --signal: #0e7c74;
+
+  /* effects */
+  --shadow: 0 1px 0 rgba(21, 32, 26, 0.04), 0 12px 32px rgba(21, 32, 26, 0.06);
+  --shadow-soft: 0 8px 24px rgba(21, 32, 26, 0.05);
+  --glow-a: rgba(14, 124, 116, 0.14);
+  --glow-b: rgba(183, 121, 31, 0.08);
+  --grid: rgba(21, 32, 26, 0.045);
+
+  /* semantic tones */
+  --tone-ok: var(--ok);
+  --tone-ok-bg: var(--ok-dim);
+  --tone-warn: var(--warn);
+  --tone-warn-bg: var(--warn-dim);
+  --tone-bad: var(--bad);
+  --tone-bad-bg: var(--bad-dim);
+  --tone-info: var(--accent);
+  --tone-info-bg: color-mix(in srgb, var(--accent) 12%, transparent);
+  --tone-neutral: var(--muted);
+  --tone-neutral-bg: color-mix(in srgb, var(--muted) 12%, transparent);
+
+  /* type */
+  --font-sans: ui-sans-serif, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
+  --font-display: var(--font-sans);
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono",
+    "DejaVu Sans Mono", monospace;
+  /* legacy aliases */
+  --sans: var(--font-sans);
+  --display: var(--font-display);
+  --mono: var(--font-mono);
+
+  --fs-xs: 10.5px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-lg: 15px;
+  --fs-xl: 20px;
+  --fs-2xl: 28px;
+
+  /* spacing */
+  --sp-1: 4px;
+  --sp-2: 6px;
+  --sp-3: 8px;
+  --sp-4: 12px;
+  --sp-5: 16px;
+  --sp-6: 22px;
+
+  /* geometry */
+  --radius: 14px;
+  --radius-sm: 10px;
+  --radius-pill: 999px;
+  --control-h: 36px;
+  --control-h-sm: 28px;
+  --rail-w: 220px;
+
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 34%, transparent);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0e1412;
+  --bg-deep: #0a100e;
+  --panel: rgba(22, 30, 27, 0.9);
+  --panel-solid: #161e1b;
+  --panel-2: #1c2622;
+  --input: #101714;
+  --console-bg: #080d0b;
+  --console-ink: #d0e4da;
+  --rail-bg: rgba(12, 18, 16, 0.94);
+  --tile-stripe: #24302b;
+
+  --line: #2a3832;
+  --line-strong: #3d4f46;
+  --ink: #e7f0eb;
+  --muted: #8fa399;
+
+  --ok: #3dcf8e;
+  --ok-dim: rgba(61, 207, 142, 0.14);
+  --warn: #e0b03a;
+  --warn-dim: rgba(224, 176, 58, 0.14);
+  --bad: #f07a82;
+  --bad-dim: rgba(240, 122, 130, 0.14);
+  --accent: #2ec4b6;
+  --accent-hot: #5ee0d2;
+  --accent-ink: #041412;
+  --signal: #2ec4b6;
+
+  --shadow: 0 1px 0 rgba(0, 0, 0, 0.25), 0 16px 40px rgba(0, 0, 0, 0.35);
+  --shadow-soft: 0 10px 28px rgba(0, 0, 0, 0.28);
+  --glow-a: rgba(46, 196, 182, 0.12);
+  --glow-b: rgba(224, 176, 58, 0.06);
+  --grid: rgba(231, 240, 235, 0.035);
+
+  --tone-neutral: var(--muted);
+  --tone-neutral-bg: color-mix(in srgb, var(--muted) 16%, transparent);
+}

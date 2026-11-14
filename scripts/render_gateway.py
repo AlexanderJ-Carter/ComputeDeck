@@ -32,9 +32,9 @@ OUT_DIR = STATE_DIR / "gateway"
 
 DEFAULT_API_PATHS = ["/health"]
 LEGACY_ARTIFACTS = (
-    "nginx-decider.conf",
     "LITELLM.md",
 )
+LEGACY_GLOBS = ("nginx-*.conf",)
 
 
 def _load(path: Path, default):
@@ -477,6 +477,11 @@ def write_artifacts(payload: dict) -> dict[str, str]:
         legacy = OUT_DIR / name
         if legacy.is_file():
             legacy.unlink()
+    # Drop stale per-scenario nginx snippets, keep the current generic artifact.
+    for pattern in LEGACY_GLOBS:
+        for legacy in OUT_DIR.glob(pattern):
+            if legacy.name != "nginx-inference-pool.conf":
+                legacy.unlink()
     paths = {
         "map": OUT_DIR / "map.json",
         "nginx": OUT_DIR / "nginx-inference-pool.conf",

@@ -10,6 +10,7 @@ import subprocess
 from pathlib import Path
 
 import _bootstrap  # noqa: F401
+from state_util import atomic_write_json
 from paths import (
     LOCAL_DIR,
     PROJECT_DIR,
@@ -54,7 +55,7 @@ def load_models() -> dict:
 def save_models(data: dict) -> Path:
     path = models_file() if models_file().is_file() else (LOCAL_DIR / "models.json")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    atomic_write_json(path, data)
     return path
 
 

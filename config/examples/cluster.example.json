@@ -20,7 +20,11 @@
         "client_id": "gpu-control",
         "client_secret_file": "config/local/secrets/oidc_client_secret",
         "redirect_path": "/api/auth/oidc/callback",
-        "scopes": ["openid", "profile", "email"],
+        "scopes": [
+          "openid",
+          "profile",
+          "email"
+        ],
         "username_claim": "email",
         "allowed_emails": [],
         "allowed_subjects": [],
@@ -34,7 +38,9 @@
     "ports_per_node": 1,
     "health_path": "/health",
     "sample_path": "/health",
-    "paths": ["/health"],
+    "paths": [
+      "/health"
+    ],
     "auth_header": "Authorization",
     "auth_env": "INFERENCE_API_KEY",
     "api_key_file": "${GPU_CONTROL_API_KEY_FILE}"
@@ -69,21 +75,26 @@
     "routing_strategy": "least-busy",
     "openai_proxy_port": 4000,
     "openai_proxy_dir": "${GPU_CONTROL_GATEWAY_DIR}",
-    "openai_proxy_role": "optional OpenAI-compatible proxy (LiteLLM 等)",
+    "openai_proxy_role": "optional AI Gateway (LiteLLM)；装好/配置好后 gateway ensure 自动随入口启动",
     "extra_http_port": 8080,
     "extra_http_role": "optional extra HTTP service",
     "nginx_listen": 18080
   },
   "watchdog": {
-    "enabled": false,
+    "enabled": true,
     "jobs": [],
     "interval_sec": 60,
     "max_restarts": 3,
-    "nodes": "all"
+    "nodes": "all",
+    "failure_threshold": 2
   },
   "scheduling": {
-    "prefer_labels": ["serving"],
-    "avoid_labels": ["shared"],
+    "prefer_labels": [
+      "serving"
+    ],
+    "avoid_labels": [
+      "shared"
+    ],
     "unit_gpus": 4
   },
   "collaboration": {

@@ -4,20 +4,20 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>gpu-control API · Swagger</title>
+  <script>
+    (function () {
+      var mode = localStorage.getItem("gpu-control-theme") || "auto";
+      var resolved =
+        mode === "auto"
+          ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+          : mode;
+      document.documentElement.setAttribute("data-theme", resolved);
+    })();
+  </script>
+  <link rel="stylesheet" href="/static/tokens.css" />
   <style>
     :root {
-      --bg: #f6f7f4; --panel: #fff; --ink: #1a1f1c; --muted: #5c6b64;
-      --line: #d7ddd8; --accent: #0e7c74; --code: #eef3f0;
-      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      --sans: "Segoe UI", "PingFang SC", "Noto Sans SC", sans-serif;
-      --ok: #1b7f4a; --bad: #b42318;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #0f1412; --panel: #171d1a; --ink: #e7eee9; --muted: #9aaba3;
-        --line: #2a342f; --accent: #2ec4b6; --code: #1f2824;
-        --ok: #3dd68c; --bad: #f97066;
-      }
+      --code: color-mix(in srgb, var(--panel-2) 82%, var(--bg));
     }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: var(--sans); color: var(--ink); background: var(--bg); line-height: 1.5; }

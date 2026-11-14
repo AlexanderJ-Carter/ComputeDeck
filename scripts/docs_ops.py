@@ -27,7 +27,11 @@ def cmd_build(_: argparse.Namespace) -> int:
         return 1
     cmd = [_mkdocs_bin(), "build", "-f", str(cfg), "-q"]
     print("+", " ".join(cmd))
-    completed = subprocess.run(cmd, cwd=ROOT, check=False)
+    try:
+        completed = subprocess.run(cmd, cwd=ROOT, check=False)
+    except FileNotFoundError:
+        print("未找到 mkdocs。先执行：uv pip install -r requirements-docs.txt", file=sys.stderr)
+        return 1
     if completed.returncode == 0:
         print(f"已构建 → {SITE_DIR} （UI 访问 /help/）")
     else:
@@ -48,7 +52,11 @@ def cmd_serve(args: argparse.Namespace) -> int:
         f"{args.host}:{args.port}",
     ]
     print("+", " ".join(cmd))
-    return int(subprocess.call(cmd, cwd=ROOT))
+    try:
+        return int(subprocess.call(cmd, cwd=ROOT))
+    except FileNotFoundError:
+        print("未找到 mkdocs。先执行：uv pip install -r requirements-docs.txt", file=sys.stderr)
+        return 1
 
 
 def cmd_clean(_: argparse.Namespace) -> int:

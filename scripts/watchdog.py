@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import signal
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -12,6 +14,7 @@ from datetime import datetime, timezone
 import _bootstrap  # noqa: F401
 from paths import CLI, INVENTORY_FILE, PROJECT_DIR, STATE_DIR, VENV_PYTHON
 from jobs_util import default_job_name
+from state_util import atomic_write_json
 
 LOG_FILE = STATE_DIR / "watchdog.log"
 STATE_FILE = STATE_DIR / "watchdog_state.json"
@@ -83,10 +86,10 @@ def load_state() -> dict:
 
 def save_state(data: dict) -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    STATE_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    atomic_write_json(STATE_FILE, data)
 
 
-def check_and_fix(job: str, nodes: str | None, max_restarts: int) -> None:
+def check_and_fix(job: str, nodes: str | None, max_restarts: int, failure_threshold: int = 2) -> None:
     limit = schedulable_limit(nodes)
     if limit == "":
         log(f"skip job={job}: no schedulable nodes (all cordoned?)")
@@ -97,11 +100,30 @@ def check_and_fix(job: str, nodes: str | None, max_restarts: int) -> None:
     result = run_cli(args)
     healthy = result.returncode == 0
     log(f"check job={job} nodes={limit or 'all'} healthy={healthy} rc={result.returncode}")
-    if healthy:
-        return
-
     state = load_state()
     key = f"{job}:{limit or 'all'}"
+    failures = state.setdefault("failures", {})
+    if healthy:
+        # A healthy check resets both the failure streak and the restart budget.
+        changed = False
+        if int(state.setdefault("restarts", {}).get(key, 0)):
+            state["restarts"][key] = 0
+            changed = True
+        if int(failures.get(key, 0)):
+            failures[key] = 0
+            changed = True
+        if changed:
+            save_state(state)
+        return
+
+    streak = int(failures.get(key, 0)) + 1
+    failures[key] = streak
+    save_state(state)
+    if streak < max(1, failure_threshold):
+        log(f"unhealthy job={job} streak={streak}/{failure_threshold}; waiting for confirmation")
+        return
+    log(f"confirmed unhealthy job={job} streak={streak}/{failure_threshold}")
+
     count = int(state.setdefault("restarts", {}).get(key, 0))
     if count >= max_restarts:
         log(f"skip restart job={job} reached max_restarts={max_restarts}")
@@ -124,8 +146,10 @@ def check_and_fix(job: str, nodes: str | None, max_restarts: int) -> None:
         log(f"wait rc={wait.returncode}")
         if wait.returncode == 0:
             state["restarts"][key] = 0
+            failures[key] = 0
         else:
             state["restarts"][key] = count + 1
+            failures[key] = 0
     else:
         state["restarts"][key] = count + 1
     state["last_action"] = {
@@ -143,6 +167,7 @@ def main() -> int:
     parser.add_argument("--nodes", help="Limit watchdog to these nodes")
     parser.add_argument("--interval", type=int, default=60, help="Seconds between checks")
     parser.add_argument("--max-restarts", type=int, default=3, help="Max consecutive restarts per target")
+    parser.add_argument("--failure-threshold", type=int, default=2, help="Consecutive unhealthy checks before restart")
     parser.add_argument("--once", action="store_true", help="Single check then exit")
     args = parser.parse_args()
 
@@ -150,16 +175,44 @@ def main() -> int:
     if not jobs:
         log("no jobs to watch (register a job or pass --job)")
         return 1
+
+    pid_file = STATE_DIR / "watchdog.pid"
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    pid_file.write_text(str(os.getpid()), encoding="utf-8")
+    stop = {"requested": False}
+
+    def _stop(_signum, _frame):
+        stop["requested"] = True
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(sig, _stop)
+        except (ValueError, OSError):
+            pass
+
     log(f"watchdog start jobs={jobs} interval={args.interval}s nodes={args.nodes or 'all'}")
-    while True:
-        for job in jobs:
-            try:
-                check_and_fix(job, args.nodes, args.max_restarts)
-            except Exception as exc:  # noqa: BLE001 - keep daemon alive
-                log(f"error job={job}: {exc}")
-        if args.once:
-            return 0
-        time.sleep(max(args.interval, 5))
+    try:
+        while not stop["requested"]:
+            for job in jobs:
+                try:
+                    check_and_fix(job, args.nodes, args.max_restarts, args.failure_threshold)
+                except Exception as exc:  # noqa: BLE001 - keep daemon alive
+                    log(f"error job={job}: {exc}")
+            if args.once:
+                return 0
+            # Sleep in small slices so SIGTERM is prompt.
+            for _ in range(max(1, args.interval // 2)):
+                if stop["requested"]:
+                    break
+                time.sleep(2)
+    finally:
+        try:
+            if pid_file.is_file() and pid_file.read_text(encoding="utf-8").strip() == str(os.getpid()):
+                pid_file.unlink()
+        except OSError:
+            pass
+        log("watchdog stop")
+    return 0
 
 
 if __name__ == "__main__":

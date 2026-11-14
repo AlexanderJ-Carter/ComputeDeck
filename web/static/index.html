@@ -5,18 +5,18 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>gpu-control</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link
-    href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600;700&display=swap"
-    rel="stylesheet" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css" />
+  <link rel="stylesheet" href="/static/vendor/xterm/xterm-6.1.0.css" />
+  <link rel="stylesheet" href="/static/tokens.css?v=__UI_VERSION__" />
   <link rel="stylesheet" href="/static/style.css?v=__UI_VERSION__" />
   <script>
     (function () {
-      var t = localStorage.getItem("gpu-control-theme");
-      if (!t) t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-      document.documentElement.setAttribute("data-theme", t);
+      var mode = localStorage.getItem("gpu-control-theme") || "auto";
+      var resolved =
+        mode === "auto"
+          ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+          : mode;
+      document.documentElement.setAttribute("data-theme", resolved);
+      document.documentElement.setAttribute("data-theme-mode", mode);
     })();
   </script>
 </head>
@@ -53,7 +53,8 @@
           <button class="nav-item" data-view="config">配置</button>
         </div>
       </nav>
-      <div class="theme-toggle" id="theme-toggle">
+      <div class="theme-toggle" id="theme-toggle" role="group" aria-label="主题">
+        <button type="button" data-theme-set="auto" data-keep-enabled="1" title="跟随系统">自动</button>
         <button type="button" data-theme-set="light" data-keep-enabled="1">浅色</button>
         <button type="button" data-theme-set="dark" data-keep-enabled="1">深色</button>
       </div>
@@ -66,7 +67,7 @@
     <div class="main">
       <header class="topbar">
         <div class="topbar-copy">
-          <p class="eyebrow" id="strategy-line">控制面编排 · 节点执行 · 端点可观测</p>
+          <p class="eyebrow" id="strategy-line">GPU 控制面</p>
           <h1 id="view-title">看板</h1>
         </div>
         <div class="topbar-actions">
@@ -75,178 +76,191 @@
             <span class="switch-track" aria-hidden="true"></span>
             <span class="switch-text">实时</span>
           </label>
-          <button id="btn-doctor" class="ghost" data-keep-enabled="1">自检</button>
-          <button id="btn-api-health" class="ghost" data-keep-enabled="1">探测 API</button>
-          <button id="btn-refresh" class="primary" data-keep-enabled="1">刷新 GPU</button>
+          <button id="btn-doctor" class="ghost" data-keep-enabled="1" data-action="1">自检</button>
+          <button id="btn-api-health" class="ghost" data-keep-enabled="1" data-action="1">探测 API</button>
+          <button id="btn-refresh" class="primary" data-keep-enabled="1" data-action="1">刷新 GPU</button>
+          <span id="busy-indicator" class="chip chip--info" hidden>执行中…</span>
+          <button type="button" id="console-unread" class="chip warn console-unread" hidden data-keep-enabled="1">有新输出</button>
           <button id="btn-logout" class="ghost tiny" data-keep-enabled="1" hidden>退出</button>
         </div>
       </header>
 
-      <section class="stat-bar" id="summary">
-        <div class="stat"><span>节点</span><strong id="stat-nodes">-</strong></div>
-        <div class="stat ok"><span>空闲 GPU</span><strong id="stat-free">-</strong></div>
-        <div class="stat warn"><span>占用 GPU</span><strong id="stat-used">-</strong></div>
-        <div class="stat"><span>API</span><strong id="stat-api">-</strong></div>
-        <div class="stat"><span>队列</span><strong id="stat-pending">-</strong></div>
-        <div class="stat"><span>隔离</span><strong id="stat-cordoned">-</strong></div>
-      </section>
-
-      <section class="view active" data-view-panel="actions">
-        <div class="dash-hero">
-          <div class="dash-hero-main">
-            <div class="score-block">
-              <div class="score-ring" id="quality-ring">
+      <section class="view active dash" data-view-panel="actions">
+        <div class="dash-top">
+          <section class="panel dash-health" aria-labelledby="dash-health-title">
+            <div class="health-ring" id="quality-ring" style="--score:0" data-tone="idle" role="img" aria-label="集群健康评分">
+              <svg viewBox="0 0 120 120" aria-hidden="true">
+                <circle class="ring-track" cx="60" cy="60" r="52"></circle>
+                <circle class="ring-arc" id="quality-arc" cx="60" cy="60" r="52" pathLength="100"></circle>
+              </svg>
+              <div class="ring-label">
                 <strong id="quality-score">-</strong>
                 <span id="quality-grade">未检测</span>
               </div>
-              <div class="score-copy">
-                <h2>集群健康</h2>
-                <p class="muted" id="quality-updated">同步后更新评分与资源</p>
-                <div class="quality-kpis">
-                  <div><span>SSH</span><strong id="q-ssh">-</strong></div>
-                  <div><span>API</span><strong id="q-api">-</strong></div>
-                  <div><span>互通</span><strong id="q-mesh">-</strong></div>
-                  <div><span>GPU</span><strong id="q-gpu">-</strong></div>
-                </div>
+            </div>
+            <div class="health-copy">
+              <header class="panel-h">
+                <h2 id="dash-health-title">集群健康</h2>
+                <button id="btn-load-quality" class="ghost tiny" data-keep-enabled="1">刷新评分</button>
+              </header>
+              <p class="meta" id="quality-updated">同步后更新评分与资源</p>
+              <div class="quality-kpis">
+                <div><span>SSH</span><strong id="q-ssh">-</strong></div>
+                <div><span>API</span><strong id="q-api">-</strong></div>
+                <div><span>互通</span><strong id="q-mesh">-</strong></div>
+                <div><span>GPU</span><strong id="q-gpu">-</strong></div>
               </div>
             </div>
-            <div class="dash-pulse" id="dash-gpu-pulse" aria-label="GPU 占用">
-              <div class="dash-pulse-head">
-                <strong>GPU 池</strong>
-                <span class="meta" id="dash-gpu-meta">-</span>
+          </section>
+
+          <section class="panel dash-gpu" aria-labelledby="dash-gpu-title">
+            <header class="panel-h">
+              <h2 id="dash-gpu-title">GPU 池</h2>
+              <span class="meta" id="dash-gpu-meta">-</span>
+            </header>
+            <div class="gpu-summary">
+              <div class="gpu-numbers">
+                <strong id="dash-gpu-used">-</strong>
+                <span class="meta">/ <b id="dash-gpu-total">-</b> 占用</span>
               </div>
-              <div class="dash-bar">
-                <div class="dash-bar-used" id="dash-bar-used" style="width:0%"></div>
-              </div>
-              <div class="dash-node-strip" id="dash-node-strip"></div>
+              <span class="chip" id="dash-gpu-free">空闲 -</span>
             </div>
-          </div>
-          <div class="hero-actions">
-            <button id="btn-full-sync" class="primary" data-keep-enabled="1">全量同步</button>
-            <button class="ghost" data-oneclick="diagnose" data-keep-enabled="1">一键检测</button>
-            <button class="ghost" data-oneclick="repair" data-keep-enabled="1">一键修复</button>
-            <button class="primary" data-oneclick="deploy" data-keep-enabled="1">启动 Job</button>
-          </div>
+            <div class="meter meter-lg dash-bar" role="progressbar" aria-label="GPU 占用率" aria-valuemin="0" aria-valuemax="100">
+              <i class="dash-bar-used" id="dash-bar-used" style="width:0%"></i>
+            </div>
+            <div class="dash-node-strip" id="dash-node-strip"></div>
+          </section>
+
+          <section class="panel dash-access" aria-labelledby="dash-access-title">
+            <header class="panel-h">
+              <h2 id="dash-access-title">入口与状态</h2>
+              <span class="meta" id="dash-board-at">实时总览</span>
+            </header>
+            <div class="status-list" id="dash-board"></div>
+          </section>
         </div>
 
-        <div class="panel dash-board-panel">
-          <div class="panel-h">
-            <h2>状态面板</h2>
-            <span class="meta" id="dash-board-at">实时总览</span>
+        <section class="panel dash-actions" aria-label="快捷操作">
+          <div class="toolbar dash-toolbar">
+            <button id="btn-full-sync" class="primary" data-action="1">全量同步</button>
+            <button class="ghost" data-oneclick="diagnose" data-action="1">一键检测</button>
+            <button class="ghost" data-oneclick="repair" data-action="1">一键修复</button>
+            <button id="btn-quick-refresh" class="ghost" data-action="1">刷新 GPU</button>
+            <button id="btn-quick-health" class="ghost" data-action="1">探测 API</button>
+            <span class="toolbar-sep" aria-hidden="true"></span>
+            <div class="quick-deploy">
+              <select id="quick-job" aria-label="快捷部署任务"></select>
+              <input id="quick-gpus" type="number" min="1" step="1" value="4" aria-label="快捷部署 GPU 数" />
+              <button class="primary" data-oneclick="deploy" data-action="1">启动 Job</button>
+            </div>
+            <button class="ghost" data-view-jump="config" data-action="1">配置向导</button>
           </div>
-          <div class="dash-board" id="dash-board"></div>
-        </div>
+          <p class="meta dash-action-hint" id="dash-action-hint"></p>
+        </section>
 
-        <div class="dash-grid dash-grid-3">
-          <div class="panel">
-            <div class="panel-h">
-              <h2>统一入口</h2>
-              <div class="btn-row">
-                <button id="btn-dash-gw-refresh" class="ghost tiny" data-keep-enabled="1">刷新</button>
-                <button id="btn-dash-gw-start" class="primary tiny" data-keep-enabled="1">规整启动</button>
-                <button id="btn-dash-gw-stop" class="ghost tiny" data-keep-enabled="1">停</button>
-              </div>
-            </div>
-            <div id="dash-gateway" class="dash-gateway"></div>
-            <p class="meta" id="dash-ingress-url">-</p>
-          </div>
-          <div class="panel">
-            <div class="panel-h">
-              <h2>节点占用</h2>
-              <button class="ghost tiny" data-view-jump="cluster" data-keep-enabled="1">矩阵</button>
-            </div>
-            <div id="dash-nodes" class="dash-nodes"></div>
-            <div class="dash-kvs" style="margin-top:10px">
+        <div class="dash-grid dash-grid-2 dash-secondary">
+          <section class="panel">
+            <header class="panel-h">
+              <h2>运行日志</h2>
+              <button id="btn-runlog-refresh" class="ghost tiny" data-keep-enabled="1">刷新</button>
+            </header>
+            <div id="runlog-list" class="list runlog-list"></div>
+            <span class="meta" id="runlog-meta">CLI / 一键动作 / 检测修复</span>
+          </section>
+          <section class="panel">
+            <header class="panel-h">
+              <h2>队列 / 占用</h2>
+              <button class="ghost tiny" data-view-jump="workloads" data-keep-enabled="1">任务页</button>
+            </header>
+            <div class="dash-kvs">
               <div class="kv"><b>GPU</b> <span id="dash-occ-gpu">-</span></div>
               <div class="kv"><b>忙/闲</b> <span id="dash-occ-nodes">-</span></div>
               <div class="kv"><b>Lease</b> <span id="dash-leases">-</span></div>
               <div class="kv"><b>API</b> <span id="dash-api">-</span></div>
+              <div class="kv"><b>队列</b> <span id="dash-queue-2">-</span></div>
+              <div class="kv"><b>隔离</b> <span id="dash-cordon-2">-</span></div>
             </div>
+            <h3 class="sub">占用登记</h3>
             <div id="dash-leases-list" class="list dash-lease-list"></div>
-          </div>
-          <div class="panel">
-            <div class="panel-h">
-              <h2>运行日志</h2>
-              <div class="btn-row">
-                <button id="btn-runlog-refresh" class="ghost tiny" data-keep-enabled="1">刷新</button>
-                <button id="btn-load-quality" class="ghost tiny" data-keep-enabled="1">评分</button>
+          </section>
+        </div>
+
+        <details class="fold dash-fold" id="dash-more">
+          <summary>更多状态与运维</summary>
+          <div class="dash-grid dash-grid-3 dash-more-grid">
+            <div class="panel">
+              <div class="panel-h">
+                <h2>统一入口</h2>
+                <div class="btn-row">
+                  <button id="btn-dash-gw-refresh" class="ghost tiny" data-keep-enabled="1" data-action="1">刷新</button>
+                  <button id="btn-dash-gw-start" class="primary tiny" data-keep-enabled="1" data-action="1">规整启动</button>
+                  <button id="btn-dash-gw-stop" class="ghost tiny" data-keep-enabled="1" data-action="1">停</button>
+                </div>
+              </div>
+              <div id="dash-gateway" class="dash-gateway"></div>
+              <p class="meta" id="dash-ingress-url">-</p>
+            </div>
+            <div class="panel">
+              <div class="panel-h">
+                <h2>集群信息</h2>
+                <span class="meta" id="dash-cluster-at">-</span>
+              </div>
+              <div class="dash-kvs" id="dash-cluster-kvs">
+                <div class="kv"><b>名称</b> <span id="dash-cluster-name">-</span></div>
+                <div class="kv"><b>策略</b> <span id="dash-cluster-strategy">-</span></div>
+                <div class="kv"><b>主控</b> <span id="dash-cluster-control">-</span></div>
+                <div class="kv"><b>默认 Job</b> <span id="dash-cluster-job">-</span></div>
+                <div class="kv"><b>节点</b> <span id="dash-cluster-nodes">-</span></div>
+                <div class="kv"><b>隔离</b> <span id="dash-cluster-cordon">-</span></div>
+                <div class="kv"><b>队列</b> <span id="dash-queue">-</span></div>
+                <div class="kv"><b>Job</b> <span id="dash-jobs">-</span></div>
               </div>
             </div>
-            <div id="runlog-list" class="list runlog-list"></div>
-            <span class="meta" id="runlog-meta">CLI / 一键 / 检测修复</span>
+            <div class="panel">
+              <div class="panel-h">
+                <h2>工具栈</h2>
+                <button class="ghost tiny" data-view-jump="toolkits" data-keep-enabled="1">工具栈页</button>
+              </div>
+              <div id="dash-toolkit-chips" class="chip-row"></div>
+              <p class="meta" id="dash-toolkit-meta">探测后显示微调栈就绪情况</p>
+              <button class="ghost tiny" data-oneclick="model-check" data-keep-enabled="1">模型缓存检查</button>
+            </div>
           </div>
-        </div>
 
-        <div class="dash-grid dash-grid-2">
-          <div class="panel">
+          <div class="panel compact dash-latency">
             <div class="panel-h">
-              <h2>集群信息</h2>
-              <span class="meta" id="dash-cluster-at">-</span>
+              <h2>SSH 延迟</h2>
+              <span class="meta" id="ssh-latency-meta">尚未探测</span>
             </div>
-            <div class="dash-kvs" id="dash-cluster-kvs">
-              <div class="kv"><b>名称</b> <span id="dash-cluster-name">-</span></div>
-              <div class="kv"><b>策略</b> <span id="dash-cluster-strategy">-</span></div>
-              <div class="kv"><b>主控</b> <span id="dash-cluster-control">-</span></div>
-              <div class="kv"><b>默认 Job</b> <span id="dash-cluster-job">-</span></div>
-              <div class="kv"><b>节点</b> <span id="dash-cluster-nodes">-</span></div>
-              <div class="kv"><b>隔离</b> <span id="dash-cluster-cordon">-</span></div>
-              <div class="kv"><b>队列</b> <span id="dash-queue">-</span></div>
-              <div class="kv"><b>Job</b> <span id="dash-jobs">-</span></div>
-            </div>
+            <div id="ssh-latency-bars" class="latency-bars"></div>
           </div>
-          <div class="panel">
-            <div class="panel-h">
-              <h2>快速部署</h2>
-              <button class="ghost tiny" data-view-jump="toolkits" data-keep-enabled="1">工具栈</button>
-            </div>
-            <div class="compact-fields">
-              <label class="field"><span>任务</span><select id="quick-job"></select></label>
-              <span class="meta" id="quick-job-hint"></span>
-              <label class="field">
-                <span>GPU 数</span>
-                <select id="quick-gpus">
-                  <option value="4">4</option>
-                  <option value="8">8</option>
-                  <option value="12">12</option>
-                  <option value="16" selected>16</option>
-                </select>
-              </label>
-            </div>
-            <div id="dash-toolkit-chips" class="chip-row"></div>
-            <p class="meta" id="dash-toolkit-meta">探测后显示微调栈就绪情况</p>
-            <span class="meta" id="dash-toolkits" hidden></span>
-            <span id="dash-ingress" hidden></span>
-          </div>
-        </div>
 
-        <details class="fold dash-fold">
-          <summary>更多运维 · SSH 延迟 · 步骤</summary>
           <div class="action-grid compact-actions">
-            <button class="action-card" data-oneclick="control-bootstrap" data-keep-enabled="1">
+            <button class="action-card" data-oneclick="control-bootstrap" data-keep-enabled="1" data-action="1">
               <span class="action-tag">控制面</span>
               <strong>一键就绪</strong>
             </button>
-            <button class="action-card" data-oneclick="connect" data-keep-enabled="1">
+            <button class="action-card" data-oneclick="connect" data-keep-enabled="1" data-action="1">
               <span class="action-tag">连接</span>
               <strong>一键连通</strong>
             </button>
-            <button class="action-card" data-oneclick="worker-check" data-keep-enabled="1">
+            <button class="action-card" data-oneclick="worker-check" data-keep-enabled="1" data-action="1">
               <span class="action-tag">节点</span>
               <strong>节点体检</strong>
             </button>
-            <button class="action-card" data-oneclick="refresh" data-keep-enabled="1">
+            <button class="action-card" data-oneclick="refresh" data-keep-enabled="1" data-action="1">
               <span class="action-tag">资源</span>
               <strong>刷新 GPU</strong>
             </button>
-            <button class="action-card" data-oneclick="health" data-keep-enabled="1">
+            <button class="action-card" data-oneclick="health" data-keep-enabled="1" data-action="1">
               <span class="action-tag">推理</span>
               <strong>探测 API</strong>
             </button>
-            <button class="action-card" data-oneclick="model-check" data-keep-enabled="1">
+            <button class="action-card" data-oneclick="model-check" data-keep-enabled="1" data-action="1">
               <span class="action-tag">模型</span>
               <strong>缓存检查</strong>
             </button>
-            <button class="action-card" data-oneclick="watchdog" data-keep-enabled="1">
+            <button class="action-card" data-oneclick="watchdog" data-keep-enabled="1" data-action="1">
               <span class="action-tag">保障</span>
               <strong>看门狗</strong>
             </button>
@@ -255,14 +269,7 @@
               <strong>向导</strong>
             </button>
           </div>
-          <div class="panel compact" style="margin-top:10px">
-            <div class="panel-h">
-              <h2>SSH 延迟</h2>
-              <span class="meta" id="ssh-latency-meta">尚未探测</span>
-            </div>
-            <div id="ssh-latency-bars" class="latency-bars"></div>
-          </div>
-          <div id="action-steps" class="step-list" style="margin-top:10px"></div>
+          <div id="action-steps" class="step-list"></div>
         </details>
       </section>
 
@@ -272,11 +279,11 @@
             <div class="panel-h">
               <h2 title="在 GPU 节点 pip 探测/安装常用训练与推理栈">AI 工具栈</h2>
               <div class="btn-row">
-                <button id="btn-toolkit-probe" class="ghost tiny" data-keep-enabled="1">探测全部</button>
-                <button id="btn-toolkit-train" class="primary tiny" data-keep-enabled="1">安装微调栈</button>
+                <button id="btn-toolkit-probe" class="ghost tiny" data-keep-enabled="1" data-action="1">探测全部</button>
+                <button id="btn-toolkit-train" class="primary tiny" data-keep-enabled="1" data-action="1">安装微调栈</button>
               </div>
             </div>
-            <p class="meta">一站式：LLaMA-Factory · DeepSpeed · Accelerate · vLLM 等。装到节点 <code>${paths.python}</code>。</p>
+            <p class="meta">训练 / 推理常用工具，安装到节点 Python 环境。</p>
             <div id="toolkit-bundles" class="chip-row"></div>
             <div id="toolkit-list" class="list"></div>
           </div>
@@ -291,8 +298,10 @@
               <pre class="snippet">gpu-control toolkits list
 gpu-control toolkits probe
 gpu-control toolkits install --bundle train-stack
-gpu-control jobs install llamafactory-train
-gpu-control deploy train-job --nodes gpu-1,gpu-2 --gpus 16</pre>
+gpu-control jobs install train-job --name sft
+gpu-control deploy sft --nodes gpu-1,gpu-2 --gpus 16
+gpu-control jobs install ray-cluster --name ray
+gpu-control jobs install vllm-serve --name vllm</pre>
             </details>
           </div>
         </div>
@@ -323,11 +332,11 @@ gpu-control deploy train-job --nodes gpu-1,gpu-2 --gpus 16</pre>
             <h2>节点清单</h2>
             <span class="meta">写入 config/local/nodes.json · 自动生成 inventory</span>
           </div>
-          <div class="form-grid">
-            <input id="add-name" placeholder="名称 · gpu-worker-1" />
-            <input id="add-host" placeholder="地址 · 10.x.x.x" />
-            <input id="add-gpus" type="number" value="4" min="1" />
-            <input id="add-labels" placeholder="标签 · a100,serving" />
+          <div class="form-grid node-form">
+            <label class="field"><span>名称</span><input id="add-name" placeholder="gpu-worker-1" /></label>
+            <label class="field"><span>地址</span><input id="add-host" placeholder="10.0.0.1" /></label>
+            <label class="field"><span>GPU 数</span><input id="add-gpus" type="number" value="4" min="1" /></label>
+            <label class="field"><span>标签（逗号分隔）</span><input id="add-labels" placeholder="a100,serving" /></label>
             <button id="btn-add-node" class="primary">添加节点</button>
           </div>
           <div id="node-admin" class="table-wrap"></div>
@@ -354,7 +363,8 @@ gpu-control deploy train-job --nodes gpu-1,gpu-2 --gpus 16</pre>
               <button data-job-action="status">状态</button>
               <button data-job-action="start" class="primary">启动</button>
               <button data-job-action="stop" class="danger">停止</button>
-              <button id="btn-deploy" class="primary">一键部署</button>
+              <button id="btn-job-logs" class="ghost" data-action="1">日志</button>
+              <button id="btn-deploy" class="primary" data-action="1">一键部署</button>
             </div>
             <details class="fold" style="margin-top:10px">
               <summary>高级：参数覆盖 / 重启 / 等待</summary>
@@ -389,7 +399,7 @@ gpu-control deploy train-job --nodes gpu-1,gpu-2 --gpus 16</pre>
               <div class="compact-fields" style="margin-top:8px">
                 <label class="field"><span>模板</span><select id="job-template" data-keep-enabled="1"></select></label>
                 <label class="field"><span>安装为名</span><input id="job-template-name" placeholder="可选，默认模板名" data-keep-enabled="1" /></label>
-                <button id="btn-install-job-template" class="primary tiny" data-keep-enabled="1">安装</button>
+                <button id="btn-install-job-template" class="primary tiny" data-keep-enabled="1" data-action="1">安装</button>
               </div>
               <span class="meta" id="job-templates-meta"></span>
             </details>
@@ -398,15 +408,15 @@ gpu-control deploy train-job --nodes gpu-1,gpu-2 --gpus 16</pre>
           <div class="panel">
             <div class="panel-h">
               <h2>队列 / 占用</h2>
-              <button id="btn-queue-submit" class="ghost tiny">入队 ×4</button>
+              <button id="btn-queue-submit" class="ghost tiny" data-action="1">按 Job 默认 GPU 入队</button>
             </div>
             <div id="queue" class="list"></div>
             <h3 class="sub">占用登记</h3>
             <div id="leases" class="list"></div>
             <h3 class="sub">节点互通</h3>
             <div class="btn-row" style="margin-bottom:8px">
-              <button id="btn-probe" class="ghost tiny" data-keep-enabled="1">探测互通</button>
-              <button id="btn-schedule" class="ghost tiny" data-keep-enabled="1">调度队列</button>
+              <button id="btn-probe" class="ghost tiny" data-keep-enabled="1" data-action="1">探测互通</button>
+              <button id="btn-schedule" class="ghost tiny" data-keep-enabled="1" data-action="1">调度队列</button>
             </div>
             <div id="probe" class="list"></div>
           </div>
@@ -437,8 +447,8 @@ gpu-control deploy train-job --nodes gpu-1,gpu-2 --gpus 16</pre>
               <span>拉取后登记到模型目录</span>
             </label>
             <div class="btn-row">
-              <button id="btn-models-download" class="primary" data-keep-enabled="1">开始下载</button>
-              <button id="btn-models-install" class="ghost" data-keep-enabled="1">安装拉取工具</button>
+              <button id="btn-models-download" class="primary" data-keep-enabled="1" data-action="1">开始下载</button>
+              <button id="btn-models-install" class="ghost" data-keep-enabled="1" data-action="1">安装拉取工具</button>
             </div>
             <details class="fold">
               <summary>Token / Key <span id="secrets-meta" class="meta">未配置</span></summary>
@@ -460,19 +470,20 @@ gpu-control deploy train-job --nodes gpu-1,gpu-2 --gpus 16</pre>
             <div class="kv"><b>仓库</b> <span id="model-repo">-</span></div>
             <div class="kv"><b>关联 Job</b> <span id="model-job">-</span></div>
             <div class="kv"><b>启动参数</b> <span id="model-args">-</span></div>
+            <div class="kv"><b>校验期望</b> <span id="model-verify" class="verify-box">-</span></div>
             <div class="btn-row">
-              <button id="btn-models-deps" class="ghost">依赖</button>
-              <button id="btn-models-check" class="ghost">路径</button>
-              <button id="btn-models-verify">校验</button>
-              <button id="btn-models-pull">重拉</button>
+              <button id="btn-models-deps" class="ghost" data-action="1">依赖</button>
+              <button id="btn-models-check" class="ghost" data-action="1">路径</button>
+              <button id="btn-models-verify" data-action="1">校验</button>
+              <button id="btn-models-pull" data-action="1">重拉</button>
               <button id="btn-models-apply-job" class="primary">填入任务并部署</button>
             </div>
+            <pre id="model-action-result" class="snippet model-result" hidden></pre>
             <details class="fold">
               <summary>缓存与 paths</summary>
               <div id="model-caches" class="list"></div>
               <pre id="model-defaults-paths" class="snippet tiny-pre"></pre>
             </details>
-            <span id="model-verify" class="hidden"></span>
           </div>
         </div>
       </section>
@@ -482,24 +493,24 @@ gpu-control deploy train-job --nodes gpu-1,gpu-2 --gpus 16</pre>
           <div class="panel-h">
             <h2>API 端点</h2>
             <div class="btn-row">
+              <button id="btn-api-health-2" class="primary tiny" data-action="1">探测 API</button>
+              <button id="btn-ingress-start" class="primary tiny" data-keep-enabled="1" data-action="1">启动统一入口</button>
+              <button id="btn-ingress-stop" class="ghost tiny" data-keep-enabled="1" data-action="1">停止入口</button>
               <button id="btn-copy-urls" class="ghost tiny">复制 URL</button>
-              <button id="btn-api-health-2" class="primary tiny">探测 API</button>
-              <button id="btn-lb-refresh" class="ghost tiny" data-keep-enabled="1">刷新负载计划</button>
-              <button id="btn-gateway-render" class="ghost tiny" data-keep-enabled="1">写出网关配置</button>
-              <button id="btn-ingress-start" class="primary tiny" data-keep-enabled="1">启动统一入口</button>
-              <button id="btn-ingress-stop" class="ghost tiny" data-keep-enabled="1">停止入口</button>
-              <button id="btn-ingress-status" class="ghost tiny" data-keep-enabled="1">入口状态</button>
             </div>
           </div>
-          <div class="panel-h" style="margin-top:0">
-            <span class="meta" id="pool-meta"></span>
-          </div>
+          <p class="meta" id="pool-meta"></p>
           <p class="meta" id="ingress-meta">统一入口未加载</p>
-          <div id="api-mosaic" class="api-mosaic"></div>
           <details class="fold">
-            <summary>端口 / 网关拓扑</summary>
+            <summary>网关 / 负载计划 / 拓扑</summary>
+            <div class="btn-row">
+              <button id="btn-lb-refresh" class="ghost tiny" data-keep-enabled="1" data-action="1">刷新负载计划</button>
+              <button id="btn-gateway-render" class="ghost tiny" data-keep-enabled="1" data-action="1">写出网关配置</button>
+              <button id="btn-ingress-status" class="ghost tiny" data-keep-enabled="1" data-action="1">入口状态</button>
+            </div>
             <p class="meta" id="gateway-topo">加载中…</p>
           </details>
+          <div id="api-mosaic" class="api-mosaic"></div>
           <div class="panel-h" style="margin-top:14px">
             <h2>负载均衡 / 网关片段</h2>
             <select id="lb-strategy">
@@ -553,9 +564,9 @@ gpu-control deploy train-job --nodes gpu-1,gpu-2 --gpus 16</pre>
             <div class="preset-grid" id="exec-presets"></div>
             <div class="row">
               <input id="exec-custom" type="text" placeholder="nvidia-smi -L" />
-              <button id="btn-exec-custom" class="primary">执行</button>
+              <button id="btn-exec-custom" class="primary" data-action="1">执行</button>
             </div>
-            <p class="meta" id="ray-note"></p>
+            <p class="meta" id="notes-line"></p>
           </div>
           <div class="panel">
             <div class="panel-h">
@@ -572,7 +583,7 @@ gpu-control deploy train-job --nodes gpu-1,gpu-2 --gpus 16</pre>
               <input id="py-cwd" placeholder="工作目录" />
             </div>
             <label class="check" for="py-bg"><input type="checkbox" id="py-bg" /><span>后台 nohup</span></label>
-            <button id="btn-run-py" class="primary wide">运行 Python</button>
+            <button id="btn-run-py" class="primary wide" data-action="1">运行 Python</button>
           </div>
         </div>
       </section>
@@ -590,11 +601,13 @@ gpu-control deploy train-job --nodes gpu-1,gpu-2 --gpus 16</pre>
             <h2>常用命令</h2>
           </div>
           <pre class="snippet" id="guide-cli">gpu-control doctor
-gpu-control models deps
-gpu-control models verify
-gpu-control deploy &lt;job&gt; --gpus 4
-gpu-control free --node 名称 --wait 30
 gpu-control auth issue-token
+gpu-control jobs templates
+gpu-control jobs install train-job --name sft
+gpu-control jobs install ray-cluster --name ray
+gpu-control jobs install vllm-serve --name vllm
+gpu-control deploy sft --nodes gpu-1,gpu-2 --gpus 16
+gpu-control free --node 名称 --wait 30
 gpu-control ui --background</pre>
         </div>
         <div class="panel">
@@ -650,16 +663,18 @@ gpu-control ui --background</pre>
               <label class="field"><span>API 密钥文件</span><input id="cluster-api-key" /></label>
               <label class="field"><span>优先标签</span><input id="cluster-prefer" placeholder="serving" /></label>
               <label class="field"><span>避开标签</span><input id="cluster-avoid" placeholder="shared" /></label>
-              <p class="sub">统一入口 · 域名 / HTTPS</p>
-              <label class="field"><span>域名</span><input id="cluster-domain" placeholder="api.example.com" /></label>
-              <label class="field"><span>对外 URL</span><input id="cluster-public-url" placeholder="https://api.example.com" /></label>
-              <label class="field switch-field">
-                <span>启用 HTTPS</span>
-                <input type="checkbox" id="cluster-tls-enabled" data-keep-enabled="1" />
-              </label>
-              <label class="field"><span>证书 cert</span><input id="cluster-tls-cert" placeholder="config/local/secrets/ingress.crt" /></label>
-              <label class="field"><span>私钥 key</span><input id="cluster-tls-key" placeholder="config/local/secrets/ingress.key" /></label>
-              <label class="field"><span>CA（可选）</span><input id="cluster-tls-ca" placeholder="config/local/secrets/ca.crt" /></label>
+              <details class="fold">
+                <summary>统一入口 · 域名 / HTTPS（可选）</summary>
+                <label class="field"><span>域名</span><input id="cluster-domain" placeholder="api.example.com" /></label>
+                <label class="field"><span>对外 URL</span><input id="cluster-public-url" placeholder="https://api.example.com" /></label>
+                <label class="field switch-field">
+                  <span>启用 HTTPS</span>
+                  <input type="checkbox" id="cluster-tls-enabled" data-keep-enabled="1" />
+                </label>
+                <label class="field"><span>证书 cert</span><input id="cluster-tls-cert" placeholder="config/local/secrets/ingress.crt" /></label>
+                <label class="field"><span>私钥 key</span><input id="cluster-tls-key" placeholder="config/local/secrets/ingress.key" /></label>
+                <label class="field"><span>CA（可选）</span><input id="cluster-tls-ca" placeholder="config/local/secrets/ca.crt" /></label>
+              </details>
             </div>
           </div>
 
@@ -669,8 +684,8 @@ gpu-control ui --background</pre>
                 <h2>3. 节点清单</h2>
                 <button id="btn-save-nodes-json" class="primary tiny" data-keep-enabled="1">保存并生成</button>
               </div>
-              <p class="muted" style="margin-top:0">每行：<code>名称 地址 [GPU数] [标签]</code>，例如
-                <code>gpu-1 10.0.0.1 4 a100,serving</code></p>
+              <p class="muted" style="margin-top:0">每行：<code>名称 地址 [GPU数] [标签] [# 备注]</code>，例如
+                <code>gpu-1 10.0.0.1 4 a100,serving # 训练池</code></p>
               <textarea id="nodes-editor" spellcheck="false"></textarea>
             </div>
 
@@ -680,8 +695,7 @@ gpu-control ui --background</pre>
                 <button id="btn-save-job" class="primary tiny" data-keep-enabled="1">保存</button>
               </div>
               <p class="muted" style="margin-top:0">
-                Job 是可插拔工作负载，不绑死某一个模型。先选已有 Job，或改名后保存为新文件。
-                默认任务写在上方「默认任务」。
+                选择已有 Job，或改名另存为新 Job。只编辑常用字段；保存时会保留 <code>kind/model/env/docker</code> 等原始配置。
               </p>
               <label class="field">
                 <span>选择已有</span>
@@ -725,11 +739,13 @@ gpu-control ui --background</pre>
 
       <section class="console-wrap panel" id="batch-console-wrap">
         <div class="panel-h">
-          <h2>批量输出</h2>
+          <h2>执行输出</h2>
           <div class="btn-row">
-            <span class="meta" id="console-meta">等待动作</span>
+            <span class="meta" id="console-meta">就绪</span>
             <span class="meta" id="busy-flag"></span>
-            <button type="button" class="ghost tiny" id="btn-console-connect" data-keep-enabled="1">跑一键连通</button>
+            <button type="button" class="ghost tiny" id="btn-console-toggle" data-keep-enabled="1">收起</button>
+            <button type="button" class="ghost tiny" id="btn-console-scroll" data-keep-enabled="1">查看输出</button>
+            <button type="button" class="ghost tiny" id="btn-console-connect" data-keep-enabled="1">一键连通</button>
             <button id="btn-clear-console" class="ghost tiny" data-keep-enabled="1">清空输出</button>
             <button id="btn-clear-log" class="ghost tiny" data-keep-enabled="1">清空日志</button>
           </div>
@@ -741,12 +757,12 @@ gpu-control ui --background</pre>
       </section>
     </div>
   </div>
-  <div id="toast" class="toast" hidden></div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
   <div id="auth-gate" class="auth-gate" hidden>
     <form id="auth-form" class="auth-card" autocomplete="current-password">
       <div class="auth-brand">gpu-control</div>
       <h2>控制面登录</h2>
-      <p class="meta" id="auth-hint">此控制台已启用鉴权。会话 Cookie · HttpOnly · SameSite=Strict</p>
+      <p class="meta" id="auth-hint">已启用鉴权 · 会话 Cookie · HttpOnly</p>
       <div id="auth-oidc-box" hidden>
         <a class="btn primary" id="auth-oidc-btn" href="/api/auth/oidc/login" data-keep-enabled="1">使用企业账号登录（OIDC）</a>
         <p class="meta" id="auth-oidc-meta">OpenID Connect</p>
@@ -762,8 +778,8 @@ gpu-control ui --background</pre>
       <p class="meta">API / MCP 可用 <code>Authorization: Bearer &lt;token&gt;</code>（<code>gpu-control auth issue-token</code>）</p>
     </form>
   </div>
-  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+  <script src="/static/vendor/xterm/xterm-6.1.0.min.js"></script>
+  <script src="/static/xterm-fit.js?v=__UI_VERSION__"></script>
   <script src="/static/app.js?v=__UI_VERSION__"></script>
 </body>
 

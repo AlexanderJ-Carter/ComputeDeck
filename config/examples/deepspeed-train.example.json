@@ -19,7 +19,14 @@
     "${paths.model_root}/saves/ds-run"
   ],
   "env": {
-    "GPU_CONTROL_JOB_NAME": "deepspeed-train"
+    "GPU_CONTROL_JOB_NAME": "deepspeed-train",
+    "GPU_CONTROL_JOB_RUNTIME": "${paths.workdir}/gpu-control-jobs/deepspeed-train"
   },
-  "actions": ["start", "stop", "restart", "status", "wait"]
+  "actions": [
+    "start",
+    "stop",
+    "restart",
+    "status",
+    "wait"
+  ]
 }

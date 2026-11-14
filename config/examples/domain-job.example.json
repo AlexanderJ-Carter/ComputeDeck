@@ -1,0 +1,15 @@
+{
+  "name": "domain-job",
+  "description": "【领域示例·可删】把 script / model / base_port 换成你自己的推理服务；展示如何登记一个领域 Job",
+  "kind": "service",
+  "gpus_per_node": 4,
+  "runtime": "process",
+  "model": "your-model",
+  "python": "${paths.python}",
+  "script": "${paths.model_root}/your-team/start_model.py",
+  "extra_args": ["--base-port", "8000"],
+  "env": {
+    "GPU_CONTROL_JOB_NAME": "domain-job"
+  },
+  "actions": ["start", "stop", "restart", "status", "wait"]
+}

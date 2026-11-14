@@ -17,7 +17,14 @@
     "${paths.model_root}/saves/torchrun-run"
   ],
   "env": {
-    "GPU_CONTROL_JOB_NAME": "torchrun-train"
+    "GPU_CONTROL_JOB_NAME": "torchrun-train",
+    "GPU_CONTROL_JOB_RUNTIME": "${paths.workdir}/gpu-control-jobs/torchrun-train"
   },
-  "actions": ["start", "stop", "restart", "status", "wait"]
+  "actions": [
+    "start",
+    "stop",
+    "restart",
+    "status",
+    "wait"
+  ]
 }

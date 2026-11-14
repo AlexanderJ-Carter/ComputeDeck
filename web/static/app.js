@@ -11,6 +11,10 @@ const state = {
   models: null,
   auth: null,
   ingress: null,
+  lastRefreshAt: 0,
+  pollFailures: 0,
+  pollSkip: 0,
+  jobTemplates: [],
 };
 
 const VIEW_TITLE = {
@@ -48,88 +52,231 @@ const termState = {
   node: null,
 };
 
-const stateSetup = { data: null };
+const stateSetup = { data: null, jobBase: null, jobBaseName: null, jobLoadSeq: 0 };
 
-function applyTheme(theme) {
-  const next = theme === "dark" ? "dark" : "light";
-  document.documentElement.setAttribute("data-theme", next);
+const $ = (id) => document.getElementById(id);
+
+function on(id, event, fn, opts) {
+  const el = typeof id === "string" ? $(id) : id;
+  if (!el) {
+    console.warn(`[ui] missing element for ${event}:`, id);
+    return null;
+  }
+  el.addEventListener(event, fn, opts);
+  return el;
+}
+
+function resolveTheme(mode) {
+  if (mode === "light" || mode === "dark") return mode;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyTheme(mode) {
+  const next = mode === "dark" || mode === "light" ? mode : "auto";
+  document.documentElement.setAttribute("data-theme", resolveTheme(next));
+  document.documentElement.setAttribute("data-theme-mode", next);
   localStorage.setItem("gpu-control-theme", next);
   document.querySelectorAll("[data-theme-set]").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.themeSet === next);
+    const active = btn.dataset.themeSet === next;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
   });
 }
 
 function initTheme() {
-  const saved = localStorage.getItem("gpu-control-theme");
-  const theme =
-    saved || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-  applyTheme(theme);
+  const saved = localStorage.getItem("gpu-control-theme") || "auto";
+  applyTheme(saved);
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  const onChange = () => {
+    if ((localStorage.getItem("gpu-control-theme") || "auto") === "auto") applyTheme("auto");
+  };
+  if (mq.addEventListener) mq.addEventListener("change", onChange);
+  else if (mq.addListener) mq.addListener(onChange);
   document.querySelectorAll("[data-theme-set]").forEach((btn) => {
     btn.addEventListener("click", () => applyTheme(btn.dataset.themeSet));
   });
 }
 
+/* Busy is counted: nested / concurrent actions stay consistent and navigation
+   remains usable while a long remote command runs. */
+const busyState = { depth: 0 };
 const setBusy = (busy) => {
-  state.busy = busy;
-  document.body.classList.toggle("is-busy", busy);
-  document.getElementById("busy-flag").textContent = busy ? "执行中…" : "";
-  document.querySelectorAll("button").forEach((btn) => {
-    if (btn.dataset.keepEnabled === "1") return;
-    btn.disabled = busy;
+  busyState.depth = Math.max(0, busyState.depth + (busy ? 1 : -1));
+  const active = busyState.depth > 0;
+  state.busy = active;
+  document.body.classList.toggle("is-busy", active);
+  document.documentElement.setAttribute("aria-busy", active ? "true" : "false");
+  const flag = $("busy-flag");
+  if (flag) flag.textContent = active ? "执行中…" : "";
+  const indicator = $("busy-indicator");
+  if (indicator) indicator.hidden = !active;
+  document.querySelectorAll("[data-action], [data-job-action], [data-oneclick]").forEach((btn) => {
+    btn.disabled = active;
   });
 };
 
-function toast(text) {
-  const el = document.getElementById("toast");
+function toast(text, { tone = "info", timeout = 2600 } = {}) {
+  const el = $("toast");
+  if (!el) return;
   el.hidden = false;
   el.textContent = text;
+  el.dataset.tone = tone;
   clearTimeout(toast._t);
   toast._t = setTimeout(() => {
     el.hidden = true;
-  }, 2400);
+  }, timeout);
+}
+function toastOk(text) {
+  toast(text, { tone: "ok" });
+}
+function toastBad(text) {
+  toast(text, { tone: "bad", timeout: 4200 });
 }
 
 function log(text) {
-  const el = document.getElementById("log");
+  const el = $("log");
+  if (!el) return;
   const stamp = new Date().toLocaleTimeString();
   el.textContent = `[${stamp}] ${text}\n` + el.textContent;
+  const lines = el.textContent.split("\n");
+  if (lines.length > 240) el.textContent = lines.slice(0, 240).join("\n");
 }
 
+function actionError(label, err) {
+  const msg = String((err && err.message) || err || "未知错误");
+  log(`${label}: ${msg}`);
+  toastBad(`${label}失败：${msg}`);
+}
+
+/* Clipboard API needs a secure context; fall back for plain-HTTP LAN access. */
+function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text);
+  }
+  return new Promise((resolve, reject) => {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.cssText = "position:fixed;top:-9999px;left:-9999px;opacity:0";
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      const ok = document.execCommand && document.execCommand("copy");
+      if (ok) resolve();
+      else reject(new Error("浏览器不允许复制"));
+    } catch (err) {
+      reject(err);
+    } finally {
+      ta.remove();
+    }
+  });
+}
+
+/* In-app confirmation dialog (native <dialog>, falls back to window.confirm). */
+function confirmDialog({
+  title = "确认操作",
+  message = "",
+  confirmText = "确认",
+  cancelText = "取消",
+  tone = "primary",
+} = {}) {
+  if (typeof HTMLDialogElement === "undefined" || !document.body) {
+    return Promise.resolve(window.confirm(message || title));
+  }
+  return new Promise((resolve) => {
+    const dlg = document.createElement("dialog");
+    dlg.className = "dialog";
+    dlg.innerHTML = `<form method="dialog" class="dialog-card">
+      <h2>${escapeHtml(title)}</h2>
+      <p>${escapeHtml(message)}</p>
+      <div class="dialog-actions">
+        <button value="cancel" class="ghost" formnovalidate>${escapeHtml(cancelText)}</button>
+        <button value="ok" class="${tone === "danger" ? "danger" : "primary"}">${escapeHtml(confirmText)}</button>
+      </div>
+    </form>`;
+    document.body.appendChild(dlg);
+    dlg.addEventListener(
+      "close",
+      () => {
+        resolve(dlg.returnValue === "ok");
+        dlg.remove();
+      },
+      { once: true }
+    );
+    dlg.showModal();
+    const ok = dlg.querySelector('button[value="ok"]');
+    if (ok) ok.focus();
+  });
+}
+
+const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 function escapeHtml(s) {
-  return String(s)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+  return String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch]);
+}
+
+/* Only allow http(s), protocol-relative, root-relative or anchor links. */
+function safeHref(url) {
+  const value = String(url || "").trim();
+  if (!value) return "#";
+  if (/^(https?:)?\/\//i.test(value)) return value;
+  if (value.startsWith("/") || value.startsWith("#")) return value;
+  return "#";
 }
 
 function revealConsole() {
-  const wrap = document.getElementById("batch-console-wrap") || document.querySelector(".console-wrap");
-  if (wrap) wrap.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  const wrap = $("batch-console-wrap") || document.querySelector(".console-wrap");
+  if (!wrap) return;
+  if (wrap.classList.contains("collapsed")) {
+    wrap.classList.remove("collapsed");
+    const toggle = $("btn-console-toggle");
+    if (toggle) toggle.textContent = "收起";
+  }
+  wrap.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  hideConsoleUnread();
+}
+
+function hideConsoleUnread() {
+  const badge = $("console-unread");
+  if (badge) badge.hidden = true;
+}
+
+function consoleVisible() {
+  const wrap = $("batch-console-wrap");
+  if (!wrap) return false;
+  const rect = wrap.getBoundingClientRect();
+  return rect.top < window.innerHeight && rect.bottom > 0;
 }
 
 function setConsoleMeta(text) {
-  const meta = document.getElementById("console-meta");
+  const meta = $("console-meta");
   if (meta) meta.textContent = text;
 }
 
-function writeConsoleHtml(html, { empty = false, meta = "" } = {}) {
-  const el = document.getElementById("console");
+function markConsoleUnread() {
+  const badge = $("console-unread");
+  if (badge && !consoleVisible()) badge.hidden = false;
+}
+
+function writeConsoleHtml(html, { empty = false, meta = "", reveal = false } = {}) {
+  const el = $("console");
   if (!el) return;
   el.classList.toggle("empty", !!empty);
   el.innerHTML = html;
   if (meta) setConsoleMeta(meta);
   else setConsoleMeta(empty ? "空" : `已更新 · ${new Date().toLocaleTimeString()}`);
-  revealConsole();
+  if (reveal) revealConsole();
+  else markConsoleUnread();
 }
 
-function writeConsoleText(text, { empty = false, meta = "" } = {}) {
-  const el = document.getElementById("console");
+function writeConsoleText(text, { empty = false, meta = "", reveal = false } = {}) {
+  const el = $("console");
   if (!el) return;
   el.classList.toggle("empty", !!empty);
   el.textContent = text || "(empty)";
   if (meta) setConsoleMeta(meta);
   else setConsoleMeta(empty ? "空" : `已更新 · ${new Date().toLocaleTimeString()}`);
-  revealConsole();
+  if (reveal) revealConsole();
+  else markConsoleUnread();
 }
 
 function resultOk(item) {
@@ -253,20 +400,36 @@ async function seedConsole() {
     for (const issue of doctor.issues || []) lines.push(`! ${issue}`);
     for (const note of (doctor.notes || []).slice(0, 12)) lines.push(`· ${note}`);
     lines.push("");
-    lines.push("点上方「一键连通 / 一键就绪 / 刷新 GPU」后，完整 stdout 会写在这里。");
+    lines.push("执行结果会显示在这里。");
     writeConsoleText(lines.join("\n"), { meta: doctor.ok ? "Doctor OK" : "Doctor 有问题" });
-    log(doctor.ok ? "Doctor 通过，控制台已就绪" : "Doctor 有问题，详见批量输出");
+    log(doctor.ok ? "自检通过" : "自检有问题，详见执行输出");
   } catch (err) {
     writeConsoleText(
-      `控制台已就绪，但 Doctor 失败：${err.message || err}\n\n点「跑一键连通」或上方运维卡片查看输出。`,
+      `自检失败：${err.message || err}\n\n点「一键连通」或上方运维卡片查看输出。`,
       { meta: "Doctor 失败" }
     );
   }
 }
 
 async function api(path, options = {}) {
-  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
-  const res = await fetch(path, { credentials: "same-origin", ...options, headers });
+  const { timeoutMs = 600000, ...fetchOpts } = options;
+  const headers = { "Content-Type": "application/json", ...(fetchOpts.headers || {}) };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let res;
+  try {
+    res = await fetch(path, {
+      credentials: "same-origin",
+      ...fetchOpts,
+      headers,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err && err.name === "AbortError") throw new Error(`请求超时（${Math.round(timeoutMs / 1000)}s）`);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
   if (res.status === 304) return { __notModified: true, etag: res.headers.get("ETag") };
   let data = {};
   try {
@@ -391,30 +554,24 @@ function fillSelectPreserve(el, html, prefer) {
   else if (prefer && options.includes(prefer)) el.value = prefer;
 }
 
+function nodeOption(n) {
+  const name = escapeHtml(n.name);
+  return `<option value="${name}">${name}</option>`;
+}
+
 function fillTargetSelects(nodes) {
-  const optsAll =
-    `<option value="all">全部节点</option>` +
-    nodes.map((n) => `<option value="${n.name}">${n.name}</option>`).join("");
-  const optsNode = nodes.map((n) => `<option value="${n.name}">${n.name}</option>`).join("");
+  const optsAll = `<option value="all">全部节点</option>` + nodes.map(nodeOption).join("");
+  const optsNode = nodes.map(nodeOption).join("");
   for (const id of ["exec-target", "py-target", "job-target"]) {
-    fillSelectPreserve(document.getElementById(id), optsAll, state.selectedNode);
+    fillSelectPreserve($(id), optsAll, state.selectedNode);
   }
-  fillSelectPreserve(
-    document.getElementById("deploy-node"),
-    optsNode || `<option value="">暂无节点</option>`,
-    state.selectedNode
-  );
-  fillSelectPreserve(
-    document.getElementById("term-node"),
-    optsNode || `<option value="">暂无节点</option>`,
-    state.selectedNode
-  );
-  const modelNode = document.getElementById("model-node");
+  fillSelectPreserve($("deploy-node"), optsNode || `<option value="">暂无节点</option>`, state.selectedNode);
+  fillSelectPreserve($("term-node"), optsNode || `<option value="">暂无节点</option>`, state.selectedNode);
+  const modelNode = $("model-node");
   if (modelNode) {
     const prev = modelNode.value;
     modelNode.innerHTML =
-      `<option value="">全部节点</option>` +
-      nodes.map((n) => `<option value="${n.name}">${n.name}</option>`).join("");
+      `<option value="">全部节点</option>` + nodes.map(nodeOption).join("");
     if ([...modelNode.options].some((o) => o.value === prev)) modelNode.value = prev;
     else if (state.selectedNode && [...modelNode.options].some((o) => o.value === state.selectedNode)) {
       modelNode.value = state.selectedNode;
@@ -434,15 +591,21 @@ function syncDeployMode() {
 }
 
 function renderSummary(summary) {
-  document.getElementById("stat-nodes").textContent = summary.nodes;
-  document.getElementById("stat-free").textContent = summary.gpus_free;
-  document.getElementById("stat-used").textContent = summary.gpus_used;
-  document.getElementById("stat-pending").textContent = summary.queue_pending ?? 0;
-  document.getElementById("stat-cordoned").textContent = summary.cordoned ?? 0;
-  const ok = summary.api_ok;
-  const total = summary.api_total;
-  document.getElementById("stat-api").textContent =
-    ok == null || total == null ? "-" : `${ok}/${total}`;
+  const used = Number(summary.gpus_used || 0);
+  const free = Number(summary.gpus_free || 0);
+  const total = Number(summary.gpus_total || used + free) || 0;
+  const set = (id, text) => {
+    const el = $(id);
+    if (el) el.textContent = text;
+  };
+  set("dash-occ-gpu", total ? `${used}/${total}（${Math.round((used / total) * 100)}%）` : "-");
+  set("dash-occ-nodes", `${summary.busy_nodes ?? "-"} / ${summary.free_nodes ?? "-"}`);
+  set("dash-queue-2", String(summary.queue_pending ?? 0));
+  set("dash-cordon-2", String(summary.cordoned ?? 0));
+  set(
+    "dash-api",
+    summary.api_total != null ? `${summary.api_ok ?? 0}/${summary.api_total}` : "-"
+  );
 }
 
 function renderPresets(presets) {
@@ -451,7 +614,7 @@ function renderPresets(presets) {
     .map((p) => {
       const id = typeof p === "string" ? p : p.id;
       const label = typeof p === "string" ? p : p.label || p.id;
-      return `<button type="button" data-preset="${id}">${label}</button>`;
+      return `<button type="button" data-preset="${escapeHtml(id)}">${escapeHtml(label)}</button>`;
     })
     .join("");
   root.querySelectorAll("button[data-preset]").forEach((btn) => {
@@ -505,7 +668,8 @@ function renderPool(overview) {
   for (const r of health.results || []) byKey[`${r.node}:${r.gpu}`] = r;
   const mosaic = document.getElementById("api-mosaic");
   if (!endpoints.length) {
-    mosaic.innerHTML = '<div class="meta">暂无端点</div>';
+    mosaic.innerHTML =
+      '<div class="empty-state"><strong>暂无 API 端点</strong><p>先启动 Job 或刷新 GPU 快照，按当前 api.base_port 生成端点。</p></div>';
   } else {
     const groups = new Map();
     for (const ep of endpoints) {
@@ -519,7 +683,13 @@ function renderPool(overview) {
         const ports = eps.map((ep) => {
           const h = byKey[`${ep.node}:${ep.gpu}`];
           const cls = !h ? "" : h.ok ? "ok" : "fail";
-          const lat = h ? `${h.latency_ms}ms` : "n/a";
+          const lat = h
+            ? h.latency_ms != null
+              ? `${h.latency_ms}ms`
+              : h.ok
+                ? "ok"
+                : "fail"
+            : "n/a";
           return `<div class="api-cell ${cls}">
               <div class="u">:${escapeHtml(String(ep.port))}</div>
               <div class="t">g${escapeHtml(String(ep.gpu))} · ${escapeHtml(lat)}</div>
@@ -565,7 +735,8 @@ function renderHostMetrics(overview) {
   const at = (overview.summary && overview.summary.host_metrics_at) || (overview.host_metrics || {}).generated_at;
   document.getElementById("metrics-at").textContent = at ? `采集于 ${at}` : "尚未采集，点「刷新主机指标」";
   if (!nodes.length) {
-    root.innerHTML = '<p class="muted">暂无节点</p>';
+    root.innerHTML =
+      '<div class="empty-state"><strong>暂无节点</strong><p>先在「节点」页添加节点，再刷新主机指标。</p></div>';
     return;
   }
   root.innerHTML = nodes
@@ -597,12 +768,20 @@ function renderHostMetrics(overview) {
 function ensureTerminal() {
   if (termState.term) return termState.term;
   if (typeof Terminal === "undefined") {
-    toast("xterm 未加载，请检查网络/CDN");
+    const host = $("term");
+    if (host) {
+      host.innerHTML =
+        '<div class="empty-state"><strong>终端组件未加载</strong><p>缺少本地 vendor/xterm 资源，请检查 /static/vendor/xterm/。</p></div>';
+    }
+    toastBad("终端组件未加载");
     return null;
   }
+  const host = $("term");
+  if (!host) return null;
   const term = new Terminal({
     cursorBlink: true,
-    fontFamily: '"IBM Plex Mono", Menlo, Consolas, monospace',
+    fontFamily:
+      'ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", "DejaVu Sans Mono", monospace',
     fontSize: 13,
     theme: {
       background: "#0b1210",
@@ -611,14 +790,16 @@ function ensureTerminal() {
       selectionBackground: "rgba(46, 196, 182, 0.28)",
     },
   });
-  let fit = null;
-  if (typeof FitAddon !== "undefined") {
-    fit = new FitAddon.FitAddon();
-    term.loadAddon(fit);
-  }
-  term.open(document.getElementById("term"));
+  term.open(host);
   termState.term = term;
-  termState.fit = fit;
+  termState.fit = {
+    fit: () => {
+      if (window.GCFit) window.GCFit.fitTerminal(term, host, sendTermResize);
+    },
+  };
+  if (window.GCFit && window.GCFit.autoFit) {
+    termState.cleanupFit = window.GCFit.autoFit(term, host, sendTermResize);
+  }
   term.onData((data) => {
     if (termState.ws && termState.ws.readyState === WebSocket.OPEN) {
       termState.ws.send(JSON.stringify({ type: "input", data }));
@@ -816,30 +997,42 @@ async function stopIngress() {
 }
 
 function renderNodes(nodes) {
-  const root = document.getElementById("nodes");
+  const root = $("nodes");
+  if (!root) return;
   root.innerHTML = nodes
     .map((node) => {
-      const selected = state.selectedNode === node.name ? "selected" : "";
-      const st = node.state || (node.cordoned ? "cordoned" : node.used ? "busy" : "free");
+      const selected = state.selectedNode === node.name;
+      const rawState = node.state || (node.cordoned ? "cordoned" : node.used ? "busy" : "free");
+      const st = ["free", "busy", "cordoned"].includes(rawState) ? rawState : "free";
+      const name = escapeHtml(node.name);
+      const leaseJob = node.lease && node.lease.job ? escapeHtml(node.lease.job) : "";
       const badge = node.cordoned
         ? `<span class="chip warn">已隔离</span>`
-        : node.lease
-          ? `<span class="chip warn">${node.lease.job}</span>`
+        : leaseJob
+          ? `<span class="chip warn">${leaseJob}</span>`
           : node.used
             ? `<span class="chip warn">占用中</span>`
             : `<span class="chip ok">空闲</span>`;
       const bars = (node.gpus || [])
-        .map((g) => `<div class="bar ${g.status}"></div>`)
+        .map((g) => {
+          const cls = g.status === "free" ? "free" : "occupied";
+          const util = g.utilization_percent != null ? `${g.utilization_percent}%` : "-";
+          const mem =
+            g.memory_used_mib != null ? `${Math.round(g.memory_used_mib / 1024)}G` : "-";
+          const title = `GPU ${g.index ?? "?"} · util ${util} · mem ${mem}`;
+          return `<i class="bar ${cls}" title="${escapeHtml(title)}"></i>`;
+        })
         .join("");
-      return `<div class="node-tile ${selected} state-${st}" data-select="${node.name}">
-        <div class="name">${node.name}</div>
-        <div class="host">${node.host || "-"}</div>
-        <div class="stats"><span class="meta">空闲 ${node.free}/${node.total}</span>${badge}</div>
-        <div class="meta" style="margin-top:6px">CPU ${node.cpu_percent ?? "-"}% · 负载 ${node.load1 ?? "-"} · 内存 ${
+      return `<button type="button" class="node-tile ${selected ? "selected" : ""} state-${st}"
+          data-select="${name}" aria-pressed="${selected ? "true" : "false"}">
+        <span class="name">${name}</span>
+        <span class="host">${escapeHtml(node.host || "-")}</span>
+        <span class="stats"><span class="meta">空闲 ${node.free}/${node.total}</span>${badge}</span>
+        <span class="meta node-usage">CPU ${node.cpu_percent ?? "-"}% · 负载 ${node.load1 ?? "-"} · 内存 ${
           node.mem_used_mb != null ? Math.round(node.mem_used_mb / 1024) + "G" : "-"
-        }</div>
-        <div class="bars">${bars || '<div class="meta">暂无快照</div>'}</div>
-      </div>`;
+        }</span>
+        <span class="bars">${bars || '<span class="meta">暂无快照</span>'}</span>
+      </button>`;
     })
     .join("");
   root.querySelectorAll("[data-select]").forEach((el) => {
@@ -850,11 +1043,13 @@ function renderNodes(nodes) {
 }
 
 function renderNodeAdmin(nodes) {
-  document.getElementById("node-admin").innerHTML = nodes
+  const root = $("node-admin");
+  if (!root) return;
+  root.innerHTML = nodes
     .map(
       (n) => `<div class="item">
-        <div><strong>${n.name}</strong><div class="meta">${n.host || "-"} · ${(n.labels || []).join(",") || "-"}</div></div>
-        <button data-remove="${n.name}" class="danger tiny">移除</button>
+        <div><strong>${escapeHtml(n.name)}</strong><div class="meta">${escapeHtml(n.host || "-")} · ${escapeHtml((n.labels || []).join(",") || "-")}</div></div>
+        <button data-remove="${escapeHtml(n.name)}" class="danger tiny">移除</button>
       </div>`
     )
     .join("");
@@ -900,12 +1095,13 @@ function renderDrawer() {
           .join("")}
       </tbody></table>`
     : '<p class="muted tiny">当前快照无 GPU compute 进程</p>';
+  const safeName = escapeHtml(node.name);
   const actions = node.cordoned
-    ? `<button data-uncordon="${node.name}">取消隔离</button>
-       <button data-free="${node.name}" class="danger">腾空</button>`
-    : `<button data-cordon="${node.name}">隔离</button>
-       <button data-free="${node.name}" class="danger">腾空</button>
-       <button data-free-cordon="${node.name}" class="danger">腾空并隔离</button>`;
+    ? `<button data-uncordon="${safeName}">取消隔离</button>
+       <button data-free="${safeName}" class="danger">腾空</button>`
+    : `<button data-cordon="${safeName}">隔离</button>
+       <button data-free="${safeName}" class="danger">腾空</button>
+       <button data-free-cordon="${safeName}" class="danger">腾空并隔离</button>`;
   body.innerHTML = `
     <h3>${escapeHtml(node.name)}</h3>
     <div class="kv"><b>地址</b> ${escapeHtml(node.host || "-")}</div>
@@ -921,8 +1117,8 @@ function renderDrawer() {
     <h3 class="sub">GPU 进程</h3>
     ${procRows}
     <div class="btn-row" style="margin:8px 0">
-      <button data-procs-refresh="${node.name}" data-keep-enabled="1">刷新进程</button>
-      <button data-procs-kill-all="${node.name}" class="danger">结束全部 GPU 进程</button>
+      <button data-procs-refresh="${safeName}" data-keep-enabled="1">刷新进程</button>
+      <button data-procs-kill-all="${safeName}" class="danger">结束全部 GPU 进程</button>
     </div>
     <p class="muted tiny">腾空 = 停注册 Job + 结束 GPU 进程 + 释 lease + 校验空闲。</p>
     <div class="actions">${actions}
@@ -962,7 +1158,13 @@ function selectNode(name, { stay = false } = {}) {
 function bindRemoveButtons(root) {
   root.querySelectorAll("button[data-remove]").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      if (!confirm(`确认移除节点 ${btn.dataset.remove}？`)) return;
+      const ok = await confirmDialog({
+        title: "移除节点",
+        message: `确认从 nodes.json 移除 ${btn.dataset.remove}？不会停止该节点上的进程。`,
+        confirmText: "移除",
+        tone: "danger",
+      });
+      if (!ok) return;
       setBusy(true);
       try {
         const data = await api("/api/node/remove", {
@@ -971,6 +1173,7 @@ function bindRemoveButtons(root) {
         });
         if (state.selectedNode === btn.dataset.remove) state.selectedNode = null;
         log(data.result.stdout || "已移除");
+        stateSetup.data = null;
         await refresh(false);
       } catch (err) {
         log(String(err.message || err));
@@ -1028,8 +1231,14 @@ function bindNodeActions(root) {
     });
   });
   root.querySelectorAll("button[data-procs-kill-all]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (!confirm(`确认结束 ${btn.dataset.procsKillAll} 上全部 GPU 进程？`)) return;
+    btn.addEventListener("click", async () => {
+      const ok = await confirmDialog({
+        title: "结束全部 GPU 进程",
+        message: `确认结束 ${btn.dataset.procsKillAll} 上全部 GPU compute 进程？会影响正在运行的服务。`,
+        confirmText: "全部结束",
+        tone: "danger",
+      });
+      if (!ok) return;
       wrap(`procs kill --all ${btn.dataset.procsKillAll}`, async () => {
         const data = await api("/api/procs/kill", {
           method: "POST",
@@ -1042,10 +1251,16 @@ function bindNodeActions(root) {
     });
   });
   root.querySelectorAll("button[data-kill-pid]").forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       const pid = Number(btn.dataset.killPid);
       const node = btn.dataset.killNode;
-      if (!confirm(`确认结束 ${node} 上 PID ${pid}？`)) return;
+      const ok = await confirmDialog({
+        title: "结束进程",
+        message: `确认结束 ${node} 上的 PID ${pid}？`,
+        confirmText: "结束进程",
+        tone: "danger",
+      });
+      if (!ok) return;
       wrap(`kill ${pid}@${node}`, async () => {
         const data = await api("/api/procs/kill", {
           method: "POST",
@@ -1058,14 +1273,26 @@ function bindNodeActions(root) {
     });
   });
   root.querySelectorAll("button[data-free]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (!confirm(`确认腾空 ${btn.dataset.free}？（停 Job + 结束 GPU 进程 + 校验）`)) return;
+    btn.addEventListener("click", async () => {
+      const ok = await confirmDialog({
+        title: "腾空节点",
+        message: `确认腾空 ${btn.dataset.free}？会停止已注册 Job、结束 GPU 进程并校验空闲。`,
+        confirmText: "腾空",
+        tone: "danger",
+      });
+      if (!ok) return;
       wrap(`free ${btn.dataset.free}`, () => runFree(btn.dataset.free));
     });
   });
   root.querySelectorAll("button[data-free-cordon]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (!confirm(`确认腾空并隔离 ${btn.dataset.freeCordon}？调度器将跳过该节点`)) return;
+    btn.addEventListener("click", async () => {
+      const ok = await confirmDialog({
+        title: "腾空并隔离",
+        message: `确认腾空并隔离 ${btn.dataset.freeCordon}？调度器将跳过该节点。`,
+        confirmText: "腾空并隔离",
+        tone: "danger",
+      });
+      if (!ok) return;
       wrap(`free+cordon ${btn.dataset.freeCordon}`, () =>
         runFree(btn.dataset.freeCordon, {
           cordon: true,
@@ -1147,7 +1374,8 @@ function renderJobs(jobs) {
           ${args ? " · " + escapeHtml(args) : ""}</div></div>
           <span class="chip">${j.gpus_per_node || "?"} GPU</span></div>`;
         })
-        .join("") || '<div class="meta">暂无任务。展开「从模板添加 Job」安装通用模板。</div>';
+        .join("") ||
+        '<div class="empty-state"><strong>暂无已安装 Job</strong><p>展开下方「从模板安装」安装 http-serve / train / vllm 等模板。</p></div>';
   }
   syncJobArgsHint(list);
   syncJobSelectHint(list);
@@ -1155,17 +1383,20 @@ function renderJobs(jobs) {
 }
 
 function syncJobSelectHint(jobs) {
-  const sel = document.getElementById("job-select");
-  const hint = document.getElementById("job-select-hint");
-  const quickHint = document.getElementById("quick-job-hint");
-  const job = (jobs || state.overview?.jobs || []).find((j) => j.name === sel?.value);
-  const text = job
-    ? `${job.description || ""} · ${job.kind || "service"} · ${job.runtime || "process"}${
-        job.distributed ? " · 多机" : ""
-      } · ${job.gpus_per_node ?? "?"}GPU/节点 · ${job.source || ""}`
-    : "无已安装任务 — 请从下方模板安装（框架仅内置 shell-job）";
-  if (hint) hint.textContent = text;
-  if (quickHint) quickHint.textContent = text;
+  const list = jobs || state.overview?.jobs || [];
+  const describe = (name) => {
+    const job = list.find((j) => j.name === name);
+    if (!job) return "还没有任务。到「任务」页安装模板或创建 Job。";
+    return `${job.description || job.name} · ${job.gpus_per_node ?? "?"} GPU/节点${
+      job.distributed ? " · 多机" : ""
+    }`;
+  };
+  const sel = $("job-select");
+  const quick = $("quick-job");
+  const hint = $("job-select-hint");
+  const quickHint = $("dash-action-hint");
+  if (hint) hint.textContent = describe(sel?.value);
+  if (quickHint) quickHint.textContent = describe(quick?.value);
 }
 
 function syncDeployGpusDefault(jobs) {
@@ -1177,17 +1408,14 @@ function syncDeployGpusDefault(jobs) {
   const per = Number(job.gpus_per_node || 4);
   if (input && !input.dataset.touched) input.value = String(per);
   if (quick) {
-    const values = [...new Set([per, per * 2, per * 3, per * 4, 4, 8, 16])].filter((n) => n > 0).sort((a, b) => a - b);
-    const prev = quick.value;
-    quick.innerHTML = values.map((n) => `<option value="${n}">${n}</option>`).join("");
-    if (values.map(String).includes(prev)) quick.value = prev;
-    else quick.value = String(per);
+    if (!quick.dataset.touched) quick.value = String(per);
   }
 }
 
 async function refreshJobTemplates() {
   const data = await api("/api/jobs/templates");
   const templates = data.templates || [];
+  state.jobTemplates = templates;
   const sel = document.getElementById("job-template");
   const meta = document.getElementById("job-templates-meta");
   if (sel) {
@@ -1200,12 +1428,22 @@ async function refreshJobTemplates() {
       })
       .join("") || `<option value="">（无模板）</option>`;
   }
-  if (meta) {
-    meta.textContent = templates.length
-      ? `${templates.length} 个模板（examples + 内置 jobs/）`
-      : "未发现模板";
-  }
+  syncJobTemplateHint();
   return templates;
+}
+
+function syncJobTemplateHint() {
+  const meta = $("job-templates-meta");
+  if (!meta) return;
+  const id = $("job-template")?.value;
+  const tpl = (state.jobTemplates || []).find((t) => t.id === id);
+  if (!tpl) {
+    meta.textContent = (state.jobTemplates || []).length
+      ? `${state.jobTemplates.length} 个模板可用`
+      : "未发现模板";
+    return;
+  }
+  meta.textContent = `${tpl.description || tpl.id} · ${tpl.runtime || "process"}${tpl.installed ? " · 已安装" : " · 可安装"}`;
 }
 
 async function installSelectedJobTemplate() {
@@ -1222,8 +1460,9 @@ async function installSelectedJobTemplate() {
     if (data.overview) applyOverview(data.overview);
     else await refresh(false);
     await refreshJobTemplates();
+    stateSetup.data = null;
   } catch (err) {
-    toast(String(err.message || err));
+    actionError("安装 Job 模板", err);
   } finally {
     setBusy(false);
   }
@@ -1270,7 +1509,8 @@ function renderModels(payload) {
               c.path
             )}</div></div></div>`
         )
-        .join("") || '<div class="meta">无 caches</div>';
+        .join("") ||
+        '<div class="empty-state compact"><strong>无缓存目录</strong><p>可在 models.json 中登记 cache 路径。</p></div>';
   }
   const defaults = document.getElementById("model-defaults-paths");
   if (defaults) {
@@ -1308,9 +1548,11 @@ async function refreshModels() {
 }
 
 function renderQueue(queue) {
-  const root = document.getElementById("queue");
+  const root = $("queue");
+  if (!root) return;
   if (!queue || !queue.length) {
-    root.innerHTML = '<div class="meta">队列为空</div>';
+    root.innerHTML =
+      '<div class="empty-state"><strong>队列为空</strong><p>在任务页选择 Job 后入队，或直接部署。</p></div>';
     return;
   }
   const recent = [...queue].reverse().slice(0, 10);
@@ -1318,11 +1560,12 @@ function renderQueue(queue) {
     ${recent
       .map((wl) => {
         const canCancel = wl.status === "pending" || wl.status === "admitted";
+        const id = escapeHtml(wl.id);
         return `<tr>
-          <td>${wl.id}<div class="meta">${wl.gpus} GPU</div></td>
-          <td>${wl.status}</td>
-          <td>${wl.job}</td>
-          <td>${canCancel ? `<button data-cancel="${wl.id}" class="danger tiny">取消</button>` : ""}</td>
+          <td>${id}<div class="meta">${escapeHtml(wl.gpus)} GPU</div></td>
+          <td>${escapeHtml(wl.status)}</td>
+          <td>${escapeHtml(wl.job)}</td>
+          <td>${canCancel ? `<button data-cancel="${id}" class="danger tiny">取消</button>` : ""}</td>
         </tr>`;
       })
       .join("")}
@@ -1338,7 +1581,7 @@ function renderQueue(queue) {
         log(data.result.stdout || "cancelled");
         await refresh(false);
       } catch (err) {
-        log(String(err.message || err));
+        actionError("取消队列任务", err);
       } finally {
         setBusy(false);
       }
@@ -1347,18 +1590,21 @@ function renderQueue(queue) {
 }
 
 function renderLeases(leases) {
-  const root = document.getElementById("leases");
-  if (!leases.length) {
-    root.innerHTML = '<div class="meta">no leases</div>';
+  const root = $("leases");
+  if (!root) return;
+  if (!leases || !leases.length) {
+    root.innerHTML =
+      '<div class="empty-state"><strong>暂无占用登记</strong><p>部署任务或手动 acquire 后可在这里释放。</p></div>';
     return;
   }
   root.innerHTML = leases
-    .map(
-      (l) => `<div class="item">
-        <div><strong>${l.id}</strong><div class="meta">${l.job} · ${(l.nodes || []).join(", ")}</div></div>
-        <button data-lease="${l.id}" class="danger tiny">Release</button>
-      </div>`
-    )
+    .map((l) => {
+      const id = escapeHtml(l.id);
+      return `<div class="item">
+        <div><strong>${id}</strong><div class="meta">${escapeHtml(l.job)} · ${escapeHtml((l.nodes || []).join(", "))}</div></div>
+        <button data-lease="${id}" class="danger tiny">Release</button>
+      </div>`;
+    })
     .join("");
   root.querySelectorAll("button[data-lease]").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -1371,7 +1617,7 @@ function renderLeases(leases) {
         log(data.result.stdout || "released");
         await refresh(false);
       } catch (err) {
-        log(String(err.message || err));
+        actionError("释放 Lease", err);
       } finally {
         setBusy(false);
       }
@@ -1380,14 +1626,16 @@ function renderLeases(leases) {
 }
 
 function renderProbe(probe) {
-  const root = document.getElementById("probe");
+  const root = $("probe");
+  if (!root) return;
   if (!probe || !probe.matrix) {
-    root.innerHTML = '<div class="meta">not probed</div>';
+    root.innerHTML =
+      '<div class="empty-state"><strong>尚未探测互通</strong><p>点「探测互通」检查节点间 SSH 可达性。</p></div>';
     return;
   }
   const nodes = probe.nodes || [];
   const matrix = probe.matrix || {};
-  const head = nodes.map((n) => `<th>${n}</th>`).join("");
+  const head = nodes.map((n) => `<th>${escapeHtml(n)}</th>`).join("");
   const body = nodes
     .map((src) => {
       const cells = nodes
@@ -1395,11 +1643,10 @@ function renderProbe(probe) {
           if (src === dst) return "<td>·</td>";
           const cell = matrix[src] && matrix[src][dst];
           if (!cell) return "<td>?</td>";
-          return `<td style="color:${cell.ok ? "var(--ok)" : "var(--bad)"};font-weight:700">${cell.ok ? "Y" : "N"
-            }</td>`;
+          return `<td class="probe-cell ${cell.ok ? "ok" : "bad"}">${cell.ok ? "Y" : "N"}</td>`;
         })
         .join("");
-      return `<tr><th>${src}</th>${cells}</tr>`;
+      return `<tr><th>${escapeHtml(src)}</th>${cells}</tr>`;
     })
     .join("");
   root.innerHTML = `<div class="meta">ok=${probe.ok_count ?? "-"} fail=${probe.fail_count ?? "-"}</div>
@@ -1441,19 +1688,33 @@ function applyOverview(data) {
   renderSummary(data.summary || {});
   fillTargetSelects(data.nodes || []);
   renderPresets(data.exec_presets || []);
-  renderNodes(data.nodes || []);
-  renderPool(data);
   renderJobs(data.jobs || []);
-  renderQueue(data.queue || []);
-  renderLeases(data.leases || []);
-  renderProbe(data.probe || {});
-  renderHostMetrics(data);
-  renderDashboard(data);
-  document.getElementById("generated-at").textContent = data.generated_at || "-";
-  const rayNote = document.getElementById("ray-note");
+  if (data.quality) renderQuality(data.quality);
+  renderView(state.view);
+  const generatedAt = $("generated-at");
+  if (generatedAt) generatedAt.textContent = data.generated_at || "-";
+  const rayNote = $("notes-line");
   if (rayNote) {
-    rayNote.textContent =
-      (data.notes && (data.notes.innovation || data.notes.strategy)) || "";
+    rayNote.textContent = (data.notes && (data.notes.innovation || data.notes.strategy)) || "";
+  }
+}
+
+/* Render only the active view; hidden pages are filled when switched to. */
+function renderView(name) {
+  const data = state.overview;
+  if (!data) return;
+  if (name === "actions") {
+    renderDashboard(data);
+  } else if (name === "cluster" || name === "nodes") {
+    renderNodes(data.nodes || []);
+  } else if (name === "workloads") {
+    renderQueue(data.queue || []);
+    renderLeases(data.leases || []);
+    renderProbe(data.probe || {});
+  } else if (name === "endpoints") {
+    renderPool(data);
+  } else if (name === "terminal") {
+    renderHostMetrics(data);
   }
 }
 
@@ -1472,8 +1733,13 @@ function renderToolkits(payload) {
         )
         .join("") || "";
     bundleRoot.querySelectorAll("[data-toolkit-bundle]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        if (!confirm(`安装 ${btn.dataset.toolkitBundle}？`)) return;
+      btn.addEventListener("click", async () => {
+        const ok = await confirmDialog({
+          title: "安装工具栈",
+          message: `在全部 GPU 节点安装 ${btn.dataset.toolkitBundle}？pip 安装可能持续数分钟。`,
+          confirmText: "开始安装",
+        });
+        if (!ok) return;
         runToolkit("install", { bundle: btn.dataset.toolkitBundle });
       });
     });
@@ -1494,7 +1760,8 @@ function renderToolkits(payload) {
             <button class="ghost tiny" data-toolkit-id="${escapeHtml(t.id)}">探测</button>
           </div>`;
         })
-        .join("") || '<div class="meta">无工具栈定义</div>';
+        .join("") ||
+        '<div class="empty-state compact"><strong>无工具栈定义</strong><p>检查 config/local/toolkits.json。</p></div>';
     list.querySelectorAll("[data-toolkit-id]").forEach((btn) => {
       btn.addEventListener("click", () => runToolkit("probe", { ids: [btn.dataset.toolkitId] }));
     });
@@ -1531,6 +1798,7 @@ async function refreshToolkits() {
 }
 
 async function runToolkit(action, extra = {}) {
+  const label = action === "probe" ? "探测工具栈" : action === "install" ? "安装工具栈" : action;
   setBusy(true);
   try {
     const body = { ...extra };
@@ -1543,92 +1811,209 @@ async function runToolkit(action, extra = {}) {
     });
     if (data.toolkits) renderToolkits(data.toolkits);
     if (data.overview) applyOverview(data.overview);
-    toast(data.result?.rc === 0 ? `${action} 完成` : `${action} 有失败`);
+    if (data.result?.rc === 0) toastOk(`${label}完成`);
+    else toastBad(`${label}有失败，详见执行输出`);
   } catch (err) {
     writeConsoleText(String(err.message || err), { meta: `toolkits ${action}` });
-    log(String(err.message || err));
+    actionError(label, err);
   } finally {
     setBusy(false);
   }
 }
 
-function renderStatusBoard(data) {
-  const root = document.getElementById("dash-board");
+function renderAccessStatus(data) {
+  const root = $("dash-board");
   if (!root) return;
   const summary = data.summary || {};
-  const free = Number(summary.gpus_free || 0);
-  const used = Number(summary.gpus_used || 0);
-  const total = Number(summary.gpus_total || free + used) || 0;
-  const usedPct = total ? Math.round((used / total) * 100) : 0;
-  const apiOk = summary.api_ok;
-  const apiTotal = summary.api_total;
-  const apiPct = apiTotal ? Math.round((Number(apiOk || 0) / apiTotal) * 100) : 0;
   const ingress = data.ingress || state.ingress || {};
   const edge = ingress.edge || {};
   const tls = ingress.tls || {};
   const domain = ingress.domain || (ingress.domains || [])[0] || "";
   const tk = data.toolkits || {};
   const tkSum = tk.summary || {};
-  const cards = [
-    {
-      label: "GPU 占用",
-      value: total ? `${usedPct}%` : "-",
-      hint: total ? `${used}/${total} · 空闲 ${free}` : "暂无数据",
-      tone: usedPct >= 90 ? "warn" : "ok",
-      meter: usedPct,
-    },
+  const wd = data.watchdog || {};
+  const apiOk = summary.api_ok;
+  const apiTotal = summary.api_total;
+  const toneOf = (severity) =>
+    severity === "error" ? "bad" : severity === "warn" ? "warn" : severity === "ok" ? "ok" : "neutral";
+  const viewOf = (c) => (c.id === "tls" ? "config" : "endpoints");
+  const companionLabel = {
+    edge: "统一入口",
+    nginx: "nginx",
+    litellm: "AI Gateway",
+    tls: "HTTPS / TLS",
+  };
+  const enrich = (c) => {
+    let hint = c.detail || "";
+    if (c.id === "edge") {
+      const settings = (edge.status && edge.status.settings) || {};
+      const pool = (edge.status && edge.status.pool) || {};
+      if (settings.strategy) hint += ` · LB ${settings.strategy}`;
+      if (pool.upstream_count != null) {
+        hint += ` · 上游 ${pool.available ?? "?"}/${pool.upstream_count}`;
+      }
+    }
+    return hint;
+  };
+
+  const rows = [
     {
       label: "API 健康",
-      value: apiTotal != null ? `${apiOk ?? 0}/${apiTotal}` : "-",
-      hint: apiTotal != null ? `${apiPct}%` : "尚未探测",
-      tone: apiTotal && apiOk === apiTotal ? "ok" : apiTotal ? "warn" : "",
-      meter: apiPct,
-    },
-    {
-      label: "Edge 入口",
-      value: edge.running ? "运行中" : "应启动",
-      hint: edge.listen || ingress.public_base_url || "-",
-      tone: edge.running ? "ok" : "bad",
-    },
-    {
-      label: "HTTPS / TLS",
-      value: tls.label || (tls.enabled ? "已启用" : "未启用"),
-      hint: tls.ready ? tls.not_after || "证书就绪" : tls.enabled ? (tls.reasons || []).join("；") || "缺证书" : "HTTP 明文",
-      tone: tls.enabled && !tls.ready ? "warn" : tls.ready ? "ok" : "",
-    },
-    {
-      label: "域名",
-      value: domain || "未配置",
-      hint: ingress.public_base_url || "-",
-      tone: domain ? "ok" : "",
-    },
-    {
-      label: "工具栈",
-      value: tkSum.total ? `${tkSum.ok ?? 0}/${tkSum.total}` : "未探测",
-      hint: tk.generated_at ? `探测于 ${tk.generated_at}` : "LLaMA-Factory / DeepSpeed",
-      tone: tkSum.total && tkSum.ok === tkSum.total ? "ok" : "",
+      value: apiTotal != null ? `${apiOk ?? 0}/${apiTotal}` : "未探测",
+      hint:
+        apiTotal != null
+          ? apiOk === apiTotal
+            ? "全部端点正常"
+            : `${Math.max(0, apiTotal - (apiOk || 0))} 路异常`
+          : "尚未探测",
+      tone: apiTotal != null ? (apiOk === apiTotal ? "ok" : "warn") : "neutral",
+      view: "endpoints",
     },
   ];
-  root.innerHTML = cards
-    .map((c) => {
-      const meter = c.meter != null
-        ? `<span class="meter"><i style="width:${Math.max(0, Math.min(100, c.meter))}%"></i></span>`
-        : "";
-      return `<div class="dash-metric ${c.tone || ""}">
-        <span class="label">${escapeHtml(c.label)}</span>
-        <span class="value">${escapeHtml(String(c.value))}</span>
-        <span class="hint" title="${escapeHtml(c.hint || "")}">${escapeHtml(c.hint || "")}</span>
-        ${meter}
-      </div>`;
+
+  const companions = Array.isArray(ingress.companions) ? ingress.companions : [];
+  if (companions.length) {
+    for (const id of ["edge", "nginx", "litellm", "tls"]) {
+      const c = companions.find((row) => row.id === id);
+      if (!c) continue;
+      rows.push({
+        label: companionLabel[id] || c.name || id,
+        value: c.label || c.state || "-",
+        hint: enrich(c),
+        tone: toneOf(c.severity),
+        view: viewOf(c),
+      });
+    }
+  } else {
+    // Older payloads: keep a useful fallback rather than an empty panel.
+    rows.push(
+      {
+        label: "统一入口",
+        value: edge.running ? "运行中" : ingress.ingress && ingress.ingress.enabled === false ? "未启用" : "未运行",
+        hint: edge.listen || ingress.public_base_url || "未配置监听",
+        tone: edge.running ? "ok" : "neutral",
+        view: "endpoints",
+      },
+      {
+        label: "HTTPS / TLS",
+        value: tls.label || (tls.enabled ? "已启用" : "未启用"),
+        hint: tls.ready ? tls.not_after || "证书就绪" : tls.enabled ? (tls.reasons || []).join("；") || "缺少证书" : "HTTP 明文",
+        tone: tls.enabled && !tls.ready ? "warn" : tls.ready ? "ok" : "neutral",
+        view: "config",
+      }
+    );
+  }
+
+  rows.push({
+    label: "域名",
+    value: domain || "未配置",
+    hint: ingress.public_base_url || "使用 IP:端口访问",
+    tone: domain ? "ok" : "neutral",
+    view: "config",
+  });
+  rows.push({
+    label: "自动重启",
+    value: wd.running ? "运行中" : wd.enabled ? "未运行" : "未启用",
+    hint: `${(wd.jobs || []).join(", ") || "跟随默认 Job"} · ${wd.interval_sec || 60}s · 连败 ${wd.failure_threshold || 2} 次重启 / 上限 ${wd.max_restarts || 3} 次`,
+    tone: wd.running ? "ok" : wd.enabled ? "warn" : "neutral",
+    view: "workloads",
+  });
+  rows.push({
+    label: "工具栈",
+    value: tkSum.total ? `${tkSum.ok ?? 0}/${tkSum.total}` : "未探测",
+    hint: tk.generated_at ? `探测于 ${tk.generated_at}` : "训练 / 推理常用依赖",
+    tone: tkSum.total ? (tkSum.ok === tkSum.total ? "ok" : "warn") : "neutral",
+    view: "toolkits",
+  });
+
+  root.innerHTML = rows
+    .map((row) => {
+      const tone = row.tone || "neutral";
+      return `<button type="button" class="status-row ${tone}" data-view-jump="${row.view || "endpoints"}"
+          title="打开 ${escapeHtml(row.label)} 详情">
+        <span class="status-dot ${tone}" aria-hidden="true"></span>
+        <span class="status-main">
+          <span class="status-label">${escapeHtml(row.label)}</span>
+          <span class="status-hint">${escapeHtml(row.hint || "")}</span>
+        </span>
+        <span class="chip chip--${tone}">${escapeHtml(String(row.value))}</span>
+      </button>`;
     })
     .join("");
-  const at = document.getElementById("dash-board-at");
+  const at = $("dash-board-at");
   if (at) at.textContent = data.generated_at || "实时总览";
-  const urlEl = document.getElementById("dash-ingress-url");
+  const urlEl = $("dash-ingress-url");
   if (urlEl) {
     const url = ingress.public_base_url || edge.url || "";
     urlEl.textContent = url ? `对外 ${url}` : "对外 URL 未配置";
   }
+}
+
+function renderGpuPool(data) {
+  const summary = data.summary || {};
+  const free = Number(summary.gpus_free || 0);
+  const used = Number(summary.gpus_used || 0);
+  const total = Number(summary.gpus_total || free + used) || 0;
+  const usedPct = total ? Math.round((used / total) * 100) : 0;
+
+  const usedEl = $("dash-gpu-used");
+  if (usedEl) usedEl.textContent = total ? String(used) : "-";
+  const totalEl = $("dash-gpu-total");
+  if (totalEl) totalEl.textContent = total ? String(total) : "-";
+  const freeEl = $("dash-gpu-free");
+  if (freeEl) {
+    freeEl.textContent = total ? `空闲 ${free}` : "空闲 -";
+    freeEl.className = `chip chip--${free > 0 ? "ok" : total ? "warn" : "neutral"}`;
+  }
+  const bar = $("dash-bar-used");
+  if (bar) bar.style.width = `${usedPct}%`;
+  const meter = document.querySelector(".dash-bar[role='progressbar']");
+  if (meter) meter.setAttribute("aria-valuenow", String(usedPct));
+  const meta = $("dash-gpu-meta");
+  if (meta) {
+    meta.textContent = total
+      ? `${used}/${total} 占用 · ${usedPct}%${data.cached ? " · 缓存" : ""}`
+      : "暂无 GPU 数据";
+  }
+
+  const strip = $("dash-node-strip");
+  if (!strip) return;
+  const nodes = data.nodes || [];
+  strip.innerHTML =
+    nodes
+      .map((node) => {
+        const name = escapeHtml(node.name);
+        const totalGpus = Number(node.total || (node.gpus || []).length) || 0;
+        const usedGpus = Number(node.used || 0);
+        const cls = node.cordoned ? "cordoned" : usedGpus ? "busy" : "free";
+        const leaseJob = node.lease && node.lease.job ? escapeHtml(node.lease.job) : "";
+        const gpus =
+          (node.gpus || []).length > 0
+            ? node.gpus
+            : Array.from({ length: totalGpus }, (_, i) => ({
+                index: i,
+                status: i < usedGpus ? "occupied" : "free",
+              }));
+        const segs = gpus
+          .map((g) => {
+            const status = g.status === "free" ? "free" : "occupied";
+            const util = g.utilization_percent != null ? `${g.utilization_percent}%` : "-";
+            const mem =
+              g.memory_used_mib != null ? `${Math.round(g.memory_used_mib / 1024)}G` : "-";
+            return `<i class="gpu-seg ${status}" title="GPU ${g.index ?? "?"} · util ${util} · mem ${mem}"></i>`;
+          })
+          .join("");
+        return `<button type="button" class="gpu-node-row ${cls}" data-select="${name}"
+            title="${escapeHtml(node.host || "")}${leaseJob ? " · " + leaseJob : ""}">
+          <span class="gpu-node-name">${name}${leaseJob ? `<span class="meta"> · ${leaseJob}</span>` : ""}</span>
+          <span class="gpu-segments" aria-hidden="true">${segs}</span>
+          <span class="gpu-node-count">${usedGpus}/${totalGpus || "-"}</span>
+        </button>`;
+      })
+      .join("") || '<p class="meta">暂无节点快照</p>';
+  strip.querySelectorAll("[data-select]").forEach((el) => {
+    el.addEventListener("click", () => selectNode(el.dataset.select));
+  });
 }
 
 function renderDashboard(data) {
@@ -1637,50 +2022,11 @@ function renderDashboard(data) {
   const used = Number(summary.gpus_used || 0);
   const total = Number(summary.gpus_total || free + used) || 0;
   const usedPct = total ? Math.round((used / total) * 100) : 0;
-  const bar = document.getElementById("dash-bar-used");
-  if (bar) bar.style.width = `${usedPct}%`;
-  const meta = document.getElementById("dash-gpu-meta");
-  if (meta) meta.textContent = total ? `${used}/${total} 占用 · ${free} 空闲 · ${usedPct}%` : "暂无 GPU 数据";
-  renderStatusBoard(data);
-
-  const strip = document.getElementById("dash-node-strip");
-  if (strip) {
-    const nodes = data.nodes || [];
-    strip.innerHTML =
-      nodes
-        .map((n) => {
-          const cls = n.cordoned ? "cordoned" : n.used ? "busy" : "free";
-          const leaseJob = n.lease && n.lease.job ? n.lease.job : "";
-          return `<div class="dash-node-pill ${cls}" title="${escapeHtml(n.host || "")}${leaseJob ? " · " + leaseJob : ""}">
-            <b>${escapeHtml(n.name)}</b>
-            ${n.used || 0}/${n.total || 0}${leaseJob ? " · " + escapeHtml(leaseJob) : ""}
-          </div>`;
-        })
-        .join("") || '<span class="meta">无节点</span>';
-  }
-
-  const list = document.getElementById("dash-nodes");
-  if (list) {
-    list.innerHTML =
-      (data.nodes || [])
-        .map((n) => {
-          const tot = Number(n.total || 0) || 1;
-          const pct = Math.round((Number(n.used || 0) / tot) * 100);
-          const lease = n.lease
-            ? ` · ${escapeHtml(n.lease.job || "lease")}${n.lease.gpus != null ? " " + n.lease.gpus + "GPU" : ""}`
-            : "";
-          return `<div class="dash-node-row">
-            <span><strong>${escapeHtml(n.name)}</strong>
-              <span class="meta"> · ${n.cordoned ? "隔离" : n.state || "-"}${lease}</span></span>
-            <span class="meta">${n.used || 0}/${n.total || 0}</span>
-            <span class="bar"><i style="width:${pct}%"></i></span>
-          </div>`;
-        })
-        .join("") || '<p class="muted">暂无节点</p>';
-  }
+  renderGpuPool(data);
+  renderAccessStatus(data);
 
   const setText = (id, text) => {
-    const el = document.getElementById(id);
+    const el = $(id);
     if (el) el.textContent = text;
   };
 
@@ -1713,7 +2059,10 @@ function renderDashboard(data) {
   const apiTotal = summary.api_total;
   setText("dash-api", apiTotal != null ? `${apiOk ?? 0}/${apiTotal}` : "-");
 
-  const leasesRoot = document.getElementById("dash-leases-list");
+  setText("dash-queue-2", String(summary.queue_pending ?? 0));
+  setText("dash-cordon-2", String(summary.cordoned ?? 0));
+
+  const leasesRoot = $("dash-leases-list");
   if (leasesRoot) {
     const leases = data.leases || [];
     leasesRoot.innerHTML =
@@ -1723,20 +2072,18 @@ function renderDashboard(data) {
           const nodes = (lease.nodes || []).join(", ");
           return `<div class="item">
             <div><strong>${escapeHtml(lease.job || lease.id || "lease")}</strong>
-              <div class="meta">${escapeHtml(nodes)} · ${lease.gpus ?? "?"}GPU${lease.note ? " · " + escapeHtml(lease.note) : ""}</div>
+              <div class="meta">${escapeHtml(nodes)} · ${escapeHtml(lease.gpus ?? "?")}GPU${lease.note ? " · " + escapeHtml(lease.note) : ""}</div>
             </div>
           </div>`;
         })
-        .join("") || '<div class="meta">无占用登记</div>';
+        .join("") || '<div class="empty-state compact"><strong>无占用登记</strong><p>节点全部空闲或未登记 Lease。</p></div>';
   }
 
   renderDashGateway(data.ingress || state.ingress);
   if (data.ingress) state.ingress = data.ingress;
 
   const tk = data.toolkits || {};
-  const tkSum = tk.summary || summary.toolkits_ready || {};
-  setText("dash-toolkits", tkSum.total ? `${tkSum.ok ?? 0}/${tkSum.total}` : "未探测");
-  const chips = document.getElementById("dash-toolkit-chips");
+  const chips = $("dash-toolkit-chips");
   if (chips) {
     const rows = tk.by_id || [];
     chips.innerHTML =
@@ -1750,12 +2097,13 @@ function renderDashboard(data) {
         })
         .join("") || '<span class="meta">尚未探测工具栈</span>';
   }
-  const tkMeta = document.getElementById("dash-toolkit-meta");
+  const tkMeta = $("dash-toolkit-meta");
   if (tkMeta) {
     tkMeta.textContent = tk.generated_at
       ? `探测于 ${tk.generated_at}`
-      : "点「工具栈」安装微调栈（LLaMA-Factory / DeepSpeed）";
+      : "尚未探测工具栈";
   }
+  syncJobSelectHint(data.jobs || []);
 }
 
 function renderDashGateway(status) {
@@ -1843,7 +2191,7 @@ function renderDashGateway(status) {
   root.innerHTML = rows
     .map((row) => {
       const links = (row.links || [])
-        .map((l) => `<a href="${escapeHtml(l.href)}" target="_blank" rel="noopener">${escapeHtml(l.label)}</a>`)
+        .map((l) => `<a href="${escapeHtml(safeHref(l.href))}" target="_blank" rel="noopener">${escapeHtml(l.label)}</a>`)
         .join("");
       return `<div class="dash-gw-row ${row.tone || "off"}">
         <div class="name">${escapeHtml(row.name)}</div>
@@ -1860,34 +2208,46 @@ function renderDashGateway(status) {
 function renderQuality(q) {
   if (!q) return;
   state.quality = q;
-  document.getElementById("quality-score").textContent = q.score ?? "-";
-  document.getElementById("quality-grade").textContent = q.grade || "未检测";
+  const set = (id, text) => {
+    const el = $(id);
+    if (el) el.textContent = text;
+  };
+  const score = Number(q.score);
+  const hasScore = Number.isFinite(score);
+  const ring = $("quality-ring");
+  if (ring) {
+    ring.style.setProperty("--score", String(hasScore ? Math.max(0, Math.min(100, score)) : 0));
+    ring.dataset.tone = hasScore ? (score >= 85 ? "ok" : score >= 60 ? "warn" : "bad") : "idle";
+    ring.setAttribute("aria-label", `集群健康评分 ${hasScore ? score : "-"} ${q.grade || ""}`.trim());
+  }
+  set("quality-score", hasScore ? String(score) : "-");
+  set("quality-grade", q.grade || "未检测");
   const ssh = q.ssh || {};
   const api = q.api || {};
   const mesh = q.mesh || {};
   const gpus = q.gpus || {};
-  document.getElementById("q-ssh").textContent =
-    ssh.total != null ? `${ssh.ok_count ?? 0}/${ssh.total}` : "-";
-  document.getElementById("q-api").textContent =
-    api.total != null ? `${api.ok ?? 0}/${api.total}` : "-";
-  document.getElementById("q-mesh").textContent =
-    mesh.total ? `${mesh.ok}/${mesh.total}` : "-";
-  document.getElementById("q-gpu").textContent =
-    gpus.total != null ? `${gpus.free}/${gpus.total}` : "-";
-  document.getElementById("quality-updated").textContent = q.updated_at
-    ? `更新于 ${q.updated_at}`
-    : "完成「全量同步」或「一键连通」后更新评分";
+  set("q-ssh", ssh.total != null ? `${ssh.ok_count ?? 0}/${ssh.total}` : "-");
+  set("q-api", api.total != null ? `${api.ok ?? 0}/${api.total}` : "-");
+  set("q-mesh", mesh.total ? `${mesh.ok}/${mesh.total}` : "-");
+  set("q-gpu", gpus.total != null ? `${gpus.free}/${gpus.total}` : "-");
+  set(
+    "quality-updated",
+    q.updated_at ? `更新于 ${q.updated_at}` : "完成「全量同步」或「一键连通」后更新评分"
+  );
 
   const results = (ssh.results || []).slice().sort((a, b) => (a.node || "").localeCompare(b.node || ""));
   const maxLat = Math.max(1, ...results.map((r) => r.latency_ms || 0));
-  const bars = document.getElementById("ssh-latency-bars");
+  const bars = $("ssh-latency-bars");
+  if (!bars) return;
   if (!results.length) {
     bars.innerHTML = '<p class="muted">尚未探测 SSH</p>';
-    document.getElementById("ssh-latency-meta").textContent = "尚未探测";
+    set("ssh-latency-meta", "尚未探测");
   } else {
     const lat = ssh.latency_ms || {};
-    document.getElementById("ssh-latency-meta").textContent =
-      `平均 ${lat.avg ?? "-"}ms · 最快 ${lat.min ?? "-"}ms · 最慢 ${lat.max ?? "-"}ms`;
+    set(
+      "ssh-latency-meta",
+      `平均 ${lat.avg ?? "-"}ms · 最快 ${lat.min ?? "-"}ms · 最慢 ${lat.max ?? "-"}ms`
+    );
     bars.innerHTML = results
       .map((r) => {
         const pct = r.ok ? Math.max(6, Math.round(((r.latency_ms || 0) / maxLat) * 100)) : 100;
@@ -1943,7 +2303,8 @@ function renderRunlog(payload) {
           <span class="chip">${item.ok === false ? "失败" : item.ok ? "成功" : "—"}</span>
         </div>`;
       })
-      .join("") || '<div class="meta">暂无日志</div>';
+      .join("") ||
+      '<div class="empty-state compact"><strong>暂无运行日志</strong><p>CLI / 一键动作 / 检测修复会自动记录。</p></div>';
   if (meta) {
     meta.textContent = payload.total
       ? `${items.length}/${payload.total} · ${payload.path || "state/runlog.jsonl"}`
@@ -1968,7 +2329,12 @@ async function runOneclick(action, extra = {}) {
         return log("请先选择任务（或注册 Job）");
       }
       body.gpus = Number(document.getElementById("quick-gpus").value || 4);
-      if (!confirm(`确认一键部署 ${body.job}（${body.gpus} GPU）？`)) return;
+      const ok = await confirmDialog({
+        title: "一键部署",
+        message: `确认部署 ${body.job}（${body.gpus} GPU）？由服务端按空闲 GPU 自动选机。`,
+        confirmText: "部署",
+      });
+      if (!ok) return;
     }
     log(`开始：${action}`);
     const data = await api("/api/actions/oneclick", {
@@ -2003,12 +2369,16 @@ async function refresh(doRemoteRefresh, { light = false } = {}) {
     let path = "/api/overview";
     if (doRemoteRefresh) path += "?refresh=1";
     else if (light) path += "?light=1";
-    const data = await api(path, { headers });
+    const timeoutMs = doRemoteRefresh ? 200000 : light ? 20000 : 60000;
+    const data = await api(path, { headers, timeoutMs });
     if (data.__notModified) {
       if (data.etag) state.etag = data.etag;
+      state.lastRefreshAt = Date.now();
       return state.overview;
     }
     applyOverview(data);
+    state.lastRefreshAt = Date.now();
+    state.pollFailures = 0;
     return data;
   } finally {
     state.refreshInFlight = false;
@@ -2026,8 +2396,9 @@ async function runExec(payload) {
     });
     showResults(data.results, data.command);
     setView("ops");
+    toastOk("命令执行完成");
   } catch (err) {
-    log(String(err.message || err));
+    actionError("远程命令", err);
   } finally {
     setBusy(false);
   }
@@ -2045,13 +2416,17 @@ async function runPython() {
     cwd: document.getElementById("py-cwd").value.trim(),
     background: document.getElementById("py-bg").checked,
   };
-  if (!body.script && !body.code) return log("请填写脚本或代码");
+  if (!body.script && !body.code) {
+    toastBad("请填写脚本路径或 -c 代码");
+    return;
+  }
   setBusy(true);
   try {
     const data = await api("/api/run-python", { method: "POST", body: JSON.stringify(body) });
     showResults(data.results, data.command);
+    toastOk("Python 已执行");
   } catch (err) {
-    log(String(err.message || err));
+    actionError("运行 Python", err);
   } finally {
     setBusy(false);
   }
@@ -2073,9 +2448,19 @@ async function runJobAction(action) {
     state.selectedNode = scope;
     target = { node: scope };
   }
-  const extraArgs = parseExtraArgs(document.getElementById("job-extra-args")?.value);
+  const extraArgs = parseExtraArgs($("job-extra-args")?.value);
   const body = { action, ...target };
   if (extraArgs) body.extra_args = extraArgs;
+  const scopeLabel = scope && scope !== "all" ? scope : "全部节点";
+  if (action === "stop" || action === "restart" || (action === "start" && scopeLabel === "全部节点")) {
+    const ok = await confirmDialog({
+      title: action === "stop" ? "停止任务" : action === "restart" ? "重启任务" : "启动任务",
+      message: `${action === "stop" ? "停止" : action === "restart" ? "重启" : "启动"} ${job}（${scopeLabel}）？`,
+      confirmText: action === "stop" ? "停止" : action === "restart" ? "重启" : "启动",
+      tone: action === "stop" ? "danger" : "primary",
+    });
+    if (!ok) return;
+  }
   setBusy(true);
   try {
     const data = await api(`/api/jobs/${encodeURIComponent(job)}/action`, {
@@ -2086,10 +2471,11 @@ async function runJobAction(action) {
       data.result.stdout || data.result.stderr || `(rc=${data.result.rc})`,
       { meta: `Job ${action}` }
     );
+    toastOk(`Job ${action} 完成`);
     await refresh(false);
   } catch (err) {
     writeConsoleText(String(err.message || err), { meta: `Job ${action} 失败` });
-    log(String(err.message || err));
+    actionError(`Job ${action}`, err);
   } finally {
     setBusy(false);
   }
@@ -2135,24 +2521,60 @@ async function runDoctor() {
   }
 }
 
-function setConfigTab(name) {
+const VIEW_ORDER = [
+  "actions",
+  "cluster",
+  "workloads",
+  "models",
+  "toolkits",
+  "nodes",
+  "endpoints",
+  "ops",
+  "terminal",
+  "guide",
+  "config",
+];
+
+function setConfigTab(name, { updateHash = false } = {}) {
   document.querySelectorAll("#config-tabs .tab").forEach((t) => {
     t.classList.toggle("active", t.dataset.tab === name);
   });
   document.querySelectorAll("[data-tab-panel]").forEach((p) => {
     p.classList.toggle("active", p.dataset.tabPanel === name);
   });
+  if (updateHash && state.view === "config") {
+    history.replaceState(null, "", `#/config/${name}`);
+  }
 }
 
-function setView(name) {
+function currentRoute() {
+  const raw = (location.hash || "").replace(/^#\/?/, "");
+  const [view, tab] = raw.split("/");
+  return { view: VIEW_TITLE[view] ? view : "actions", tab: tab || "" };
+}
+
+function setView(name, { updateHash = true } = {}) {
+  if (!VIEW_TITLE[name]) name = "actions";
   state.view = name;
-  document.querySelectorAll(".nav-item").forEach((n) => n.classList.toggle("active", n.dataset.view === name));
-  document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.dataset.viewPanel === name));
-  document.getElementById("view-title").textContent = VIEW_TITLE[name] || name;
-  const hint = document.getElementById("cli-hint-code");
+  document.querySelectorAll(".nav-item").forEach((n) => {
+    const active = n.dataset.view === name;
+    n.classList.toggle("active", active);
+    n.setAttribute("aria-current", active ? "page" : "false");
+  });
+  document.querySelectorAll(".view").forEach((v) => {
+    v.classList.toggle("active", v.dataset.viewPanel === name);
+  });
+  const title = $("view-title");
+  if (title) title.textContent = VIEW_TITLE[name] || name;
+  const hint = $("cli-hint-code");
   if (hint) hint.textContent = VIEW_CLI[name] || "gpu-control --help";
-  if (name === "guide" || name === "config") {
-    loadSetup().catch((err) => log(String(err.message || err)));
+  if (updateHash) {
+    const hash = `#/${name}`;
+    if (location.hash !== hash) history.pushState(null, "", hash);
+  }
+  renderView(name);
+  if ((name === "guide" || name === "config") && !stateSetup.data) {
+    loadSetup().catch((err) => actionError("加载配置", err));
   }
   if (name === "models") {
     refreshModels().catch((err) => log(String(err.message || err)));
@@ -2161,8 +2583,9 @@ function setView(name) {
     refreshToolkits().catch((err) => log(String(err.message || err)));
   }
   if (name === "actions") {
-    loadQuality().catch(() => { });
-    refreshRunlog().catch(() => { });
+    if (!state.quality) loadQuality().catch(() => {});
+    refreshRunlog().catch(() => {});
+    refreshIngressStatus().catch(() => {});
   }
   if (name === "terminal") {
     ensureTerminal();
@@ -2170,7 +2593,7 @@ function setView(name) {
       setTimeout(() => {
         termState.fit.fit();
         sendTermResize();
-      }, 30);
+      }, 60);
     }
   }
 }
@@ -2183,31 +2606,85 @@ function nodesDocToEditor(doc) {
       const meta = nodes[name] || {};
       const gpus = meta.gpus_per_node ?? "";
       const labels = (meta.labels || []).join(",");
-      return [name, meta.ansible_host || "", gpus, labels].join(" ").trim();
+      const note = meta.note ? ` # ${String(meta.note).replace(/\s+/g, " ")}` : "";
+      return [name, meta.ansible_host || "", gpus, labels].join(" ").trim() + note;
     })
     .join("\n");
 }
 
+/* Merge edited rows back into the existing document.
+   Unknown per-node fields (note/paths/env/role/...) and top-level keys
+   (control, defaults) must survive a save. */
 function editorToNodes(text, baseDoc) {
-  const doc = {
-    defaults: { ...(baseDoc.defaults || {}) },
-    nodes: {},
-  };
+  const base = baseDoc || { defaults: {}, nodes: {} };
+  const baseNodes = base.nodes || {};
+  const doc = { ...base };
+  doc.defaults = { ...(base.defaults || {}) };
+  doc.nodes = {};
   for (const raw of text.split("\n")) {
-    const line = raw.trim();
+    let line = raw.trim();
     if (!line || line.startsWith("#")) continue;
+    let note = "";
+    const hashAt = line.indexOf("#");
+    if (hashAt >= 0) {
+      note = line.slice(hashAt + 1).trim();
+      line = line.slice(0, hashAt).trim();
+    }
+    if (!line) continue;
     const parts = line.split(/\s+/);
     const name = parts[0];
     const host = parts[1];
     if (!name || !host) continue;
     const gpus = parts[2] && /^\d+$/.test(parts[2]) ? Number(parts[2]) : undefined;
     const labels = parts.slice(gpus == null ? 2 : 3).join(" ");
-    const node = { ansible_host: host, role: "serving" };
+    const prev = baseNodes[name] || {};
+    const node = { ...prev, ansible_host: host };
+    if (!node.role) node.role = doc.defaults.role || "serving";
     if (gpus != null) node.gpus_per_node = gpus;
     if (labels) node.labels = labels.split(",").map((x) => x.trim()).filter(Boolean);
+    if (note) node.note = note;
     doc.nodes[name] = node;
   }
   return doc;
+}
+
+function fillJobForm(job, fallbackName = "") {
+  const name = (job && job.name) || fallbackName || "";
+  $("job-name").value = name;
+  $("setup-job-path").textContent =
+    (job && job.path) || (name ? `config/local/jobs/${name}.json` : "config/local/jobs/<name>.json");
+  $("job-desc").value = (job && job.description) || "";
+  $("job-gpus").value = job && job.gpus_per_node != null ? job.gpus_per_node : 4;
+  $("job-python").value = (job && job.python) || "";
+  $("job-script").value = (job && job.script) || "";
+  $("job-extra").value = ((job && job.extra_args) || []).join(" ");
+}
+
+/* Load the full Job JSON (not the summary) so saving can merge instead of
+   replacing kind/model/env/docker. */
+async function loadJobIntoForm(name) {
+  const pick = $("setup-job-pick");
+  if (!name) {
+    stateSetup.jobBase = null;
+    stateSetup.jobBaseName = null;
+    fillJobForm(null);
+    return;
+  }
+  const seq = ++stateSetup.jobLoadSeq;
+  try {
+    const resp = await api(`/api/config/job/${encodeURIComponent(name)}`);
+    if (seq !== stateSetup.jobLoadSeq) return;
+    stateSetup.jobBase = resp.data || {};
+    stateSetup.jobBaseName = name;
+    fillJobForm({ ...(resp.data || {}), name, path: resp.path });
+    if (pick) pick.value = name;
+  } catch (_) {
+    if (seq !== stateSetup.jobLoadSeq) return;
+    const summary = ((stateSetup.data && stateSetup.data.jobs) || []).find((j) => j.name === name);
+    stateSetup.jobBase = null;
+    stateSetup.jobBaseName = null;
+    fillJobForm(summary, name);
+  }
 }
 
 function fillSetupForm(data) {
@@ -2251,28 +2728,20 @@ function fillSetupForm(data) {
 
   const pick = document.getElementById("setup-job-pick");
   if (pick) {
+    const prevPick = pick.value;
     const opts = (data.jobs || [])
       .map((j) => `<option value="${escapeHtml(j.name)}">${escapeHtml(jobOptionLabel(j))}</option>`)
       .join("");
     pick.innerHTML = `<option value="">— 选择已有 Job —</option>${opts}`;
-    if (defaultJob) pick.value = defaultJob;
+    const names = [...pick.options].map((o) => o.value);
+    if (prevPick && names.includes(prevPick)) pick.value = prevPick;
+    else if (defaultJob) pick.value = defaultJob;
   }
   const job =
     (data.jobs || []).find((j) => j.name === (pick?.value || defaultJob)) ||
     (data.jobs || [])[0];
-  if (job) {
-    document.getElementById("job-name").value = job.name || defaultJob;
-    document.getElementById("setup-job-path").textContent =
-      job.path || `config/local/jobs/${job.name || defaultJob}.json`;
-    document.getElementById("job-desc").value = job.description || "";
-    document.getElementById("job-gpus").value = job.gpus_per_node ?? 4;
-    document.getElementById("job-python").value = job.python || "";
-    document.getElementById("job-script").value = job.script || "";
-    document.getElementById("job-extra").value = (job.extra_args || []).join(" ");
-  } else {
-    document.getElementById("job-name").value = defaultJob || "";
-    document.getElementById("setup-job-path").textContent = "config/local/jobs/<name>.json";
-  }
+  if (job) fillJobForm(job);
+  else fillJobForm(null, defaultJob);
 
   const chips = document.getElementById("ssh-key-chips");
   chips.innerHTML = (data.ssh_keys || [])
@@ -2334,18 +2803,14 @@ function fillSetupForm(data) {
 async function loadSetup() {
   const data = await api("/api/setup");
   fillSetupForm(data);
-  if (data.jobs && data.jobs.length) {
-    const name = data.jobs[0].name;
-    try {
-      const jobResp = await api(`/api/config/job/${encodeURIComponent(name)}`);
-      const job = jobResp.data || {};
-      document.getElementById("setup-job-path").textContent = jobResp.path || "";
-      document.getElementById("job-desc").value = job.description || "";
-      document.getElementById("job-gpus").value = job.gpus_per_node ?? 4;
-      document.getElementById("job-python").value = job.python || "";
-      document.getElementById("job-script").value = job.script || "";
-      document.getElementById("job-extra").value = (job.extra_args || []).join(" ");
-    } catch (_) { }
+  const preferred =
+    (data.cluster && data.cluster.default_job) ||
+    ((data.jobs || [])[0] && (data.jobs || [])[0].name) ||
+    "";
+  if (preferred) {
+    const pick = $("setup-job-pick");
+    if (pick) pick.value = preferred;
+    await loadJobIntoForm(preferred);
   }
   return data;
 }
@@ -2446,9 +2911,9 @@ async function saveCluster() {
       body: JSON.stringify({ data }),
     });
     fillSetupForm(resp.setup);
-    toast("cluster 已保存");
+    toastOk("集群配置已保存");
   } catch (err) {
-    log(String(err.message || err));
+    actionError("保存集群配置", err);
   } finally {
     setBusy(false);
   }
@@ -2456,11 +2921,25 @@ async function saveCluster() {
 
 async function saveNodesEditor() {
   const base = (stateSetup.data && stateSetup.data.nodes) || { defaults: {}, nodes: {} };
-  const data = editorToNodes(document.getElementById("nodes-editor").value, base);
+  const data = editorToNodes($("nodes-editor").value, base);
+  if (!Object.keys(data.nodes).length) {
+    toastBad("至少保留一个节点");
+    return;
+  }
+  const removed = Object.keys(base.nodes || {}).filter((name) => !data.nodes[name]);
+  if (removed.length) {
+    const ok = await confirmDialog({
+      title: "删除节点",
+      message: `以下节点将从 nodes.json 删除：\n${removed.join(", ")}\n\n确认保存？`,
+      confirmText: "删除并保存",
+      tone: "danger",
+    });
+    if (!ok) return;
+  }
   // keep ssh defaults from form if present
-  const key = document.getElementById("ssh-key").value.trim();
-  const user = document.getElementById("ssh-user").value.trim();
-  const port = document.getElementById("ssh-port").value.trim();
+  const key = $("ssh-key").value.trim();
+  const user = $("ssh-user").value.trim();
+  const port = $("ssh-port").value.trim();
   if (key) data.defaults.ansible_ssh_private_key_file = key;
   if (user) data.defaults.ansible_user = user;
   if (port) data.defaults.ansible_port = Number(port);
@@ -2471,33 +2950,56 @@ async function saveNodesEditor() {
       body: JSON.stringify({ data }),
     });
     fillSetupForm(resp.setup);
-    toast(`已保存 ${Object.keys(data.nodes).length} 个节点`);
+    toastOk(`已保存 ${Object.keys(data.nodes).length} 个节点`);
     await refresh(false);
   } catch (err) {
-    log(String(err.message || err));
+    actionError("保存节点", err);
   } finally {
     setBusy(false);
   }
 }
 
 async function saveJob() {
-  const name = (document.getElementById("job-name").value || "").trim();
-  if (!name) return log("请填写 Job 名");
-  const extra = document
-    .getElementById("job-extra")
+  const name = ($("job-name").value || "").trim();
+  if (!name) {
+    toastBad("请填写 Job 名");
+    return;
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name)) {
+    toastBad("Job 名只允许字母数字开头，可含 . _ -（≤64 字符）");
+    return;
+  }
+  const extra = $("job-extra")
     .value.trim()
     .split(/\s+/)
     .filter(Boolean);
+
+  // Merge over the full existing JSON so kind/model/env/docker/distributed
+  // and future fields are preserved when the wizard only edits a few inputs.
+  let base = {};
+  if (stateSetup.jobBase && stateSetup.jobBase.name === name) {
+    base = stateSetup.jobBase;
+  } else {
+    try {
+      const resp = await api(`/api/config/job/${encodeURIComponent(name)}`);
+      base = resp.data || {};
+    } catch (_) {
+      base = {};
+    }
+  }
   const data = {
+    ...base,
     name,
-    description: document.getElementById("job-desc").value.trim(),
-    gpus_per_node: Number(document.getElementById("job-gpus").value || 4),
-    runtime: "process",
-    python: document.getElementById("job-python").value.trim(),
-    script: document.getElementById("job-script").value.trim(),
+    description: $("job-desc").value.trim(),
+    gpus_per_node: Number($("job-gpus").value || 4),
+    runtime: base.runtime || "process",
+    python: $("job-python").value.trim(),
+    script: $("job-script").value.trim(),
     extra_args: extra,
-    actions: ["start", "stop", "restart", "status", "wait"],
   };
+  if (!Array.isArray(data.actions) || !data.actions.length) {
+    data.actions = ["start", "stop", "restart", "status", "wait"];
+  }
   setBusy(true);
   try {
     const resp = await api(`/api/config/job/${encodeURIComponent(name)}`, {
@@ -2505,10 +3007,15 @@ async function saveJob() {
       body: JSON.stringify({ data }),
     });
     fillSetupForm(resp.setup);
-    toast("job 已保存");
+    const pick = $("setup-job-pick");
+    if (pick) pick.value = name;
+    fillJobForm({ ...data, path: resp.path });
+    stateSetup.jobBase = data;
+    stateSetup.jobBaseName = name;
+    toastOk("Job 已保存");
     await refresh(false);
   } catch (err) {
-    log(String(err.message || err));
+    actionError("保存 Job", err);
   } finally {
     setBusy(false);
   }
@@ -2516,15 +3023,30 @@ async function saveJob() {
 
 function setupAutoRefresh() {
   clearInterval(state.autoTimer);
-  if (!document.getElementById("auto-refresh").checked) return;
+  const toggle = $("auto-refresh");
+  if (!toggle || !toggle.checked) return;
   state.autoTimer = setInterval(async () => {
     if (state.busy || document.hidden) return;
+    // Exponential-ish backoff: after a failure, poll every other tick.
+    if (state.pollFailures > 0) {
+      state.pollSkip = (state.pollSkip + 1) % 2;
+      if (state.pollSkip) return;
+    }
     try {
       // Light poll: skip LB rebuild / full probe matrix to keep UI snappy.
       await refresh(false, { light: true });
-    } catch (_) { }
+    } catch (_) {
+      state.pollFailures = Math.min(5, state.pollFailures + 1);
+    }
   }, 12000);
 }
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  if (Date.now() - state.lastRefreshAt > 12000) {
+    refresh(false, { light: true }).catch(() => {});
+  }
+});
 
 async function boot() {
   initTheme();
@@ -2532,8 +3054,29 @@ async function boot() {
     btn.addEventListener("click", () => setView(btn.dataset.view));
   });
   document.querySelectorAll("#config-tabs .tab").forEach((btn) => {
-    btn.addEventListener("click", () => setConfigTab(btn.dataset.tab));
+    btn.addEventListener("click", () => setConfigTab(btn.dataset.tab, { updateHash: true }));
   });
+  window.addEventListener("hashchange", () => {
+    const route = currentRoute();
+    setView(route.view, { updateHash: false });
+    if (route.view === "config" && route.tab) setConfigTab(route.tab);
+  });
+  // Block double-submits on action buttons without locking navigation.
+  document.addEventListener(
+    "click",
+    (ev) => {
+      const btn =
+        ev.target && ev.target.closest
+          ? ev.target.closest("[data-action], [data-job-action], [data-oneclick]")
+          : null;
+      if (btn && state.busy) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        toast("正在执行，请稍候", { tone: "warn" });
+      }
+    },
+    true
+  );
   const authForm = document.getElementById("auth-form");
   if (authForm) authForm.addEventListener("submit", submitLogin);
   const logoutBtn = document.getElementById("btn-logout");
@@ -2583,8 +3126,9 @@ async function boot() {
     setView("config");
     setConfigTab("wizard");
   });
-  document.querySelectorAll("[data-view-jump]").forEach((btn) => {
-    btn.addEventListener("click", () => setView(btn.dataset.viewJump));
+  document.addEventListener("click", (ev) => {
+    const jump = ev.target && ev.target.closest ? ev.target.closest("[data-view-jump]") : null;
+    if (jump) setView(jump.dataset.viewJump);
   });
   document.getElementById("btn-full-sync").addEventListener("click", () => runOneclick("full-sync"));
   document.getElementById("btn-runlog-refresh")?.addEventListener("click", () => {
@@ -2595,20 +3139,38 @@ async function boot() {
   });
   document.getElementById("btn-dash-gw-start")?.addEventListener("click", () => startIngress());
   document.getElementById("btn-dash-gw-stop")?.addEventListener("click", () => stopIngress());
-  document.getElementById("btn-load-quality")?.addEventListener("click", async () => {
+  on("btn-load-quality", "click", async () => {
     try {
       await loadQuality();
-      toast("评分已刷新");
+      toastOk("评分已刷新");
     } catch (err) {
-      log(String(err.message || err));
+      actionError("刷新评分", err);
     }
+  });
+  on("btn-quick-refresh", "click", () => {
+    const btn = $("btn-refresh");
+    if (btn) btn.click();
+  });
+  on("btn-quick-health", "click", runApiHealth);
+  on("btn-console-scroll", "click", revealConsole);
+  on("console-unread", "click", revealConsole);
+  on("btn-console-toggle", "click", () => {
+    const wrap = $("batch-console-wrap");
+    if (!wrap) return;
+    const collapsed = wrap.classList.toggle("collapsed");
+    $("btn-console-toggle").textContent = collapsed ? "展开" : "收起";
   });
   document.querySelectorAll("[data-oneclick]").forEach((btn) => {
     btn.addEventListener("click", () => runOneclick(btn.dataset.oneclick));
   });
   document.getElementById("btn-toolkit-probe")?.addEventListener("click", () => runToolkit("probe"));
-  document.getElementById("btn-toolkit-train")?.addEventListener("click", () => {
-    if (!confirm("在全部 GPU 节点安装微调栈（LLaMA-Factory / DeepSpeed / Accelerate / PEFT）？可能较久。")) return;
+  on("btn-toolkit-train", "click", async () => {
+    const ok = await confirmDialog({
+      title: "安装微调栈",
+      message: "在全部 GPU 节点安装 LLaMA-Factory / DeepSpeed / Accelerate / PEFT？pip 安装可能持续数分钟。",
+      confirmText: "开始安装",
+    });
+    if (!ok) return;
     runToolkit("install", { bundle: "train-stack" });
   });
   document.getElementById("btn-term-connect").addEventListener("click", connectTerminal);
@@ -2676,14 +3238,15 @@ async function boot() {
       setBusy(false);
     }
   });
-  document.getElementById("btn-copy-urls").addEventListener("click", async () => {
-    const urls = ((state.overview && state.overview.endpoints) || {}).urls || [];
+  on("btn-copy-urls", "click", async () => {
+    const catalog = (state.overview && state.overview.endpoints) || {};
+    const urls = catalog.urls || (catalog.endpoints || []).map((ep) => ep.url).filter(Boolean);
     if (!urls.length) return toast("暂无 URL");
     try {
-      await navigator.clipboard.writeText(urls.join("\n"));
-      toast(`已复制 ${urls.length} 条 URL`);
-    } catch (_) {
-      toast("复制失败");
+      await copyText(urls.join("\n"));
+      toastOk(`已复制 ${urls.length} 条 URL`);
+    } catch (err) {
+      toastBad(`复制失败：${err.message || err}`);
     }
   });
 
@@ -2702,6 +3265,25 @@ async function boot() {
   document.querySelectorAll("[data-job-action]").forEach((btn) => {
     btn.addEventListener("click", () => runJobAction(btn.dataset.jobAction));
   });
+  on("btn-job-logs", "click", async () => {
+    const job = $("job-select")?.value;
+    if (!job) return toastBad("请先选择 Job");
+    const scope = $("job-target")?.value || "all";
+    const qs = new URLSearchParams({ lines: "120" });
+    if (scope && scope !== "all") qs.set("node", scope);
+    setBusy(true);
+    try {
+      const data = await api(`/api/jobs/${encodeURIComponent(job)}/logs?${qs}`);
+      writeConsoleText(data.result?.stdout || data.result?.stderr || "（无日志）", {
+        meta: `Job ${job} 日志`,
+      });
+      toastOk("日志已拉取");
+    } catch (err) {
+      actionError("拉取 Job 日志", err);
+    } finally {
+      setBusy(false);
+    }
+  });
   document.getElementById("job-select")?.addEventListener("change", () => {
     syncJobArgsHint(state.overview?.jobs);
   });
@@ -2714,19 +3296,12 @@ async function boot() {
   document.getElementById("deploy-gpus")?.addEventListener("input", (ev) => {
     ev.target.dataset.touched = "1";
   });
+  on("quick-gpus", "input", (ev) => {
+    ev.target.dataset.touched = "1";
+  });
   document.getElementById("btn-install-job-template")?.addEventListener("click", installSelectedJobTemplate);
-  document.getElementById("setup-job-pick")?.addEventListener("change", () => {
-    const name = document.getElementById("setup-job-pick").value;
-    const job = (stateSetup.data?.jobs || state.overview?.jobs || []).find((j) => j.name === name);
-    if (!job) return;
-    document.getElementById("job-name").value = job.name || "";
-    document.getElementById("setup-job-path").textContent =
-      job.path || `config/local/jobs/${job.name}.json`;
-    document.getElementById("job-desc").value = job.description || "";
-    document.getElementById("job-gpus").value = job.gpus_per_node ?? 4;
-    document.getElementById("job-python").value = job.python || "";
-    document.getElementById("job-script").value = job.script || "";
-    document.getElementById("job-extra").value = (job.extra_args || []).join(" ");
+  on("setup-job-pick", "change", (ev) => {
+    loadJobIntoForm(ev.target.value).catch((err) => actionError("加载 Job", err));
   });
   refreshJobTemplates().catch(() => {});
   document.getElementById("job-extra-args")?.addEventListener("input", (ev) => {
@@ -2734,7 +3309,14 @@ async function boot() {
   });
 
   document.getElementById("btn-models-refresh")?.addEventListener("click", () => refreshModels());
-  document.getElementById("model-select")?.addEventListener("change", syncModelDetail);
+  on("model-select", "change", () => {
+    const inline = $("model-action-result");
+    if (inline) {
+      inline.hidden = true;
+      inline.textContent = "";
+    }
+    syncModelDetail();
+  });
   document.getElementById("model-node")?.addEventListener("change", () => refreshModels());
   const runModelsAction = async (path, label, extra = {}) => {
     const node = document.getElementById("model-node")?.value;
@@ -2746,13 +3328,31 @@ async function boot() {
       else body.nodes = "all";
       if (path.endsWith("/verify") && model) body.model = model;
       const data = await api(path, { method: "POST", body: JSON.stringify(body) });
-      if (data.results?.length) showResults(data.results, label);
-      else writeConsoleText(data.result?.stdout || data.result?.stderr || label, { meta: label });
+      const rows = data.results || [];
+      const output = rows.length
+        ? rows
+            .map((r) => `[${resultOk(r) ? "OK" : "FAIL"}] ${r.node || r.host || "?"}\n${resultBody(r)}`)
+            .join("\n\n")
+        : [data.result?.stdout, data.result?.stderr].filter(Boolean).join("\n").trim() || label;
+      if (rows.length) showResults(rows, label);
+      else writeConsoleText(output, { meta: label });
+      const inline = $("model-action-result");
+      if (inline) {
+        inline.textContent = output;
+        inline.hidden = false;
+      }
       if (data.models) renderModels(data.models);
-      toast(data.result?.rc === 0 ? `${label}完成` : `${label}有失败`);
+      const ok = rows.length ? rows.every(resultOk) : data.result ? data.result.rc === 0 : true;
+      if (ok) toastOk(`${label}完成`);
+      else toastBad(`${label}有失败`);
     } catch (err) {
+      const inline = $("model-action-result");
+      if (inline) {
+        inline.textContent = String(err.message || err);
+        inline.hidden = false;
+      }
       writeConsoleText(String(err.message || err), { meta: label });
-      log(String(err.message || err));
+      actionError(label, err);
     } finally {
       setBusy(false);
     }
@@ -2766,8 +3366,13 @@ async function boot() {
   document.getElementById("btn-models-verify")?.addEventListener("click", () =>
     runModelsAction("/api/models/verify", "模型校验")
   );
-  document.getElementById("btn-models-install")?.addEventListener("click", async () => {
-    if (!confirm("在目标节点安装 huggingface_hub + modelscope？")) return;
+  on("btn-models-install", "click", async () => {
+    const ok = await confirmDialog({
+      title: "安装拉取工具",
+      message: "在目标节点安装 huggingface_hub + modelscope？",
+      confirmText: "安装",
+    });
+    if (!ok) return;
     await runModelsAction("/api/models/install-tools", "安装拉取工具");
   });
   document.getElementById("btn-models-download")?.addEventListener("click", async () => {
@@ -2776,8 +3381,13 @@ async function boot() {
     const tool = document.getElementById("pull-tool")?.value || "auto";
     const registerId = document.getElementById("pull-id")?.value.trim();
     const register = !!document.getElementById("pull-register")?.checked;
-    const node = document.getElementById("model-node")?.value;
-    if (!confirm(`下载 ${name}？`)) return;
+    const node = $("model-node")?.value;
+    const ok = await confirmDialog({
+      title: "下载模型",
+      message: `确认下载 ${name}${node ? ` 到 ${node}` : " 到全部节点"}？大模型可能耗时较长。`,
+      confirmText: "开始下载",
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       const body = { name, tool, register };
@@ -2797,10 +3407,15 @@ async function boot() {
       setBusy(false);
     }
   });
-  document.getElementById("btn-models-pull")?.addEventListener("click", async () => {
-    const model = document.getElementById("model-select")?.value;
+  on("btn-models-pull", "click", async () => {
+    const model = $("model-select")?.value;
     if (!model) return toast("请选择已登记模型");
-    if (!confirm(`重新拉取 ${model}？`)) return;
+    const ok = await confirmDialog({
+      title: "重新拉取模型",
+      message: `确认重新拉取 ${model}？`,
+      confirmText: "重新拉取",
+    });
+    if (!ok) return;
     await runModelsAction("/api/models/pull", "重拉", { model });
   });
   document.getElementById("btn-save-secrets")?.addEventListener("click", async () => {
@@ -2834,8 +3449,14 @@ async function boot() {
       setBusy(false);
     }
   });
-  document.getElementById("btn-clear-secrets")?.addEventListener("click", async () => {
-    if (!confirm("清除已保存的 HF / ModelScope Token？")) return;
+  on("btn-clear-secrets", "click", async () => {
+    const ok = await confirmDialog({
+      title: "清除 Token",
+      message: "清除已保存的 Hugging Face / ModelScope Token？",
+      confirmText: "清除",
+      tone: "danger",
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       await api("/api/models/secrets", { method: "POST", body: JSON.stringify({ kind: "hf", clear: true }) });
@@ -2894,7 +3515,12 @@ async function boot() {
       body.nodes = node;
       state.selectedNode = node;
     } else body.gpus = Number(document.getElementById("deploy-gpus").value);
-    if (!confirm(`确认部署 ${job}？`)) return;
+    const ok = await confirmDialog({
+      title: "部署 Job",
+      message: `确认部署 ${job}${body.nodes ? ` 到 ${body.nodes}` : `（${body.gpus} GPU）`}？`,
+      confirmText: "部署",
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       const data = await api("/api/deploy", { method: "POST", body: JSON.stringify(body) });
@@ -2910,19 +3536,24 @@ async function boot() {
     }
   });
 
-  document.getElementById("btn-queue-submit").addEventListener("click", async () => {
-    const job = document.getElementById("job-select").value;
-    if (!job) return log("请先选择任务");
+  on("btn-queue-submit", "click", async () => {
+    const job = $("job-select").value;
+    if (!job) return toastBad("请先在任务页选择 Job");
+    const meta = (state.overview?.jobs || []).find((j) => j.name === job);
+    const gpus = Number(
+      (meta && meta.gpus_per_node) || $("deploy-gpus")?.value || 4
+    );
     setBusy(true);
     try {
       const data = await api("/api/queue/submit", {
         method: "POST",
-        body: JSON.stringify({ job, gpus: 4, note: "from-ui" }),
+        body: JSON.stringify({ job, gpus, note: "from-ui" }),
       });
       log(data.result.stdout || "submitted");
+      toastOk(`已入队 ${job} · ${gpus} GPU`);
       await refresh(false);
     } catch (err) {
-      log(String(err.message || err));
+      actionError("任务入队", err);
     } finally {
       setBusy(false);
     }
@@ -2943,17 +3574,20 @@ async function boot() {
       log(data.result.stdout || "已添加");
       document.getElementById("add-name").value = "";
       document.getElementById("add-host").value = "";
+      $("add-labels").value = "";
+      stateSetup.data = null;
+      toastOk(`已添加节点 ${name}`);
       await refresh(false);
-      setView("nodes");
+      setView("nodes", { updateHash: false });
     } catch (err) {
-      log(String(err.message || err));
+      actionError("添加节点", err);
     } finally {
       setBusy(false);
     }
   });
 
   document.getElementById("btn-clear-console").addEventListener("click", () => {
-    writeConsoleText("已清空。点「跑一键连通」或上方运维卡片可再次产生输出。", {
+    writeConsoleText("已清空。点「一键连通」或上方运维卡片可再次产生输出。", {
       empty: true,
       meta: "已清空",
     });
@@ -2964,22 +3598,33 @@ async function boot() {
   document.getElementById("btn-console-connect").addEventListener("click", () => runOneclick("connect"));
 
   window.addEventListener("keydown", (ev) => {
-    if (ev.target && ["INPUT", "TEXTAREA", "SELECT"].includes(ev.target.tagName)) return;
+    if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.repeat) return;
+    const target = ev.target;
+    if (target && (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable)) {
+      return;
+    }
     const map = {
       1: "actions",
       2: "cluster",
-      3: "nodes",
-      4: "workloads",
-      5: "endpoints",
-      6: "ops",
-      7: "terminal",
-      8: "guide",
-      9: "config",
+      3: "workloads",
+      4: "models",
+      5: "toolkits",
+      6: "nodes",
+      7: "endpoints",
+      8: "ops",
+      9: "terminal",
+      g: "guide",
+      G: "guide",
+      c: "config",
+      C: "config",
     };
-    if (map[ev.key]) setView(map[ev.key]);
+    if (map[ev.key]) {
+      ev.preventDefault();
+      setView(map[ev.key]);
+    }
     if (ev.key === "r" || ev.key === "R") {
       ev.preventDefault();
-      document.getElementById("btn-refresh").click();
+      $("btn-refresh")?.click();
     }
     if (ev.key === "h" || ev.key === "H") {
       ev.preventDefault();
@@ -2992,15 +3637,19 @@ async function boot() {
     return;
   }
 
+  const route = currentRoute();
+  setView(route.view, { updateHash: false });
+  if (route.view === "config" && route.tab) setConfigTab(route.tab);
+
   setBusy(true);
   try {
     await refresh(false);
     await loadQuality();
-    setView("actions");
     await seedConsole();
+    hideConsoleUnread();
   } catch (err) {
     log(String(err.message || err));
-    writeConsoleText(`初始化失败：${err.message || err}\n\n仍可点「跑一键连通」尝试。`, {
+    writeConsoleText(`初始化失败：${err.message || err}\n\n可以点「一键连通」重试。`, {
       meta: "初始化失败",
     });
   } finally {

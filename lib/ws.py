@@ -72,6 +72,10 @@ def read_frame(sock_file: BinaryIO) -> tuple[int, bytes] | None:
         if len(ext) < 8:
             return None
         length = struct.unpack("!Q", ext)[0]
+    if length > 8 * 1024 * 1024:
+        # Terminal frames are tiny; reject oversized frames instead of
+        # allocating attacker-controlled memory.
+        return None
     mask = sock_file.read(4) if masked else b""
     if masked and len(mask) < 4:
         return None

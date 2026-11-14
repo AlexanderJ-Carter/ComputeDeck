@@ -275,22 +275,22 @@ def _companions(
     dir_bit = litellm_probe.get("dir") or ""
     if litellm_pid:
         ll_state, ll_label, ll_ok, sev = "running", "运行中", True, "ok"
-        detail = f":{litellm_port}" + (f" · {dir_bit}" if dir_bit else "")
+        detail = f"LiteLLM :{litellm_port}" + (f" · {dir_bit}" if dir_bit else "")
     elif litellm_probe.get("ready"):
         ll_state = "ready"
-        ll_label = "就绪未启" if ll_wanted else "可选·就绪"
+        ll_label = "就绪未启" if ll_wanted else "就绪"
         ll_ok, sev = True, "ok"
-        detail = f"可选 · :{litellm_port}" + (f" · {dir_bit}" if dir_bit else "")
+        detail = f"LiteLLM :{litellm_port} 可启动" + (f" · {dir_bit}" if dir_bit else "")
     else:
         ll_state = "blocked"
         ll_label = "缺依赖" if ll_wanted else "可选·未配"
         ll_ok = not ll_wanted
         sev = "warn" if ll_wanted else "info"
-        detail = "；".join(litellm_probe.get("reasons") or ["未配置"])
+        detail = "；".join(litellm_probe.get("reasons") or ["未安装 / 未配置"])
     rows.append(
         {
             "id": "litellm",
-            "name": "LiteLLM",
+            "name": "AI Gateway",
             "role": "optional",
             "required": ll_wanted,
             "state": ll_state,
@@ -442,6 +442,34 @@ def cmd_status(_: argparse.Namespace) -> int:
     return 0
 
 
+def _append_litellm_start(kind: str, gateway: dict, results: list[dict]) -> None:
+    """Start the AI Gateway when it is available, without making Edge depend on it."""
+    if kind == "litellm":
+        results.append(_start_litellm(gateway))
+        return
+    probe = _litellm_probe(gateway)
+    if probe.get("ready"):
+        row = _start_litellm(gateway)
+        row["optional"] = True
+        results.append(row)
+    else:
+        results.append(
+            {
+                "ok": True,
+                "name": "litellm",
+                "optional": True,
+                "skipped": True,
+                "reason": "；".join(probe.get("reasons") or ["未安装 / 未配置"]),
+                "hint": "装好 litellm[proxy] 或配置 gateway.openai_proxy_dir 后会自动随 entry 启动",
+            }
+        )
+
+
+def _results_ok(results: list[dict]) -> bool:
+    required = [row for row in results if not row.get("optional")]
+    return all(row.get("ok") for row in required) if required else False
+
+
 def cmd_ensure(args: argparse.Namespace) -> int:
     """按 cluster.gateway.ingress 规整配套：渲染产物并拉起应运行的主入口。"""
     cluster = _load_cluster()
@@ -467,12 +495,12 @@ def cmd_ensure(args: argparse.Namespace) -> int:
     results: list[dict] = []
     if kind in {"edge", "both", "all"}:
         results.append(_start_edge(ingress))
-    if kind in {"litellm", "both", "all"}:
-        results.append(_start_litellm(gateway))
+    if kind in {"edge", "litellm", "both", "all"}:
+        _append_litellm_start(kind, gateway, results)
     if kind == "nginx":
         results.append(cmd_nginx_apply_inner())
     status = status_payload()
-    ok = all(r.get("ok") for r in results) if results else status.get("ok", False)
+    ok = _results_ok(results) if results else status.get("ok", False)
     print(
         json.dumps(
             {
@@ -575,7 +603,10 @@ def _start_litellm(gateway: dict) -> dict:
         shutil.copy2(OUT_DIR / "litellm-model-list.yaml", frag_dst)
         cmd = ["bash", str(start_sh)]
         cwd = proxy_dir
+        # Support both common conventions used by custom start scripts.
         env["LITELLM_CONFIG"] = str(runtime)
+        env["LITELLM_CONFIG_PATH"] = str(runtime)
+        env["LITELLM_PORT"] = str(port)
     else:
         return {
             "ok": False,
@@ -617,11 +648,11 @@ def cmd_start(args: argparse.Namespace) -> int:
     results = []
     if kind in {"edge", "both", "all"}:
         results.append(_start_edge(ingress))
-    if kind in {"litellm", "both", "all"}:
-        results.append(_start_litellm(gateway))
+    if kind in {"edge", "litellm", "both", "all"}:
+        _append_litellm_start(kind, gateway, results)
     if kind == "nginx":
         results.append(cmd_nginx_apply_inner())
-    ok = all(r.get("ok") for r in results) if results else False
+    ok = _results_ok(results) if results else False
     print(json.dumps({"ok": ok, "kind": kind, "results": results, "status_hint": "gpu-control gateway status"}, ensure_ascii=False, indent=2))
     return 0 if ok else 1
 

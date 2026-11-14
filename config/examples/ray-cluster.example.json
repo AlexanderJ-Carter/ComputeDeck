@@ -1,0 +1,18 @@
+{
+  "name": "ray-cluster",
+  "description": "Ray 集群：rank0 起 head，其余节点 join；dashboard 见 MASTER_ADDR:8265。用 ray job submit 提交任务",
+  "kind": "service",
+  "gpus_per_node": 4,
+  "distributed": true,
+  "master_port": 6379,
+  "runtime": "process",
+  "python": "${paths.python}",
+  "script": "${paths.repo}/examples/ray_manager.py",
+  "extra_args": [],
+  "env": {
+    "GPU_CONTROL_JOB_NAME": "ray-cluster",
+    "GPU_CONTROL_JOB_RUNTIME": "${paths.workdir}/gpu-control-jobs/ray-cluster",
+    "RAY_DASHBOARD_PORT": "8265"
+  },
+  "actions": ["start", "stop", "restart", "status", "wait"]
+}

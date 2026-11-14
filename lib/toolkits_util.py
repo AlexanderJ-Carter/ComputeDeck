@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from paths import CONFIG_DIR, LOCAL_DIR, STATE_DIR
+from state_util import atomic_write_json
 
 STATE_FILE = STATE_DIR / "toolkits.json"
 
@@ -70,13 +71,23 @@ BUILTIN_TOOLKITS: list[dict[str, Any]] = [
         "install_pip": ["peft"],
     },
     {
+        "id": "ray",
+        "name": "Ray",
+        "group": "runtime",
+        "description": "分布式运行时 / Ray Job / Dashboard（可支撑跨机 vLLM TP/PP）",
+        "probe_import": "ray",
+        "probe_cli": "ray --version",
+        "install_pip": ["ray[default]"],
+        "related_jobs": ["ray-cluster"],
+    },
+    {
         "id": "vllm",
         "name": "vLLM",
         "group": "serve",
         "description": "高吞吐推理服务",
         "probe_import": "vllm",
         "install_pip": ["vllm"],
-        "related_jobs": ["vllm-docker"],
+        "related_jobs": ["vllm-docker", "vllm-serve"],
     },
     {
         "id": "openai-pkg",
@@ -100,6 +111,12 @@ BUNDLES: list[dict[str, Any]] = [
         "name": "推理栈",
         "description": "vLLM + OpenAI SDK（节点 pip；Docker 任务可另用镜像）",
         "toolkits": ["vllm", "openai-pkg"],
+    },
+    {
+        "id": "ray-stack",
+        "name": "Ray 分布式栈",
+        "description": "Ray + 训练/推理运行时常见依赖",
+        "toolkits": ["ray", "torch", "transformers"],
     },
 ]
 
@@ -155,7 +172,7 @@ def load_toolkit_state() -> dict[str, Any]:
 
 def save_toolkit_state(data: dict[str, Any]) -> Path:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    STATE_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    atomic_write_json(STATE_FILE, data)
     return STATE_FILE
 
 
