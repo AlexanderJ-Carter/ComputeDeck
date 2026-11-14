@@ -47,16 +47,24 @@ def _api_base() -> str:
     return (os.environ.get("GPU_CONTROL_API_BASE") or "").rstrip("/")
 
 
+def _api_token() -> str:
+    return (os.environ.get("GPU_CONTROL_API_TOKEN") or "").strip()
+
+
 def _http_json(method: str, path: str, body: dict | None = None, timeout: int = 120) -> Any:
     base = _api_base()
     if not base:
         raise RuntimeError("GPU_CONTROL_API_BASE 未设置")
     data = None if body is None else json.dumps(body).encode("utf-8")
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    token = _api_token()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(
         f"{base}{path}",
         data=data,
         method=method,
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        headers=headers,
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:

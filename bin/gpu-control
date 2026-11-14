@@ -1132,6 +1132,25 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return run_python("validate_config.py", *extra).returncode
 
 
+def cmd_auth(args: argparse.Namespace) -> int:
+    """Control-plane UI authentication (password / token / mode)."""
+    ensure_runtime()
+    cmd = [args.auth_action]
+    if args.auth_action == "set-password":
+        if args.password:
+            cmd.extend(["--password", args.password])
+        if args.generate:
+            cmd.append("--generate")
+        if args.enable:
+            cmd.append("--enable")
+    elif args.auth_action == "set-mode":
+        cmd.append(args.mode)
+    elif args.auth_action == "issue-token":
+        if args.enable:
+            cmd.append("--enable")
+    return run_python("auth_ops.py", *cmd).returncode
+
+
 def cmd_models(args: argparse.Namespace) -> int:
     """Optional models module: catalog / deps / verify / pull / paths."""
     ensure_runtime()
@@ -1630,6 +1649,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor = sub.add_parser("doctor", help="配置与运行环境自检（发布前）")
     p_doctor.add_argument("--json", action="store_true")
     p_doctor.set_defaults(func=cmd_doctor)
+
+    p_auth = sub.add_parser("auth", help="控制面 UI 鉴权（密码 / Token / 模式）")
+    p_auth.add_argument(
+        "auth_action",
+        choices=["status", "set-password", "set-mode", "issue-token"],
+    )
+    p_auth.add_argument("mode", nargs="?", choices=["none", "password", "oidc"], help="set-mode 目标")
+    p_auth.add_argument("--password", help="set-password 明文（省略则交互输入）")
+    p_auth.add_argument("--generate", action="store_true", help="set-password 随机生成")
+    p_auth.add_argument("--enable", action="store_true", help="写入后启用 mode=password")
+    p_auth.set_defaults(func=cmd_auth)
 
     p_procs = sub.add_parser("procs", help="列出 / 结束节点上的 GPU 占用进程")
     p_procs.add_argument("procs_action", choices=["list", "kill"], help="list|kill")

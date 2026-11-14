@@ -9,6 +9,7 @@ const state = {
   refreshInFlight: false,
   lb: null,
   models: null,
+  auth: null,
 };
 
 const VIEW_TITLE = {
@@ -262,9 +263,19 @@ async function seedConsole() {
 
 async function api(path, options = {}) {
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
-  const res = await fetch(path, { ...options, headers });
+  const res = await fetch(path, { credentials: "same-origin", ...options, headers });
   if (res.status === 304) return { __notModified: true, etag: res.headers.get("ETag") };
-  const data = await res.json();
+  let data = {};
+  try {
+    data = await res.json();
+  } catch (_) {
+    data = {};
+  }
+  if (res.status === 401 && path !== "/api/auth/login" && path !== "/api/auth/status") {
+    state.auth = data.auth || state.auth;
+    showAuthGate(true);
+    throw new Error(data.error || "需要登录");
+  }
   if (!res.ok) {
     const detail = data.results
       ? JSON.stringify(data.results, null, 2)
@@ -275,6 +286,65 @@ async function api(path, options = {}) {
   }
   if (res.headers.get("ETag")) data.__etag = res.headers.get("ETag");
   return data;
+}
+
+function showAuthGate(show) {
+  const gate = document.getElementById("auth-gate");
+  if (!gate) return;
+  gate.hidden = !show;
+  document.body.classList.toggle("auth-locked", !!show);
+  const logout = document.getElementById("btn-logout");
+  if (logout) logout.hidden = !!show || !(state.auth && state.auth.enabled);
+  if (show) {
+    const input = document.getElementById("auth-password");
+    if (input) setTimeout(() => input.focus(), 50);
+  }
+}
+
+async function refreshAuthStatus() {
+  const data = await api("/api/auth/status");
+  state.auth = data;
+  const needLogin = !!(data.enabled && !data.authenticated);
+  showAuthGate(needLogin);
+  const logout = document.getElementById("btn-logout");
+  if (logout) logout.hidden = !(data.enabled && data.authenticated);
+  const hint = document.getElementById("auth-hint");
+  if (hint && data.enabled) {
+    hint.textContent = data.password_configured
+      ? `模式 ${data.mode} · 会话 ${data.session_ttl_hours || 168}h`
+      : "已启用鉴权，但尚未设置密码（gpu-control auth set-password）";
+  }
+  return data;
+}
+
+async function submitLogin(ev) {
+  if (ev) ev.preventDefault();
+  const errEl = document.getElementById("auth-error");
+  const password = document.getElementById("auth-password").value;
+  errEl.hidden = true;
+  try {
+    const data = await api("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    });
+    state.auth = data.auth || data;
+    document.getElementById("auth-password").value = "";
+    showAuthGate(false);
+    toast("已登录");
+    await refresh(false);
+    await loadSetup();
+  } catch (err) {
+    errEl.textContent = String(err.message || err);
+    errEl.hidden = false;
+  }
+}
+
+async function logout() {
+  try {
+    await api("/api/auth/logout", { method: "POST", body: "{}" });
+  } catch (_) { }
+  await refreshAuthStatus();
+  toast("已退出");
 }
 
 function selectedFrom(selectId) {
@@ -1763,6 +1833,15 @@ async function boot() {
   document.querySelectorAll("#config-tabs .tab").forEach((btn) => {
     btn.addEventListener("click", () => setConfigTab(btn.dataset.tab));
   });
+  const authForm = document.getElementById("auth-form");
+  if (authForm) authForm.addEventListener("submit", submitLogin);
+  const logoutBtn = document.getElementById("btn-logout");
+  if (logoutBtn) logoutBtn.addEventListener("click", logout);
+  try {
+    await refreshAuthStatus();
+  } catch (err) {
+    log(String(err.message || err));
+  }
   setupAutoRefresh();
   document.getElementById("auto-refresh").addEventListener("change", setupAutoRefresh);
 
@@ -2155,6 +2234,11 @@ async function boot() {
       runApiHealth();
     }
   });
+
+  if (state.auth && state.auth.enabled && !state.auth.authenticated) {
+    writeConsoleText("控制台已锁定，请先登录。", { meta: "等待登录", empty: true });
+    return;
+  }
 
   setBusy(true);
   try {

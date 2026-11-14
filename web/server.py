@@ -42,6 +42,20 @@ from paths import (  # noqa: E402
 from node_paths import default_paths, node_paths  # noqa: E402
 from jobs_util import default_job_name  # noqa: E402
 from api_catalog import catalog_payload, openapi_payload  # noqa: E402
+from auth_util import (  # noqa: E402
+    COOKIE_NAME,
+    AuthPrincipal,
+    auth_status_payload,
+    authenticate_http,
+    extract_bearer,
+    issue_session,
+    load_auth_config,
+    parse_cookies,
+    session_cookie_header,
+    try_login,
+    verify_api_token,
+    verify_session,
+)
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 from render_gateway import (  # noqa: E402
@@ -960,18 +974,55 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", cache_control)
         self.send_header("X-GPU-Control-Version", UI_VERSION)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "same-origin")
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
         if etag:
             self.send_header("ETag", etag)
         if extra_headers:
             for key, value in extra_headers.items():
+                if value is None:
+                    continue
                 self.send_header(key, value)
         self.end_headers()
         if code != 304:
             self.wfile.write(body)
 
-    def _json(self, code: int, payload, *, etag: str | None = None) -> None:
+    def _json(
+        self,
+        code: int,
+        payload,
+        *,
+        etag: str | None = None,
+        extra_headers: dict | None = None,
+    ) -> None:
         data = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        self._send(code, data, "application/json; charset=utf-8", etag=etag)
+        self._send(
+            code,
+            data,
+            "application/json; charset=utf-8",
+            etag=etag,
+            extra_headers=extra_headers,
+        )
+
+    def _auth_gate(self, path: str, query: str = "") -> bool:
+        """Return True if request may proceed; False if 401 already sent."""
+        principal, err = authenticate_http(path=path, headers=self.headers, query=query)
+        self.auth_principal = principal
+        if err is None:
+            return True
+        cfg = load_auth_config()
+        self._json(
+            401,
+            {
+                "ok": False,
+                "error": err,
+                "auth": auth_status_payload(cfg=cfg, principal=None),
+            },
+            extra_headers={"WWW-Authenticate": 'Bearer realm="gpu-control"'},
+        )
+        return False
 
     def _read_body(self) -> dict:
         length = int(self.headers.get("Content-Length", "0"))
@@ -983,6 +1034,8 @@ class Handler(BaseHTTPRequestHandler):
         return json.loads(raw.decode("utf-8"))
 
     def _handle_terminal_ws(self, parsed) -> None:
+        if not self._auth_gate("/ws/terminal", parsed.query):
+            return
         qs = parse_qs(parsed.query)
         node = (qs.get("node") or [""])[0].strip()
         cols = int((qs.get("cols") or ["120"])[0])
@@ -1081,6 +1134,28 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/ws/terminal":
             self._handle_terminal_ws(parsed)
+            return
+
+        if path.startswith("/api") and not self._auth_gate(path, parsed.query):
+            return
+
+        if path == "/api/auth/status":
+            cfg = load_auth_config()
+            cookies = parse_cookies(self.headers.get("Cookie"))
+            real = verify_session(cookies.get(COOKIE_NAME, ""), cfg=cfg)
+            if not real:
+                bearer = extract_bearer(self.headers.get("Authorization"))
+                if bearer and verify_api_token(bearer, cfg=cfg):
+                    real = AuthPrincipal(subject="api-token", method="bearer", mode=cfg.mode)
+            self._json(200, auth_status_payload(cfg=cfg, principal=real))
+            return
+
+        if path == "/api/auth/me":
+            cfg = load_auth_config()
+            self._json(
+                200,
+                auth_status_payload(cfg=cfg, principal=getattr(self, "auth_principal", None)),
+            )
             return
 
         if path in {"/", "/index.html"}:
@@ -1235,6 +1310,44 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         body = self._read_body()
+
+        if path == "/api/auth/login":
+            cfg = load_auth_config()
+            if cfg.mode == "none":
+                self._json(200, {"ok": True, "auth": auth_status_payload(cfg=cfg)})
+                return
+            if cfg.mode != "password":
+                self._json(501, {"ok": False, "error": f"login not supported for mode={cfg.mode}"})
+                return
+            password = str(body.get("password") or "")
+            principal = try_login(password, cfg=cfg)
+            if not principal:
+                time.sleep(0.35)
+                self._json(401, {"ok": False, "error": "invalid password"})
+                return
+            token = issue_session(subject=principal.subject, cfg=cfg)
+            self._json(
+                200,
+                {"ok": True, "auth": auth_status_payload(cfg=cfg, principal=principal)},
+                extra_headers={
+                    "Set-Cookie": session_cookie_header(token, ttl_hours=cfg.session_ttl_hours),
+                },
+            )
+            return
+
+        if path == "/api/auth/logout":
+            cfg = load_auth_config()
+            self._json(
+                200,
+                {"ok": True, "auth": auth_status_payload(cfg=cfg, principal=None)},
+                extra_headers={
+                    "Set-Cookie": session_cookie_header("", ttl_hours=cfg.session_ttl_hours, clear=True),
+                },
+            )
+            return
+
+        if path.startswith("/api") and not self._auth_gate(path, parsed.query):
+            return
 
         if path == "/api/resources/refresh":
             with _action_lock:

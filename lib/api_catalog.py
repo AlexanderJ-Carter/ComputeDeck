@@ -20,6 +20,10 @@ def http_endpoints() -> list[dict]:
         {"method": "GET", "path": "/api", "summary": "API 目录（本列表）", "group": "meta"},
         {"method": "GET", "path": "/api/openapi.json", "summary": "OpenAPI 3 草图", "group": "meta"},
         {"method": "GET", "path": "/api/health", "summary": "UI 健康检查", "group": "meta"},
+        {"method": "GET", "path": "/api/auth/status", "summary": "鉴权状态（公开）", "group": "auth"},
+        {"method": "GET", "path": "/api/auth/me", "summary": "当前登录主体", "group": "auth"},
+        {"method": "POST", "path": "/api/auth/login", "summary": "密码登录（Set-Cookie）", "group": "auth"},
+        {"method": "POST", "path": "/api/auth/logout", "summary": "退出并清除 Cookie", "group": "auth"},
         {"method": "GET", "path": "/api/doctor", "summary": "配置自检 JSON", "group": "meta"},
         # read
         {"method": "GET", "path": "/api/overview", "summary": "集群总览（可 ?refresh=1）", "group": "read"},

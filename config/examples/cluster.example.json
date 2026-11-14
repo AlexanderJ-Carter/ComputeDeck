@@ -8,7 +8,20 @@
     "host": "10.0.0.10",
     "ui_host": "0.0.0.0",
     "ui_port": 8787,
-    "note": "CPU control host only — UI/CLI/Ansible; not a GPU worker"
+    "note": "CPU control host only — UI/CLI/Ansible; not a GPU worker",
+    "auth": {
+      "mode": "password",
+      "session_ttl_hours": 168,
+      "password_hash_file": "config/local/secrets/ui_password.hash",
+      "session_secret_file": "config/local/secrets/ui_session_secret",
+      "api_token_file": "config/local/secrets/ui_api_token",
+      "oidc": {
+        "issuer": "",
+        "client_id": "",
+        "client_secret_file": "config/local/secrets/oidc_client_secret",
+        "redirect_path": "/api/auth/oidc/callback"
+      }
+    }
   },
   "api": {
     "base_port": 8000,

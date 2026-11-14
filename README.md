@@ -12,6 +12,8 @@ uv venv .venv && uv pip install -r requirements.txt
 ./examples/quickstart.sh
 # 编辑 config/local/cluster.json、nodes.json
 gpu-control doctor && gpu-control ui --background
+# 建议启用控制面鉴权：
+# gpu-control auth set-password --generate --enable
 ```
 
 工作节点拉模型工具（按需）：`gpu-control models install-tools`  

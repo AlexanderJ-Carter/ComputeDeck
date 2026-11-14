@@ -121,6 +121,12 @@ def main() -> int:
     if handbook.is_file():
         notes.append("docs/手册.md present")
 
+    from auth_util import doctor_auth_notes
+
+    auth_issues, auth_notes = doctor_auth_notes(cluster if cluster else None)
+    issues.extend(auth_issues)
+    notes.extend(auth_notes)
+
     payload = {
         "ok": not issues,
         "issues": issues,

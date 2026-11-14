@@ -2,7 +2,9 @@
 
 把 gpu-control 交给 Cursor 或其他 Agent 调配置、启停 Job、腾空节点时用本页。
 
-**鉴权**：内网信任，无 token。不要把 `:8787` 暴露公网。
+**鉴权**：推荐 `gpu-control auth set-password --generate --enable`。  
+浏览器走 Session Cookie；脚本 / MCP 用 `Authorization: Bearer <token>`（`auth issue-token`）。  
+未开启鉴权时仅适合 SSH 隧道；不要把裸 `:8787` 暴露公网。
 
 ---
 
@@ -65,7 +67,8 @@ Cursor MCP 配置（示例见 `config/examples/mcp.cursor.json`）：
     "gpu-control": {
       "command": "/ABS/PATH/TO/gpu-control/bin/gpu-control-mcp",
       "env": {
-        "GPU_CONTROL_API_BASE": "http://127.0.0.1:8787"
+        "GPU_CONTROL_API_BASE": "http://127.0.0.1:8787",
+        "GPU_CONTROL_API_TOKEN": "<optional-bearer-from-auth-issue-token>"
       }
     }
   }

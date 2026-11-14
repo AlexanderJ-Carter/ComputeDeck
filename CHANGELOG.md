@@ -14,6 +14,24 @@
 
 ---
 
+## [0.12.0] - 2026-11-14
+
+### Added
+
+- 控制面可插拔鉴权：`none` / `password`（OIDC / WebAuthn 预留）
+- `gpu-control auth`：`status` · `set-password` · `set-mode` · `issue-token`
+- Session Cookie（HttpOnly / SameSite=Strict）+ API Bearer Token
+- 登录门禁 UI；`/api/*` 与终端 WebSocket 统一鉴权
+- 安全响应头：`X-Frame-Options` · `nosniff` · `Referrer-Policy` · `CORP`
+- `doctor` 对未开启鉴权给出 WARN；`GPU_CONTROL_REQUIRE_AUTH=1` 可升为硬失败
+
+### Notes
+
+- 密码哈希 / session secret / API token 仅存 `config/local/secrets/`
+- 推理入口（nginx / LiteLLM）鉴权仍由网关自身负责，与控制面鉴权分离
+
+---
+
 ## [0.11.1] - 2026-11-14
 
 ### Added
@@ -238,6 +256,7 @@
 4. **链接**：下方版本锚点在具备远程 tag 后可改为 compare URL。
 
 [Unreleased]: #unreleased
+[0.12.0]: #0120---2026-11-14
 [0.11.1]: #0111---2026-11-14
 [0.11.0]: #0110---2026-11-14
 [0.10.10]: #01010---2026-11-14
