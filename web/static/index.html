@@ -174,6 +174,7 @@
             </div>
             <div class="compact-fields">
               <label class="field"><span>任务</span><select id="quick-job"></select></label>
+              <span class="meta" id="quick-job-hint"></span>
               <label class="field">
                 <span>GPU 规模</span>
                 <select id="quick-gpus">
@@ -244,6 +245,7 @@
               <h2>任务操作</h2>
             </div>
             <label class="field"><span>任务</span><select id="job-select"></select></label>
+            <span id="job-select-hint" class="meta"></span>
             <label class="field">
               <span>目标节点</span>
               <select id="job-target">
@@ -263,6 +265,15 @@
               <button data-job-action="restart">重启</button>
               <button data-job-action="wait">等待就绪</button>
             </div>
+            <details class="fold" style="margin-top:10px">
+              <summary>从模板添加 Job</summary>
+              <div class="compact-fields" style="margin-top:8px">
+                <label class="field"><span>模板</span><select id="job-template" data-keep-enabled="1"></select></label>
+                <label class="field"><span>安装为名</span><input id="job-template-name" placeholder="可选，默认模板名" data-keep-enabled="1" /></label>
+                <button id="btn-install-job-template" class="primary tiny" data-keep-enabled="1">安装到 local/jobs</button>
+              </div>
+              <span class="meta" id="job-templates-meta"></span>
+            </details>
             <hr />
             <label class="field">
               <span>部署方式</span>
@@ -273,12 +284,7 @@
             </label>
             <label class="field" id="deploy-gpus-wrap">
               <span>部署 GPU 数</span>
-              <select id="deploy-gpus">
-                <option>4</option>
-                <option>8</option>
-                <option>12</option>
-                <option>16</option>
-              </select>
+              <input id="deploy-gpus" type="number" min="1" step="1" value="4" />
             </label>
             <label class="field" id="deploy-node-wrap" hidden>
               <span>指定节点</span>
@@ -542,10 +548,17 @@ gpu-control ui --background</pre>
 
             <div class="panel">
               <div class="panel-h">
-                <h2>4. 默认 Job</h2>
+                <h2>4. Job 编辑</h2>
                 <button id="btn-save-job" class="primary tiny" data-keep-enabled="1">保存</button>
               </div>
-              <p class="muted" style="margin-top:0">任意可启停脚本都是 Job；下方编辑 <code>cluster.default_job</code> 对应文件。</p>
+              <p class="muted" style="margin-top:0">
+                Job 是可插拔工作负载，不绑死某一个模型。先选已有 Job，或改名后保存为新文件。
+                默认任务写在上方「默认任务」。
+              </p>
+              <label class="field">
+                <span>选择已有</span>
+                <select id="setup-job-pick" data-keep-enabled="1"></select>
+              </label>
               <label class="field"><span>Job 名</span><input id="job-name" placeholder="my-service" /></label>
               <p class="path-line" id="setup-job-path">config/local/jobs/&lt;name&gt;.json</p>
               <label class="field"><span>描述</span><input id="job-desc" /></label>

@@ -29,7 +29,12 @@ from paths import (  # noqa: E402
     nodes_file,
 )
 from node_paths import group_nodes_by_job, load_nodes_data  # noqa: E402
-from jobs_util import default_job_name  # noqa: E402
+from jobs_util import (  # noqa: E402
+    default_job_name,
+    install_job_template,
+    list_job_templates,
+    load_job_summaries,
+)
 
 LEASES_FILE = STATE_DIR / "leases.json"
 QUEUE_FILE = STATE_DIR / "queue.json"
@@ -406,15 +411,50 @@ def run_job_on_nodes(
     return code
 
 
-def cmd_jobs(_: argparse.Namespace) -> int:
-    jobs = list_jobs()
-    if not jobs:
-        print("No jobs registered under jobs/")
+def cmd_jobs(args: argparse.Namespace) -> int:
+    action = getattr(args, "jobs_action", None) or "list"
+    if action == "templates":
+        rows = list_job_templates()
+        if getattr(args, "json", False):
+            print(json.dumps({"templates": rows}, ensure_ascii=False, indent=2))
+            return 0
+        if not rows:
+            print("No templates under config/examples or jobs/")
+            return 0
+        for t in rows:
+            mark = "installed" if t.get("installed") else "available"
+            print(
+                f"{t['id']}: {t.get('description', '')} "
+                f"[{t.get('runtime')}] ({mark})"
+            )
         return 0
+    if action == "install":
+        template = args.template
+        if not template:
+            die("jobs install 需要模板 id，如: gpu-control jobs install http-serve")
+        try:
+            result = install_job_template(template, name=args.name)
+        except (FileNotFoundError, ValueError, OSError) as exc:
+            die(str(exc))
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    jobs = load_job_summaries()
+    if getattr(args, "json", False):
+        print(json.dumps({
+            "jobs": jobs,
+            "default_job": default_job_name(),
+        }, ensure_ascii=False, indent=2))
+        return 0
+    if not jobs:
+        print("No jobs registered. Try: gpu-control jobs install shell-job")
+        return 0
+    print(f"default_job={default_job_name()}")
     for job in jobs:
         print(
             f"{job['name']}: {job.get('description', '')} "
-            f"(gpus_per_node={job.get('gpus_per_node', '?')})"
+            f"(gpus={job.get('gpus_per_node', '?')} "
+            f"runtime={job.get('runtime')} source={job.get('source')})"
         )
     return 0
 
@@ -1573,7 +1613,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_deploy.add_argument("--quiet", action="store_true")
     p_deploy.set_defaults(func=cmd_deploy)
 
-    p_jobs = sub.add_parser("jobs", help="列出已注册任务")
+    p_jobs = sub.add_parser("jobs", help="列出 / 安装任务（Job 插件）")
+    p_jobs.add_argument(
+        "jobs_action",
+        nargs="?",
+        default="list",
+        choices=["list", "templates", "install"],
+    )
+    p_jobs.add_argument("template", nargs="?", help="install 时的模板 id")
+    p_jobs.add_argument("--name", help="install 时写入的 Job 名（默认用模板名）")
+    p_jobs.add_argument("--json", action="store_true")
     p_jobs.set_defaults(func=cmd_jobs)
 
     p_gpu = sub.add_parser("gpu", help="查看 / 刷新 GPU 资源")

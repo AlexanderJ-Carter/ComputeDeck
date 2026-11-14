@@ -40,7 +40,12 @@ from paths import (  # noqa: E402
 )
 
 from node_paths import default_paths, node_paths  # noqa: E402
-from jobs_util import default_job_name  # noqa: E402
+from jobs_util import (  # noqa: E402
+    default_job_name,
+    install_job_template,
+    list_job_templates,
+    load_job_summaries,
+)
 from api_catalog import catalog_payload, openapi_payload  # noqa: E402
 from auth_util import (  # noqa: E402
     COOKIE_NAME,
@@ -189,22 +194,7 @@ def node_registry() -> dict:
 
 
 def list_jobs() -> list[dict]:
-    jobs = []
-    for path in list_job_files():
-        job = json.loads(path.read_text(encoding="utf-8"))
-        jobs.append({
-            "name": job.get("name") or path.stem,
-            "description": job.get("description") or "",
-            "gpus_per_node": job.get("gpus_per_node"),
-            "runtime": job.get("runtime") or "process",
-            "model": job.get("model") or "",
-            "python": job.get("python") or "",
-            "script": job.get("script") or "",
-            "extra_args": job.get("extra_args") or [],
-            "docker": job.get("docker") or None,
-            "actions": job.get("actions") or ["start", "stop", "restart", "status", "wait"],
-        })
-    return jobs
+    return load_job_summaries()
 
 
 def build_models_payload(node: str | None = None) -> dict:
@@ -561,17 +551,9 @@ def build_setup_status() -> dict:
     api_key_path = expand_path(api_key_raw) if api_key_raw else ""
 
     jobs = []
-    for path in list_job_files():
-        job = json.loads(path.read_text(encoding="utf-8"))
+    for job in load_job_summaries():
         jobs.append({
-            "name": job.get("name") or path.stem,
-            "description": job.get("description") or "",
-            "path": str(path),
-            "python": job.get("python"),
-            "script": job.get("script"),
-            "extra_args": job.get("extra_args") or [],
-            "gpus_per_node": job.get("gpus_per_node"),
-            "runtime": job.get("runtime") or "process",
+            **job,
             "python_exists": Path(expand_path(str(job.get("python") or ""))).exists()
             if job.get("python") and "${paths." not in str(job.get("python"))
             else None,
@@ -1240,7 +1222,15 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/jobs":
-            self._json(200, {"jobs": list_jobs()})
+            self._json(200, {
+                "jobs": list_jobs(),
+                "default_job": default_job_name(),
+                "templates": list_job_templates(),
+            })
+            return
+
+        if path == "/api/jobs/templates":
+            self._json(200, {"templates": list_job_templates()})
             return
 
         if path == "/api/models":
@@ -1591,6 +1581,27 @@ class Handler(BaseHTTPRequestHandler):
                 200,
                 {"result": result, "health": health, "overview": build_overview()},
             )
+            return
+
+        if path == "/api/jobs/install-template":
+            template_id = str(body.get("template") or body.get("id") or "").strip()
+            name = (body.get("name") or "").strip() or None
+            if not template_id:
+                self._json(400, {"error": "template required"})
+                return
+            try:
+                with _action_lock:
+                    installed = install_job_template(template_id, name=name)
+            except (FileNotFoundError, ValueError, OSError) as exc:
+                self._json(400, {"ok": False, "error": str(exc)})
+                return
+            self._json(200, {
+                "ok": True,
+                **installed,
+                "jobs": list_jobs(),
+                "templates": list_job_templates(),
+                "overview": build_overview(),
+            })
             return
 
         if path == "/api/gateway/render":

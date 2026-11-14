@@ -1058,28 +1058,123 @@ function bindNodeActions(root) {
   });
 }
 
+function jobOptionLabel(j) {
+  const src = j.source === "local" ? "local" : j.source === "builtin" ? "内置" : "";
+  const gpus = j.gpus_per_node != null ? `${j.gpus_per_node}GPU` : "";
+  const bits = [j.name, gpus, src].filter(Boolean);
+  return bits.join(" · ");
+}
+
 function renderJobs(jobs) {
-  const opts = (jobs || []).map((j) => `<option value="${j.name}">${j.name}</option>`).join("");
-  for (const id of ["job-select", "quick-job"]) {
+  const list = jobs || [];
+  const opts =
+    list.map((j) => `<option value="${escapeHtml(j.name)}">${escapeHtml(jobOptionLabel(j))}</option>`).join("") ||
+    `<option value="">（无任务 — 请安装模板）</option>`;
+  for (const id of ["job-select", "quick-job", "setup-job-pick"]) {
     const sel = document.getElementById(id);
     if (!sel) continue;
     const prev = sel.value;
-    sel.innerHTML = opts;
-    if ([...sel.options].some((o) => o.value === prev)) sel.value = prev;
+    const withEmpty =
+      id === "setup-job-pick"
+        ? `<option value="">— 选择已有 Job —</option>${opts}`
+        : opts;
+    sel.innerHTML = withEmpty;
+    if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
   }
-  document.getElementById("jobs").innerHTML =
-    (jobs || [])
-      .map((j) => {
-        const runtime = j.runtime || "process";
-        const args = (j.extra_args || []).join(" ");
-        return `<div class="item"><div><strong>${escapeHtml(j.name)}</strong>
+  const root = document.getElementById("jobs");
+  if (root) {
+    root.innerHTML =
+      list
+        .map((j) => {
+          const runtime = j.runtime || "process";
+          const args = (j.extra_args || []).join(" ");
+          const src = j.source || "";
+          return `<div class="item"><div><strong>${escapeHtml(j.name)}</strong>
           <div class="meta">${escapeHtml(j.description || "")}</div>
-          <div class="meta">${escapeHtml(runtime)}${j.model ? " · model=" + escapeHtml(j.model) : ""}
+          <div class="meta">${escapeHtml(runtime)}${src ? " · " + escapeHtml(src) : ""}${
+            j.model ? " · model=" + escapeHtml(j.model) : ""
+          }
           ${args ? " · " + escapeHtml(args) : ""}</div></div>
           <span class="chip">${j.gpus_per_node || "?"} GPU</span></div>`;
+        })
+        .join("") || '<div class="meta">暂无任务。展开「从模板添加 Job」安装通用模板。</div>';
+  }
+  syncJobArgsHint(list);
+  syncJobSelectHint(list);
+  syncDeployGpusDefault(list);
+}
+
+function syncJobSelectHint(jobs) {
+  const sel = document.getElementById("job-select");
+  const hint = document.getElementById("job-select-hint");
+  const quickHint = document.getElementById("quick-job-hint");
+  const job = (jobs || state.overview?.jobs || []).find((j) => j.name === sel?.value);
+  const text = job
+    ? `${job.description || ""} · ${job.runtime || "process"} · ${job.gpus_per_node ?? "?"}GPU/节点`
+    : "选择任务后可启动 / 部署；Decider 只是场景 Job 之一";
+  if (hint) hint.textContent = text;
+  if (quickHint) quickHint.textContent = text;
+}
+
+function syncDeployGpusDefault(jobs) {
+  const sel = document.getElementById("job-select") || document.getElementById("quick-job");
+  const input = document.getElementById("deploy-gpus");
+  const quick = document.getElementById("quick-gpus");
+  const job = (jobs || state.overview?.jobs || []).find((j) => j.name === sel?.value);
+  if (!job) return;
+  const per = Number(job.gpus_per_node || 4);
+  if (input && !input.dataset.touched) input.value = String(per);
+  if (quick) {
+    const values = [...new Set([per, per * 2, per * 3, per * 4, 4, 8, 16])].filter((n) => n > 0).sort((a, b) => a - b);
+    const prev = quick.value;
+    quick.innerHTML = values.map((n) => `<option value="${n}">${n}</option>`).join("");
+    if (values.map(String).includes(prev)) quick.value = prev;
+    else quick.value = String(per);
+  }
+}
+
+async function refreshJobTemplates() {
+  const data = await api("/api/jobs/templates");
+  const templates = data.templates || [];
+  const sel = document.getElementById("job-template");
+  const meta = document.getElementById("job-templates-meta");
+  if (sel) {
+    sel.innerHTML = templates
+      .map((t) => {
+        const mark = t.installed ? "已有" : "可装";
+        return `<option value="${escapeHtml(t.id)}">${escapeHtml(t.id)} · ${escapeHtml(
+          t.runtime || ""
+        )} (${mark})</option>`;
       })
-      .join("") || '<div class="meta">暂无任务</div>';
-  syncJobArgsHint(jobs);
+      .join("") || `<option value="">（无模板）</option>`;
+  }
+  if (meta) {
+    meta.textContent = templates.length
+      ? `${templates.length} 个模板（examples + 内置 jobs/）`
+      : "未发现模板";
+  }
+  return templates;
+}
+
+async function installSelectedJobTemplate() {
+  const template = document.getElementById("job-template")?.value;
+  const name = document.getElementById("job-template-name")?.value?.trim() || "";
+  if (!template) return toast("请选择模板");
+  setBusy(true);
+  try {
+    const data = await api("/api/jobs/install-template", {
+      method: "POST",
+      body: JSON.stringify({ template, name: name || undefined }),
+    });
+    toast(`已安装 Job：${data.name}`);
+    if (data.overview) applyOverview(data.overview);
+    else await refresh(false);
+    await refreshJobTemplates();
+  } catch (err) {
+    toast(String(err.message || err));
+  } finally {
+    setBusy(false);
+  }
 }
 
 function syncJobArgsHint(jobs) {
@@ -1091,6 +1186,8 @@ function syncJobArgsHint(jobs) {
   const args = (job?.extra_args || []).join(" ");
   hint.textContent = args ? `默认：${args}` : "";
   if (input && !input.dataset.touched) input.placeholder = args || "--flag value";
+  syncJobSelectHint(jobs);
+  syncDeployGpusDefault(jobs);
 }
 
 function renderSecretsMeta(secrets) {
@@ -1632,8 +1729,17 @@ function fillSetupForm(data) {
   document.getElementById("cluster-avoid").value = (scheduling.avoid_labels || []).join(",");
   document.getElementById("nodes-editor").value = nodesDocToEditor(data.nodes || {});
 
+  const pick = document.getElementById("setup-job-pick");
+  if (pick) {
+    const opts = (data.jobs || [])
+      .map((j) => `<option value="${escapeHtml(j.name)}">${escapeHtml(jobOptionLabel(j))}</option>`)
+      .join("");
+    pick.innerHTML = `<option value="">— 选择已有 Job —</option>${opts}`;
+    if (defaultJob) pick.value = defaultJob;
+  }
   const job =
-    (data.jobs || []).find((j) => j.name === defaultJob) || (data.jobs || [])[0];
+    (data.jobs || []).find((j) => j.name === (pick?.value || defaultJob)) ||
+    (data.jobs || [])[0];
   if (job) {
     document.getElementById("job-name").value = job.name || defaultJob;
     document.getElementById("setup-job-path").textContent =
@@ -2042,6 +2148,30 @@ async function boot() {
   document.getElementById("job-select")?.addEventListener("change", () => {
     syncJobArgsHint(state.overview?.jobs);
   });
+  document.getElementById("quick-job")?.addEventListener("change", () => {
+    const quick = document.getElementById("quick-job");
+    const sel = document.getElementById("job-select");
+    if (sel && quick) sel.value = quick.value;
+    syncJobArgsHint(state.overview?.jobs);
+  });
+  document.getElementById("deploy-gpus")?.addEventListener("input", (ev) => {
+    ev.target.dataset.touched = "1";
+  });
+  document.getElementById("btn-install-job-template")?.addEventListener("click", installSelectedJobTemplate);
+  document.getElementById("setup-job-pick")?.addEventListener("change", () => {
+    const name = document.getElementById("setup-job-pick").value;
+    const job = (stateSetup.data?.jobs || state.overview?.jobs || []).find((j) => j.name === name);
+    if (!job) return;
+    document.getElementById("job-name").value = job.name || "";
+    document.getElementById("setup-job-path").textContent =
+      job.path || `config/local/jobs/${job.name}.json`;
+    document.getElementById("job-desc").value = job.description || "";
+    document.getElementById("job-gpus").value = job.gpus_per_node ?? 4;
+    document.getElementById("job-python").value = job.python || "";
+    document.getElementById("job-script").value = job.script || "";
+    document.getElementById("job-extra").value = (job.extra_args || []).join(" ");
+  });
+  refreshJobTemplates().catch(() => {});
   document.getElementById("job-extra-args")?.addEventListener("input", (ev) => {
     ev.target.dataset.touched = "1";
   });

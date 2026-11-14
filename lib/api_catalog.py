@@ -27,7 +27,9 @@ def http_endpoints() -> list[dict]:
         {"method": "GET", "path": "/api/doctor", "summary": "配置自检 JSON", "group": "meta"},
         # read
         {"method": "GET", "path": "/api/overview", "summary": "集群总览（可 ?refresh=1）", "group": "read"},
-        {"method": "GET", "path": "/api/jobs", "summary": "已注册 Job 列表", "group": "read"},
+        {"method": "GET", "path": "/api/jobs", "summary": "已注册 Job + 模板摘要", "group": "read"},
+        {"method": "GET", "path": "/api/jobs/templates", "summary": "可安装 Job 模板", "group": "read"},
+        {"method": "POST", "path": "/api/jobs/install-template", "summary": "安装模板到 local/jobs", "group": "ops"},
         {"method": "GET", "path": "/api/models", "summary": "模型/缓存/路径（?node=）", "group": "read"},
         {"method": "GET", "path": "/api/leases", "summary": "占用登记", "group": "read"},
         {"method": "GET", "path": "/api/queue", "summary": "工作负载队列", "group": "read"},

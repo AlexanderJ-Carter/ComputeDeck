@@ -1,0 +1,11 @@
+{
+  "name": "shell-job",
+  "description": "通用：任意 start/stop/status 管理脚本（examples/job_manager_stub.py）",
+  "gpus_per_node": 1,
+  "runtime": "process",
+  "python": "${paths.python}",
+  "script": "${paths.repo}/examples/job_manager_stub.py",
+  "extra_args": [],
+  "env": {},
+  "actions": ["start", "stop", "restart", "status", "wait"]
+}

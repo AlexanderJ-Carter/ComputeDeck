@@ -1,11 +1,15 @@
 # jobs/
 
-Job 是**可插拔工作负载**：任意能远程 start/stop/status 的脚本或容器。  
-**不绑定** Decider / 某一模型；那些只是示例。
+框架自带的**通用 Job**（可直接出现在 UI「任务」下拉框）：
 
-- 真实配置：`config/local/jobs/<name>.json`（gitignore）
-- 模板：`config/examples/shell-job.example.json`、`http-serve.example.json`、`job-docker.example.json`
-- 领域示例（可删）：`decider.example.json`
-- 最小管理脚本：`examples/job_manager_stub.py`
+| 文件 | 用途 |
+|------|------|
+| `shell-job.json` | 任意进程管理脚本 |
+| `http-serve.json` | HTTP / 推理服务管理脚本模板 |
+| `vllm-docker.json` | Docker + vLLM 示例 |
 
-详见 [docs/手册.md](../docs/手册.md) §6。
+场景专用 Job（如 Decider）只放 `config/local/jobs/`，不要写进本目录。
+
+- 覆盖：同名文件在 `config/local/jobs/` 优先于 `jobs/`
+- 更多模板：`config/examples/*.example.json`
+- 安装模板：`gpu-control jobs install <template>` 或 UI「从模板添加」

@@ -14,6 +14,20 @@
 
 ---
 
+## [0.13.1] - 2026-11-14
+
+### Added
+
+- 框架内置 Job：`jobs/shell-job` · `http-serve` · `vllm-docker`（UI 任务下拉直接可见）
+- `gpu-control jobs templates|install`；`GET/POST /api/jobs/templates|install-template`
+- UI：从模板添加 Job；配置页可选已有 Job；部署 GPU 数按任务自适应
+
+### Fixed
+
+- 「部署参数 / 任务」不再看起来像只有 Decider：多 Job 列表 + 来源标记（builtin/local）
+
+---
+
 ## [0.13.0] - 2026-11-14
 
 ### Added
@@ -273,6 +287,7 @@
 4. **链接**：下方版本锚点在具备远程 tag 后可改为 compare URL。
 
 [Unreleased]: #unreleased
+[0.13.1]: #0131---2026-11-14
 [0.13.0]: #0130---2026-11-14
 [0.12.0]: #0120---2026-11-14
 [0.11.1]: #0111---2026-11-14
