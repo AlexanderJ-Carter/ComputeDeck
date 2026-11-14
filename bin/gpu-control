@@ -1101,12 +1101,15 @@ def cmd_endpoints(args: argparse.Namespace) -> int:
 
 
 def cmd_gateway(args: argparse.Namespace) -> int:
-    """Render nginx / curl / LiteLLM notes for the inference pool."""
-    run_python_capture("render_endpoints.py", "--write")
-    cmd = ["--write", "--listen", str(args.listen)]
-    if args.json:
-        cmd.append("--json")
-    return run_python("render_gateway.py", *cmd).returncode
+    """Manage control-host ingress (edge / LiteLLM / nginx artifacts)."""
+    ensure_runtime()
+    action = getattr(args, "gateway_action", None) or "render"
+    cmd = [action]
+    if action in {"render", "nginx"} and args.listen is not None:
+        cmd.extend(["--listen", str(args.listen)])
+    if action in {"start", "stop"} and getattr(args, "kind", None):
+        cmd.extend(["--kind", args.kind])
+    return run_python("gateway_ops.py", *cmd).returncode
 
 
 def cmd_health(args: argparse.Namespace) -> int:
@@ -1633,10 +1636,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_gateway = sub.add_parser(
         "gateway",
-        help="渲染网关产物：nginx 上游 / curl 示例 / LiteLLM 对接说明",
+        help="Control 统一入口：edge 反代 / LiteLLM / nginx 产物",
     )
-    p_gateway.add_argument("--listen", type=int, default=18080, help="nginx listen 端口")
-    p_gateway.add_argument("--json", action="store_true")
+    p_gateway.add_argument(
+        "gateway_action",
+        nargs="?",
+        default="render",
+        choices=["render", "status", "start", "stop", "nginx", "install-litellm"],
+        help="默认 render",
+    )
+    p_gateway.add_argument("--listen", type=int, default=None, help="edge/nginx listen 端口")
+    p_gateway.add_argument(
+        "--kind",
+        choices=["edge", "litellm", "both", "nginx", "all"],
+        help="start/stop 目标（默认读 cluster.gateway.ingress.kind）",
+    )
+    p_gateway.add_argument("--json", action="store_true", help="兼容旧参数（忽略）")
     p_gateway.set_defaults(func=cmd_gateway)
 
     p_health = sub.add_parser("health", help="探测全部推理 API 健康（默认各节点本地探测）")

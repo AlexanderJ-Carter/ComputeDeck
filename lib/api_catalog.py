@@ -37,6 +37,7 @@ def http_endpoints() -> list[dict]:
         {"method": "GET", "path": "/api/endpoints/health", "summary": "推理 API 健康缓存", "group": "read"},
         {"method": "GET", "path": "/api/endpoints/lb", "summary": "负载计划 ?strategy=", "group": "read"},
         {"method": "GET", "path": "/api/gateway", "summary": "网关片段/拓扑", "group": "read"},
+        {"method": "GET", "path": "/api/gateway/status", "summary": "Control 统一入口状态", "group": "read"},
         {"method": "GET", "path": "/api/setup", "summary": "配置向导状态", "group": "config"},
         {"method": "GET", "path": "/api/setup/guide", "summary": "上手步骤", "group": "config"},
         {"method": "GET", "path": "/api/config/cluster", "summary": "读取 cluster.json", "group": "config"},
@@ -101,6 +102,8 @@ def http_endpoints() -> list[dict]:
         {"method": "POST", "path": "/api/probe/run", "summary": "跑互通探测", "group": "ops"},
         {"method": "POST", "path": "/api/endpoints/health/run", "summary": "跑 API 健康探测", "group": "ops"},
         {"method": "POST", "path": "/api/gateway/render", "summary": "写出网关文件", "group": "ops"},
+        {"method": "POST", "path": "/api/gateway/start", "summary": "启动 edge/LiteLLM 入口 body.kind", "group": "ops"},
+        {"method": "POST", "path": "/api/gateway/stop", "summary": "停止入口 body.kind", "group": "ops"},
         {"method": "POST", "path": "/api/actions/oneclick", "summary": "一键运维 body.action", "group": "ops"},
         {
             "method": "WS",

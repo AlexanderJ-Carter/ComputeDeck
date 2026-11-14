@@ -1283,6 +1283,15 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, _build_gateway_payload())
             return
 
+        if path == "/api/gateway/status":
+            result = run_cli(["gateway", "status"], timeout=30)
+            try:
+                status = json.loads(result["stdout"] or "{}")
+            except json.JSONDecodeError:
+                status = {"ok": False, "error": "status parse failed", "result": result}
+            self._json(200 if result["rc"] == 0 else 500, status)
+            return
+
         if path == "/api/setup/guide":
             self._json(200, {"guide": SETUP_GUIDE})
             return
@@ -1588,6 +1597,31 @@ class Handler(BaseHTTPRequestHandler):
             payload = _build_gateway_payload()
             written = write_gateway_artifacts(payload)
             self._json(200, {**payload, "written": written})
+            return
+
+        if path == "/api/gateway/start":
+            kind = str(body.get("kind") or "").strip()
+            args = ["gateway", "start"]
+            if kind:
+                args.extend(["--kind", kind])
+            with _action_lock:
+                result = run_cli(args, timeout=60)
+            try:
+                payload = json.loads(result["stdout"] or "{}")
+            except json.JSONDecodeError:
+                payload = {"ok": False, "result": result}
+            self._json(200 if result["rc"] == 0 else 500, {**payload, "result": result})
+            return
+
+        if path == "/api/gateway/stop":
+            kind = str(body.get("kind") or "all").strip() or "all"
+            with _action_lock:
+                result = run_cli(["gateway", "stop", "--kind", kind], timeout=30)
+            try:
+                payload = json.loads(result["stdout"] or "{}")
+            except json.JSONDecodeError:
+                payload = {"ok": False, "result": result}
+            self._json(200 if result["rc"] == 0 else 500, {**payload, "result": result})
             return
 
         if path == "/api/procs":

@@ -710,6 +710,60 @@ async function renderGatewayFiles() {
     const written = data.written || {};
     toast(`已写出 ${Object.keys(written).length} 个网关文件 → state/gateway/`);
     log(Object.entries(written).map(([k, v]) => `${k}: ${v}`).join("\n") || "gateway rendered");
+    await refreshIngressStatus();
+  } catch (err) {
+    toast(String(err.message || err));
+  } finally {
+    setBusy(false);
+  }
+}
+
+function renderIngressMeta(status) {
+  const el = document.getElementById("ingress-meta");
+  if (!el || !status) return;
+  const edge = status.edge || {};
+  const ll = status.litellm || {};
+  el.textContent = [
+    `对外入口 ${status.public_base_url || "-"}`,
+    `edge ${edge.running ? "运行中" : "未运行"}${edge.pid ? " pid=" + edge.pid : ""}`,
+    `litellm ${ll.running ? "运行中" : "未运行"}`,
+    `nginx ${status.nginx && status.nginx.binary ? "已装" : "未装（可用内置 edge）"}`,
+  ].join(" · ");
+}
+
+async function refreshIngressStatus() {
+  const data = await api("/api/gateway/status");
+  renderIngressMeta(data);
+  return data;
+}
+
+async function startIngress() {
+  setBusy(true);
+  try {
+    const data = await api("/api/gateway/start", {
+      method: "POST",
+      body: JSON.stringify({ kind: "edge" }),
+    });
+    toast(data.ok ? "统一入口已启动" : "启动失败");
+    log(JSON.stringify(data.results || data, null, 2));
+    await refreshIngressStatus();
+  } catch (err) {
+    toast(String(err.message || err));
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function stopIngress() {
+  setBusy(true);
+  try {
+    const data = await api("/api/gateway/stop", {
+      method: "POST",
+      body: JSON.stringify({ kind: "all" }),
+    });
+    toast("入口已停止");
+    log(JSON.stringify(data.results || data, null, 2));
+    await refreshIngressStatus();
   } catch (err) {
     toast(String(err.message || err));
   } finally {
@@ -1903,6 +1957,17 @@ async function boot() {
     document.getElementById("client-snippet").textContent = activeSnippet(state.lb);
   });
   document.getElementById("btn-gateway-render").addEventListener("click", renderGatewayFiles);
+  document.getElementById("btn-ingress-start").addEventListener("click", startIngress);
+  document.getElementById("btn-ingress-stop").addEventListener("click", stopIngress);
+  document.getElementById("btn-ingress-status").addEventListener("click", async () => {
+    try {
+      const data = await refreshIngressStatus();
+      log(JSON.stringify(data, null, 2));
+      toast("入口状态已刷新");
+    } catch (err) {
+      toast(String(err.message || err));
+    }
+  });
   document.getElementById("btn-save-ssh").addEventListener("click", saveSsh);
   document.getElementById("btn-test-ssh").addEventListener("click", testSsh);
   document.getElementById("btn-render").addEventListener("click", async () => {

@@ -375,11 +375,15 @@
               <button id="btn-api-health-2" class="primary tiny">探测 API</button>
               <button id="btn-lb-refresh" class="ghost tiny" data-keep-enabled="1">刷新负载计划</button>
               <button id="btn-gateway-render" class="ghost tiny" data-keep-enabled="1">写出网关配置</button>
+              <button id="btn-ingress-start" class="primary tiny" data-keep-enabled="1">启动统一入口</button>
+              <button id="btn-ingress-stop" class="ghost tiny" data-keep-enabled="1">停止入口</button>
+              <button id="btn-ingress-status" class="ghost tiny" data-keep-enabled="1">入口状态</button>
             </div>
           </div>
           <div class="panel-h" style="margin-top:0">
             <span class="meta" id="pool-meta"></span>
           </div>
+          <p class="meta" id="ingress-meta">统一入口未加载</p>
           <div id="api-mosaic" class="api-mosaic"></div>
           <details class="fold">
             <summary>端口 / 网关拓扑</summary>

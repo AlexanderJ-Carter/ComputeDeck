@@ -14,6 +14,23 @@
 
 ---
 
+## [0.13.0] - 2026-11-14
+
+### Added
+
+- Control **内置 Edge 反向代理**：`gpu-control gateway start --kind edge`（统一对外端口 → 内网 GPU endpoints）
+- `gateway status|start|stop|nginx|install-litellm`；UI「启动/停止统一入口」
+- `cluster.gateway.ingress`：`bind` / `port` / `kind` / `public_base_url`
+- HTTP：`/api/gateway/status|start|stop`
+
+### Notes
+
+- 无 nginx 时用内置 edge；有 nginx 仍可 `include` 生成的 conf
+- LiteLLM 需本机 `litellm` 或 `openai_proxy_dir/start_litellm.sh`
+- 推理入口与 UI `:8787` 分离；UI 鉴权不替代推理 API 鉴权
+
+---
+
 ## [0.12.0] - 2026-11-14
 
 ### Added
@@ -256,6 +273,7 @@
 4. **链接**：下方版本锚点在具备远程 tag 后可改为 compare URL。
 
 [Unreleased]: #unreleased
+[0.13.0]: #0130---2026-11-14
 [0.12.0]: #0120---2026-11-14
 [0.11.1]: #0111---2026-11-14
 [0.11.0]: #0110---2026-11-14

@@ -42,7 +42,7 @@ Agent 改配置走 `POST /api/config/{cluster,nodes,job/NAME}` 或 MCP `gc_put_c
 | 任务 | 任意 Job 启停（JSON 插件） |
 | 模型 | 下载 / 校验 / 登记 |
 | 节点 | inventory 增删 |
-| API 端点 | 健康 · 网关片段 |
+| API 端点 | 健康 · 统一入口（edge/nginx/LiteLLM） |
 | 命令 / 终端 | 批量 exec · 交互 SSH |
 
 ## 常用命令
@@ -55,9 +55,12 @@ gpu-control free --node <name> --wait 30 [--cordon]
 gpu-control models deps && gpu-control models verify
 gpu-control models pull --model <id>
 gpu-control deploy <job> --gpus 4
+gpu-control gateway start --kind edge   # Control 统一推理入口 :18080
+gpu-control gateway status
 ```
 
-路径异构：`nodes.json` → `defaults.paths` + 节点覆盖；Job/models 用 `${paths.*}`。详见手册。
+路径异构：`nodes.json` → `defaults.paths` + 节点覆盖；Job/models 用 `${paths.*}`。详见手册。  
+统一入口务必在 **Control** 上启动（不要在 GPU worker 上起）。
 
 ## 配置
 

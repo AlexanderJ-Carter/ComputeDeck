@@ -129,9 +129,15 @@ def build_topology(cluster: dict, catalog: dict, health: dict) -> dict:
                 "endpoint_count": endpoint_count,
             },
             "edge_lb": {
-                "role": "optional raw HTTP LB (nginx)",
+                "role": "control-host raw HTTP LB (builtin edge and/or nginx)",
+                "builtin": "gpu-control gateway start --kind edge",
                 "artifact": str(OUT_DIR / "nginx-inference-pool.conf"),
-                "listen": int(gateway.get("nginx_listen") or 18080),
+                "listen": int(
+                    ((gateway.get("ingress") or {}).get("port"))
+                    or gateway.get("nginx_listen")
+                    or 18080
+                ),
+                "ingress": gateway.get("ingress") or {},
             },
             "ai_gateway": {
                 "role": "optional OpenAI-compatible proxy (LiteLLM etc.)",
@@ -149,7 +155,7 @@ def build_topology(cluster: dict, catalog: dict, health: dict) -> dict:
                 "dir": str(proxy_dir) if proxy_dir else None,
             },
             "control_plane": {
-                "role": "inventory / health / render only — does not proxy traffic",
+                "role": "UI/CLI/MCP orchestration; optional edge process on same host",
                 "ui_port": ui_port,
             },
         },
