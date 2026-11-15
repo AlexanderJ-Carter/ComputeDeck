@@ -87,6 +87,34 @@ class JobInstallTests(unittest.TestCase):
             [],
         )
 
+    def test_list_job_files_skips_appledouble(self) -> None:
+        import paths
+
+        builtin = Path(self.tmp.name) / "builtin"
+        builtin.mkdir()
+        (builtin / "shell-job.json").write_text(
+            json.dumps({
+                "name": "shell-job",
+                "runtime": "process",
+                "python": "python3",
+                "script": "/tmp/m.py",
+                "actions": ["start", "stop", "status", "wait"],
+            }),
+            encoding="utf-8",
+        )
+        (builtin / "._shell-job.json").write_bytes(b"\x00\x05\x16\x07Mac OS X")
+        with mock.patch.object(paths, "JOBS_DIR", builtin), mock.patch.object(
+            paths, "LOCAL_JOBS_DIR", self.local_jobs
+        ):
+            names = [p.name for p in paths.list_job_files()]
+        self.assertEqual(names, ["shell-job.json"])
+        # 摘要加载也不应因 AppleDouble 崩掉
+        with mock.patch.object(paths, "JOBS_DIR", builtin), mock.patch.object(
+            paths, "LOCAL_JOBS_DIR", self.local_jobs
+        ), mock.patch.object(jobs_util, "list_job_files", paths.list_job_files):
+            rows = jobs_util.load_job_summaries()
+        self.assertEqual([r["name"] for r in rows], ["shell-job"])
+
 
 if __name__ == "__main__":
     unittest.main()

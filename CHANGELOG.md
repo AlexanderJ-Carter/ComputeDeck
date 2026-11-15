@@ -15,6 +15,7 @@
 
 - CHANGELOG 补 `0.22.0` 锚点；`prepare_release` 发版时同步写入锚点并去掉空分类壳
 - 文档对齐：官方 GHCR 已 Public；统一「不发 PyPI/npm」表述
+- 跳过 Job 目录里的 macOS `._*` AppleDouble，避免 UI/助手 `utf-8` 解码失败；助手密钥路径按 `Path` 解析
 
 ---
 

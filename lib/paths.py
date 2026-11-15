@@ -89,7 +89,9 @@ def list_job_files() -> list[Path]:
         if not folder.is_dir():
             continue
         for path in sorted(folder.glob("*.json")):
-            if path.name.endswith(".example.json"):
+            name = path.name
+            # 跳过 macOS AppleDouble（._*.json）与隐藏文件
+            if name.startswith(".") or name.endswith(".example.json"):
                 continue
             found[path.stem] = path
     return [found[k] for k in sorted(found)]

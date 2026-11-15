@@ -132,7 +132,12 @@ def load_job_summaries() -> list[dict]:
     """加载已注册 Job 摘要列表（供 ``/api/jobs``）。"""
     rows = []
     for path in list_job_files():
-        job = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            job = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(job, dict):
+            continue
         name = job.get("name") or path.stem
         runtime = job.get("runtime") or "process"
         rows.append({

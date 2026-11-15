@@ -38,11 +38,11 @@ def load_assistant_config(cluster: dict[str, Any] | None = None) -> dict[str, An
     api_key = (os.environ.get(key_env) or "").strip()
     key_file = str(raw.get("api_key_file") or "").strip()
     if not api_key and key_file:
-        path = expand_path(key_file)
+        path = Path(expand_path(key_file))
         if not path.is_absolute():
             path = (Path.cwd() / path).resolve()
         if path.is_file():
-            api_key = path.read_text(encoding="utf-8").strip()
+            api_key = path.read_text(encoding="utf-8", errors="strict").strip()
     timeout_sec = int(raw.get("timeout_sec") or 60)
     return {
         "enabled": enabled,

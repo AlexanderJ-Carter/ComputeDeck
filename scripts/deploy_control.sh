@@ -12,8 +12,15 @@ DIR="${CONTROL_DIR:-/home/sankuai/gpu-control}"
 
 cd "$ROOT"
 echo "== sync → ${HOST}:${DIR} =="
+# 禁止 macOS 把 AppleDouble（._*）打进归档
 export COPYFILE_DISABLE=1
+export COPY_EXTENDED_ATTRIBUTES_DISABLE=1
+TAR_FLAGS=(-cf -)
+if tar --help 2>&1 | grep -q -- '--no-xattrs'; then
+  TAR_FLAGS=(--no-xattrs --no-mac-metadata -cf -)
+fi
 tar \
+  "${TAR_FLAGS[@]}" \
   --exclude='.venv' \
   --exclude='state' \
   --exclude='config/local' \
@@ -24,13 +31,16 @@ tar \
   --exclude='web/static/help' \
   --exclude='.DS_Store' \
   --exclude='demo' \
-  -cf - . \
-| ssh -o BatchMode=yes "$HOST" "mkdir -p '$DIR' && cd '$DIR' && tar xf -"
+  --exclude='._*' \
+  --exclude='**/._*' \
+  . \
+| ssh -o BatchMode=yes "$HOST" "mkdir -p '$DIR' && cd '$DIR' && tar xf - && find . -name '._*' -type f -delete"
 
 echo "== restart UI =="
 ssh -o BatchMode=yes "$HOST" "bash -s" <<REMOTE
 set -euo pipefail
 cd '$DIR'
+find . -name '._*' -type f -delete 2>/dev/null || true
 if [[ -f state/ui.pid ]]; then kill "\$(cat state/ui.pid)" 2>/dev/null || true; fi
 pkill -f '[.]venv/bin/python web/server.py' 2>/dev/null || true
 pkill -f '[p]ython web/server.py' 2>/dev/null || true
