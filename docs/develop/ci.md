@@ -25,10 +25,34 @@ gpu-control doctor
 
 ## GitHub Actions
 
-工作流文件：仓库根目录 `.github/workflows/ci.yml`。
+| 工作流 | 触发 | 作用 |
+|--------|------|------|
+| `.github/workflows/ci.yml` | `main` push / PR | `check.sh` + MkDocs `--strict` |
+| `.github/workflows/pages.yml` | `demo/**` 变更 | 发布宣传展板到 GitHub Pages |
+| `.github/workflows/release.yml` | tag `vX.Y.Z` | 校验版本 → 检查 → 用 CHANGELOG 建 GitHub Release |
 
-- 安装 `uv` + Python 3.11 + `requirements.txt`
-- 跑 `./scripts/check.sh`
-- 安装 docs 依赖并以 `--strict` 构建 MkDocs
+### 打包与发布策略
 
-推送到 `main` 或打开 PR 时触发。无远程时仍以本地 `check.sh` 为准。
+本仓库是 **clone 部署的控制面**（Ansible、`config/`、`web/`、`state/` 与 `bin/gpu-control` 绑在一起），`pyproject.toml` 里 `[tool.uv] package = false`，**暂不发布 PyPI wheel**。
+
+推荐安装：
+
+```bash
+git clone https://github.com/AlexanderJ-Carter/ComputeDeck.git
+cd ComputeDeck
+uv venv .venv && uv pip install -r requirements.txt
+```
+
+以后若要做 `pip install computedeck` / 上传 PyPI，需要先把可安装包布局（entry points、package-data、路径根）理顺，再开 Trusted Publishing；不要在现状下强行 `uv build` 上传。
+
+可选后续（未做）：
+
+- 打 tag 时再推 GHCR 容器镜像
+- 把 `uv.lock` 纳入仓库以锁定依赖（需统一用 `uv sync`）
+
+### 发版（tag）
+
+1. 同步 `VERSION` 与 `pyproject.toml` 的 `version`，把 CHANGELOG `[Unreleased]` 落成 `## [X.Y.Z] - YYYY-MM-DD`。
+2. 本地：`python scripts/release_notes.py --check X.Y.Z` 与 `./scripts/check.sh`。
+3. `git tag -a vX.Y.Z -m "vX.Y.Z"` 并推送 tag（需你明确允许 push）。
+4. Actions `Release` 会自动创建 GitHub Release。

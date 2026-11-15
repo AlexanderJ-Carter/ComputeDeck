@@ -14,6 +14,7 @@
 ### Added
 
 - MCP 一等工具：`gc_queue` · `gc_lease` · `gc_diagnose` · `gc_gateway` · `gc_node`；`gc_deploy(force/…)` · `gc_models(pull)`；catalog↔MCP 同步测试
+- 发版：`scripts/release_notes.py` + tag `v*` 自动 GitHub Release（暂不上传 PyPI）
 - `AGENTS.md`：Agent 硬约束与权威契约入口
 - 开源治理文件：`CODE_OF_CONDUCT` · `AUTHORS` · `NOTICE` · `SUPPORT` · `GOVERNANCE` · Issue/PR 模板
 - 产品名 **ComputeDeck**，命令行 `gpu-control`

@@ -1,0 +1,76 @@
+name: Release
+
+# 打 annotated tag vX.Y.Z 并推送后：跑检查 → 用 CHANGELOG 建 GitHub Release。
+# 当前不发布 PyPI：本仓库是 clone 部署的控制面（uv package=false），不是库。
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse version
+        id: ver
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-].*)?$ ]]; then
+            echo "tag 须为 vX.Y.Z，收到: $TAG"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Create venv and install
+        run: |
+          uv venv .venv
+          uv pip install -r requirements.txt
+          uv pip install -r requirements-docs.txt
+
+      - name: Verify version files
+        run: .venv/bin/python scripts/release_notes.py --check "${{ steps.ver.outputs.version }}"
+
+      - name: Offline checks
+        run: ./scripts/check.sh
+
+      - name: Build docs
+        run: .venv/bin/mkdocs build --strict
+
+      - name: Extract release notes
+        run: |
+          .venv/bin/python scripts/release_notes.py "${{ steps.ver.outputs.version }}" \
+            > /tmp/release-notes.md
+          {
+            echo "## ComputeDeck ${{ steps.ver.outputs.tag }}"
+            echo
+            echo "命令行仍为 \`gpu-control\`。安装方式：克隆本仓库后 \`uv pip install -r requirements.txt\`（暂不发布 PyPI）。"
+            echo
+            echo "宣传展板：https://alexanderj-carter.github.io/ComputeDeck/"
+            echo
+            cat /tmp/release-notes.md
+          } > /tmp/github-release.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.ver.outputs.tag }}" \
+            --title "ComputeDeck ${{ steps.ver.outputs.tag }}" \
+            --notes-file /tmp/github-release.md \
+            --verify-tag

@@ -40,9 +40,11 @@ UI 冒烟（需 UI 已启动且有 token）：
 ## 发版
 
 1. 同步 `VERSION` 与 `pyproject.toml` 的 `version`。
-2. 将 `[Unreleased]` 移入新版本节。
-3. 打 annotated tag：`vX.Y.Z`。
-4. 本地跑通 `./scripts/check.sh`。
+2. 将 `[Unreleased]` 移入新版本节（`## [X.Y.Z] - YYYY-MM-DD`）。
+3. 本地：`python scripts/release_notes.py --check X.Y.Z` 与 `./scripts/check.sh`。
+4. 打 annotated tag 并推送：`git tag -a vX.Y.Z -m "vX.Y.Z"` → 推送 tag 后 Actions 会建 GitHub Release。
+
+**不发布 PyPI**：当前是仓库即控制面（`package = false`），用克隆 + `uv pip install -r requirements.txt` 安装。详见 [`docs/develop/ci.md`](docs/develop/ci.md)。
 
 ## 文档
 
