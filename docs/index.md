@@ -1,32 +1,32 @@
 # ComputeDeck 文档
 
-**ComputeDeck**（技术仓库 / CLI：`gpu-control`）是多节点 GPU **通用控制面**（Web + CLI + MCP，SSH/Ansible）。  
-不绑定具体模型、业务 API 或集群；场景配置只放 `config/local/`。许可：**AGPL-3.0**。
+**ComputeDeck**（命令：`gpu-control`）是多节点 GPU 控制面：Web、CLI、MCP，SSH / Ansible 编排。场景在 `config/local/`。许可证 **AGPL-3.0**。
+
+![架构总览](assets/architecture-overview.svg)
 
 | 入口 | 说明 |
 |------|------|
 | [上手与运维手册](手册.md) | 安装、节点、Job、Gateway、腾空 |
-| [生产部署](生产部署.md) | 支持边界、systemd、端口、发布检查清单 |
-| [安全加固](安全加固.md) | 鉴权、绑定、Token、SSH host key、TLS |
-| [配置参考](配置参考.md) | cluster / nodes / jobs / models / 环境变量 |
-| [分布式与推理](分布式与推理.md) | 多机注入、DeepSpeed、Ray、vLLM、微调 |
-| [高可用与负载均衡](高可用与负载均衡.md) | Edge LB、自动故障转移、watchdog、AI Gateway |
-| [升级与备份](升级与备份.md) | 升级、回滚、备份、迁移 |
-| [故障排查](故障排查.md) | UI/SSH/Gateway/终端/状态异常 |
-| [AI / MCP 接入](ai-接入.md) | Agent、Bearer、Cursor MCP |
-| [HTTP API](api/index.md) | 接口分组与常用示例 |
-| [OpenAPI / Swagger](api/openapi.md) | `/api/docs` 交互文档 |
-| [Docstring 规范](develop/docstrings.md) | 中文 Sphinx docstring |
-| [仓库布局](develop/layout.md) | 目录职责与归档约定 |
-| [校验与 CI](develop/ci.md) | check.sh 与 GitHub Actions |
+| [性能实测](性能实测.md) | 控制面延迟与体量（带对标） |
+| [生产部署](生产部署.md) | systemd、端口、发布清单 |
+| [安全加固](安全加固.md) | 鉴权、Token、TLS |
+| [配置参考](配置参考.md) | cluster / nodes / jobs / models |
+| [分布式与推理](分布式与推理.md) | DeepSpeed、Ray、vLLM、微调 |
+| [高可用与负载均衡](高可用与负载均衡.md) | Edge、watchdog、AI Gateway |
+| [升级与备份](升级与备份.md) | 升级、回滚、迁移 |
+| [故障排查](故障排查.md) | 常见症状 |
+| [AI / MCP 接入](ai-接入.md) | Agent、Bearer、Cursor |
+| [HTTP API](api/index.md) | 分组与示例 |
+| [OpenAPI](api/openapi.md) | `/api/docs` |
+| [开发约定](develop/docstrings.md) | Docstring · [布局](develop/layout.md) · [CI](develop/ci.md) |
 
-## 快速链接（控制面在线时）
+## 控制面在线时
 
 - UI：`http://<control>:8787/`
 - API 目录：`/api`
 - OpenAPI JSON：`/api/openapi.json`
-- Swagger 页：`/api/docs`
-- 本文档站：`/help/`（需先 `gpu-control docs build`）
+- Swagger：`/api/docs`
+- 文档站：`/help/`（先执行 `gpu-control docs build`）
 
 ```bash
 uv pip install -r requirements-docs.txt
@@ -34,12 +34,12 @@ gpu-control docs build    # → web/static/help/
 gpu-control docs serve    # 本地预览 :8000
 ```
 
-## 本地校验
+## 质量门禁
 
 ```bash
-./scripts/check.sh                       # py_compile + 单测 + UI 静态审计
-.venv/bin/python scripts/smoke_ui.py     # 需 UI 运行 + token
+./scripts/check.sh
+.venv/bin/python scripts/smoke_ui.py
 gpu-control doctor
 ```
 
-版本见仓库根 `VERSION`；变更见 `CHANGELOG.md`。
+版本见仓库根 `VERSION`，变更见 `CHANGELOG.md`。

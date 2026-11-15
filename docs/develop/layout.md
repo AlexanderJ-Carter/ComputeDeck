@@ -1,6 +1,6 @@
 # 仓库布局
 
-**ComputeDeck**（目录名 `gpu-control`）通用控制面仓库：可提交内容保持中性；场景数据只进 `config/local/`。
+可提交内容保持中性；场景数据只进 `config/local/`。
 
 ## 顶层
 
@@ -14,7 +14,7 @@
 | `playbooks/` | Ansible playbook |
 | `config/examples/` | 可提交的中性模板 |
 | `config/local/` | 本机真实配置与密钥（gitignore） |
-| `jobs/` | 框架内置通用 Job（仅 `shell-job`） |
+| `jobs/` | 框架内置通用 Job（`shell-job`） |
 | `examples/` | 参考管理脚本与训练/推理示例 |
 | `docs/` | MkDocs 中文文档 |
 | `tests/` | 单元测试 |
@@ -36,7 +36,7 @@
 
 ## 约定
 
-1. **不要**把真实 IP、主机名、业务 Job、个人路径写进可提交树。
+1. 可提交树使用中性示例（`10.0.0.x` / `gpu-N` / `/path/to/...`）；真实 IP、主机名与个人路径放 `config/local/`。
 2. 新增共享逻辑优先放 `lib/`；仅 CLI 胶水放 `scripts/`。
 3. 用户可见行为变更写 `CHANGELOG.md` `[Unreleased]`。
 4. Docstring 规范见 [docstrings.md](docstrings.md)；校验见 [ci.md](ci.md)。

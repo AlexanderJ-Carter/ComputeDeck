@@ -1,14 +1,14 @@
 # AI / API / MCP 接入
 
-把 gpu-control 交给 Cursor 或其他 Agent 调配置、启停 Job、腾空节点时用本页。
+用 Cursor 或其他 Agent 调配置、启停 Job、腾空节点时，按本页接入。
 
-## 鉴权（必读）
+## 鉴权
 
 | 模式 | 说明 |
 |------|------|
-| `none` | 仅适合 SSH 隧道；不要裸暴露 `:8787` |
+| `none` | 关闭鉴权；配合 SSH 隧道使用，生产环境改用 password / oidc |
 | `password` | Session Cookie（浏览器）+ Bearer Token（脚本 / MCP） |
-| `oidc` | OpenID Connect 授权码 + PKCE；API 仍用 Bearer |
+| `oidc` | OpenID Connect 授权码 + PKCE；API 使用 Bearer |
 
 ```bash
 gpu-control auth set-password --generate --enable
@@ -46,7 +46,7 @@ open http://127.0.0.1:8787/api/docs
 
 ---
 
-## 2. AI 最常用的 HTTP
+## 2. 常用 HTTP 接口
 
 改配置（调参主入口）：
 
@@ -109,11 +109,11 @@ Cursor MCP 配置（示例见 `config/examples/mcp.cursor.json`）：
 
 ## 4. Agent 行为约定
 
-1. Job 是通用插件（推理 / 微调），**不要假设只有某一业务 Job**。
-2. 改 `nodes.json` 路径后必须 `node render` + `doctor`。
-3. 腾空占卡用 `free` / `procs kill`，不要只 cordon。
-4. 危险动作（kill / free / 写配置）先 `gc_overview` / `gc_get_config` 确认目标。
-5. HTTP 401 → 检查 token；先 `gc_auth_status` / `GET /api/auth/status`。
+1. Job 是通用插件，按已安装列表与模板选择，而不是写死某一个业务名。
+2. 改完 `nodes.json` 路径后执行 `node render` 与 `doctor`。
+3. 腾空占卡用 `free` / `procs kill`；`cordon` 负责隔离调度。
+4. `kill` / `free` / 写配置前，先用 `gc_overview` / `gc_get_config` 确认目标。
+5. 收到 HTTP 401 时检查 token，可用 `gc_auth_status` 或 `GET /api/auth/status`。
 6. 项目 Skill：`.cursor/skills/gpu-control/SKILL.md`。
 
-更多运维语义见 [手册.md](手册.md)。
+运维语义见 [手册.md](手册.md)。

@@ -35,7 +35,7 @@ curl -s http://127.0.0.1:8787/api/openapi.json | jq '.info'
 ```bash
 TOKEN=$(cat config/local/secrets/ui_api_token)
 
-# 总览（轻量）
+# 总览（light 轮询）
 curl -s -H "Authorization: Bearer $TOKEN" \
   'http://127.0.0.1:8787/api/overview?light=1'
 

@@ -25,13 +25,13 @@ description: >-
 ## 运维
 
 - 总览：`gc_overview(refresh=true)`
-- 启停：`gc_job_action(job, action, node=…)` — Job 是插件，不绑定特定业务
+- 启停：`gc_job_action(job, action, node=…)` — 按已安装 Job 选择
 - 腾空：`gc_free_node` / `gc_procs(action=kill, all_procs=true)`
 - 模型：`gc_models(action=deps|check|verify|list)`
 
 ## 约束
 
-- 默认面向内网；生产必须开鉴权（password / OIDC + API Token），勿裸奔公网
-- 不向后兼容乱加 fallback；配置以 `config/local` 为准
-- 禁止静默发明 `gpus_per_node=4`；缺配置应报错或读 `scheduling.unit_gpus` / 实采
+- 默认面向内网；生产环境开启 password / OIDC 与 API Token
+- 配置以 `config/local` 为准；删除的 API 记入 CHANGELOG，代码不堆冗余 fallback
+- GPU 数量读配置 / 实采 / `scheduling.unit_gpus`，缺配置时报错，不静默填默认值
 - 详细接口：`docs/ai-接入.md`、手册 `docs/手册.md`

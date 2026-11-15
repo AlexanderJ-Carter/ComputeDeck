@@ -13,18 +13,21 @@
 
 ### Added
 
-- 完整开源套件：`CODE_OF_CONDUCT` · `AUTHORS` · `NOTICE` · `SUPPORT` · `GOVERNANCE` · Issue/PR 模板
-- 产品品牌名 **ComputeDeck**（CLI / 包名仍为 `gpu-control`）
+- 开源治理文件：`CODE_OF_CONDUCT` · `AUTHORS` · `NOTICE` · `SUPPORT` · `GOVERNANCE` · Issue/PR 模板
+- 产品名 **ComputeDeck**，命令行 `gpu-control`
+- `docs/性能实测.md`：控制面延迟/体量，并附本机基线对标
+- 文档配图：`docs/assets/` 架构总览 / Edge / 分层 / 分布式注入
 
 ### Changed
 
 - 许可证由 MIT 改为 **AGPL-3.0-only**（网络提供修改版须提供源码）
-- README 重写：背景、优势、架构图、徽章与快速开始
+- README 精简：带对标的性能表、单张架构图；去掉「怎么选」与品牌对照表
+- 用户文档统一自然表述
 - Docstring 统一为中文 Sphinx 冒号字段；CLI 报错中文化
-- `state_util` 去掉 Windows flock 回落，明确仅 POSIX
+- `state_util` 明确仅 POSIX flock
 - 新增 GitHub Actions CI、`docs/develop/ci.md`、`docs/develop/layout.md`
 - 提交习惯改为 Conventional Commits；版本用 tag `vX.Y.Z` 标记
-- 去掉 Codelab 文案；禁止静默 `gpus=4`（改读配置 / 实采 / `scheduling.unit_gpus`）
+- GPU 数量改读配置 / 实采 / `scheduling.unit_gpus`；清理场景专用默认与文案
 - 删除 `legacy_vllm` 别名；训练日志预设对齐 `/tmp/gpu-control-jobs`；`check.sh` 覆盖 `mcp_server`
 
 ## [0.21.0] - 2026-11-14
@@ -36,7 +39,7 @@
 - Ray 工具栈与 `ray-cluster` 模板；vLLM 进程模板与真实就绪检查
 - 通用 `docker-job` / `domain-job` 模板；`gpu-control jobs logs` 与任务页日志
 - DeepSpeed hostfile 自动生成；统一 `GPU_CONTROL_JOB_RUNTIME`
-- `lib/state_util.py`：原子写、flock、JSON 损坏备份回退
+- `lib/state_util.py`：原子写、flock、JSON 损坏时备份后重建
 - UI：SIGTERM 优雅退出、pid 校验；默认绑定 `127.0.0.1`
 - 单元测试（state / endpoints / jobs / runlog / ws）与产品文档（部署/安全/备份/排障/配置/分布式/高可用）
 - overview 缓存与 `quality` 字段；smoke 覆盖静态资源与鉴权
@@ -69,7 +72,7 @@
 ### Changed
 
 - Edge / nginx / LiteLLM 角色规整；`gateway ensure` 按 ingress 拉起主入口
-- 禁止在 worker 上误启 Edge；看板状态与配套 ensure 对齐
+- Edge 仅在控制面启动；看板状态与配套 ensure 对齐
 
 ## [0.18.0] - 2026-11-14
 
@@ -108,7 +111,7 @@
 
 - Edge LB：`retries` · `cooldown` · `least_conn` · 可选 sticky · 超时
 - 远程命令预设扩充（GPU 利用率、API 端口、Docker、主机信息等）
-- `GET /api/overview?light=1` 轻量轮询路径
+- `GET /api/overview?light=1` 轮询路径
 
 ### Changed
 

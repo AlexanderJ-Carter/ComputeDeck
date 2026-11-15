@@ -1,5 +1,5 @@
 site_name: ComputeDeck
-site_description: ComputeDeck（gpu-control）— 多节点 GPU 通用控制面文档
+site_description: ComputeDeck — 多节点 GPU 控制面文档
 site_url: ""
 repo_name: gpu-control
 docs_dir: docs
@@ -57,6 +57,7 @@ extra:
 
 nav:
   - 首页: index.md
+  - 性能实测: 性能实测.md
   - 上手与运维: 手册.md
   - 产品化:
       - 生产部署: 生产部署.md

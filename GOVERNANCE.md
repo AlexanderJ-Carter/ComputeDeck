@@ -1,6 +1,6 @@
 # 治理
 
-ComputeDeck（技术仓库名 `gpu-control`）目前由维护者主导。
+ComputeDeck 目前由维护者主导。
 
 ## 角色
 
