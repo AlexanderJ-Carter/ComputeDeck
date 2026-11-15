@@ -1755,11 +1755,15 @@ code {
   .quality-kpis,
   .api-mosaic,
   .preset-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
+  }
+
+  .action-card {
+    min-height: 0;
   }
 
   .main {
-    padding: 14px 12px 24px;
+    padding: 12px;
   }
 
   .topbar {

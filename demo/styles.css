@@ -18,8 +18,8 @@
   --fs-base: clamp(0.95rem, 0.9rem + 0.35vw, 1.08rem);
   --fs-md: clamp(1.02rem, 0.94rem + 0.45vw, 1.2rem);
   --fs-lg: clamp(1.2rem, 1.05rem + 0.8vw, 1.55rem);
-  --fs-h2: clamp(1.65rem, 1.25rem + 2vw, 2.85rem);
-  --fs-h1: clamp(2.55rem, 1.7rem + 4.2vw, 5.2rem);
+  --fs-h2: clamp(1.45rem, 1.1rem + 1.8vw, 2.85rem);
+  --fs-h1: clamp(1.9rem, 0.85rem + 7.5vw, 5.2rem);
   --pad-x: clamp(1rem, 3vw, 1.75rem);
   --pad-top: clamp(4.5rem, 8vh, 5.75rem);
   --pad-bot: clamp(2rem, 4vh, 3rem);
@@ -256,7 +256,13 @@ h1, h2, h3 {
   margin: 0 0 0.85rem;
   text-wrap: balance;
 }
-h1 { font-size: var(--fs-h1); font-weight: 800; line-height: 1.02; }
+h1 {
+  font-size: var(--fs-h1);
+  font-weight: 800;
+  line-height: 1.02;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
 h2 { font-size: var(--fs-h2); font-weight: 800; max-width: 14ch; }
 h3 { font-size: var(--fs-md); margin-bottom: 0.75rem; }
 
@@ -851,10 +857,22 @@ h3 { font-size: var(--fs-md); margin-bottom: 0.75rem; }
   :root {
     --pad-top: 4.25rem;
     --pad-bot: 1.5rem;
+    --fs-h1: clamp(1.75rem, 9.5vw, 2.4rem);
+    --fs-h2: clamp(1.35rem, 5.5vw, 1.85rem);
   }
   .brand span { max-width: 9.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .hero-stats { gap: 0.65rem; }
-  .hero-stats div { min-width: 5.5rem; padding: 0.65rem 0.75rem; }
+  .hero-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+    width: 100%;
+  }
+  .hero-stats div {
+    min-width: 0;
+    padding: 0.6rem 0.45rem;
+    text-align: center;
+  }
+  .hero-stats span { font-size: 0.68rem; line-height: 1.25; }
   .ghost-btn { padding: 0.35rem 0.55rem; font-size: 0.78rem; }
   .top-nav .cta { padding: 0.4rem 0.75rem; }
   .mock-kvs { flex-wrap: wrap; }
@@ -862,6 +880,7 @@ h3 { font-size: var(--fs-md); margin-bottom: 0.75rem; }
   .cta-row .btn { width: 100%; justify-content: center; }
   .dots { display: none; }
   .slide { padding-right: max(var(--pad-x), env(safe-area-inset-right)); }
+  .code-panel { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 }
 
 @media (max-height: 700px) and (orientation: landscape) {
