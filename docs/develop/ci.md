@@ -27,32 +27,25 @@ gpu-control doctor
 
 | 工作流 | 触发 | 作用 |
 |--------|------|------|
-| `.github/workflows/ci.yml` | `main` push / PR | `check.sh` + MkDocs `--strict` |
+| `.github/workflows/ci.yml` | `main` push / PR | `check.sh` + MkDocs `--strict` + Docker 构建冒烟 |
 | `.github/workflows/pages.yml` | `demo/**` 变更 | 发布宣传展板到 GitHub Pages |
-| `.github/workflows/release.yml` | tag `vX.Y.Z` | 校验版本 → 检查 → 用 CHANGELOG 建 GitHub Release |
+| `.github/workflows/release.yml` | tag `vX.Y.Z` | CHANGELOG → GitHub Release + 推送 GHCR 镜像 |
 
 ### 打包与发布策略
 
-本仓库是 **clone 部署的控制面**（Ansible、`config/`、`web/`、`state/` 与 `bin/gpu-control` 绑在一起），`pyproject.toml` 里 `[tool.uv] package = false`，**暂不发布 PyPI wheel**。
+本仓库是 **clone / 容器部署的控制面**（Ansible、`config/`、`web/`、`state/` 与 `bin/gpu-control` 绑在一起），`pyproject.toml` 里 `[tool.uv] package = false`，**暂不发布 PyPI wheel**。
 
-推荐安装：
+| 方式 | 说明 |
+|------|------|
+| 源码 | 克隆后 `uv pip install -r requirements.txt` |
+| 容器 | `Dockerfile` + `docker compose`；发版镜像 `ghcr.io/alexanderj-carter/computedeck` |
+| PyPI | 未做；需先理顺可安装包布局再开 Trusted Publishing |
 
-```bash
-git clone https://github.com/AlexanderJ-Carter/ComputeDeck.git
-cd ComputeDeck
-uv venv .venv && uv pip install -r requirements.txt
-```
-
-以后若要做 `pip install computedeck` / 上传 PyPI，需要先把可安装包布局（entry points、package-data、路径根）理顺，再开 Trusted Publishing；不要在现状下强行 `uv build` 上传。
-
-可选后续（未做）：
-
-- 打 tag 时再推 GHCR 容器镜像
-- 把 `uv.lock` 纳入仓库以锁定依赖（需统一用 `uv sync`）
+可选后续：把 `uv.lock` 纳入仓库（需统一 `uv sync`）。
 
 ### 发版（tag）
 
 1. 同步 `VERSION` 与 `pyproject.toml` 的 `version`，把 CHANGELOG `[Unreleased]` 落成 `## [X.Y.Z] - YYYY-MM-DD`。
 2. 本地：`python scripts/release_notes.py --check X.Y.Z` 与 `./scripts/check.sh`。
 3. `git tag -a vX.Y.Z -m "vX.Y.Z"` 并推送 tag（需你明确允许 push）。
-4. Actions `Release` 会自动创建 GitHub Release。
+4. Actions `Release` 会创建 GitHub Release，并推送 `ghcr.io/<owner>/computedeck:<version>`（及 `latest`）。

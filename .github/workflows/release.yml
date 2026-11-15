@@ -1,7 +1,10 @@
 name: Release
 
-# 打 annotated tag vX.Y.Z 并推送后：跑检查 → 用 CHANGELOG 建 GitHub Release。
-# 当前不发布 PyPI：本仓库是 clone 部署的控制面（uv package=false），不是库。
+# 打 annotated tag vX.Y.Z 并推送后：
+# 1) 校验版本 + check.sh + MkDocs
+# 2) 用 CHANGELOG 建 GitHub Release
+# 3) 构建并推送控制面镜像到 GHCR
+# 暂不发布 PyPI（uv package=false，仓库即控制面）。
 
 on:
   push:
@@ -10,10 +13,14 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -59,9 +66,13 @@ jobs:
           {
             echo "## ComputeDeck ${{ steps.ver.outputs.tag }}"
             echo
-            echo "命令行仍为 \`gpu-control\`。安装方式：克隆本仓库后 \`uv pip install -r requirements.txt\`（暂不发布 PyPI）。"
+            echo "命令行仍为 \`gpu-control\`。"
             echo
-            echo "宣传展板：https://alexanderj-carter.github.io/ComputeDeck/"
+            echo "### 安装"
+            echo
+            echo "- 源码：克隆后 \`uv pip install -r requirements.txt\`（暂不发 PyPI）"
+            echo "- 容器：\`docker pull ghcr.io/alexanderj-carter/computedeck:${{ steps.ver.outputs.version }}\`"
+            echo "- 展板：https://alexanderj-carter.github.io/ComputeDeck/"
             echo
             cat /tmp/release-notes.md
           } > /tmp/github-release.md
@@ -74,3 +85,39 @@ jobs:
             --title "ComputeDeck ${{ steps.ver.outputs.tag }}" \
             --notes-file /tmp/github-release.md \
             --verify-tag
+
+  image:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/computedeck
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.release.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release.outputs.version }}
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

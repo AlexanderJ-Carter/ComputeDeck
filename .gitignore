@@ -9,6 +9,9 @@ __pycache__/
 # Local machine configs & secrets (do not publish)
 config/local/**
 !config/local/.gitkeep
+deploy/ssh/**
+!deploy/ssh/.gitkeep
+!deploy/ssh/README.md
 
 # Root compat symlinks → config/local (machine-specific)
 /cluster.json

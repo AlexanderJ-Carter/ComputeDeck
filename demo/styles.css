@@ -7,9 +7,10 @@
   --teal-bright: #14b8a6;
   --amber: #ea580c;
   --line: color-mix(in srgb, var(--ink) 12%, transparent);
-  --display: "Syne", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", sans-serif;
-  --body: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  /* 系统字体优先：Google Fonts 不可达时版式仍完整 */
+  --display: "Syne", "Avenir Next Condensed", "Avenir Next", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif;
+  --body: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   /* 流体字阶：小屏可读，大屏不过分撑 */
   --fs-xs: clamp(0.72rem, 0.68rem + 0.2vw, 0.8rem);

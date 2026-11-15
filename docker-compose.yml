@@ -1,0 +1,24 @@
+# ComputeDeck 控制面（本机 / 单机部署）
+# 用法：
+#   1. cp -n config/examples/cluster.example.json config/local/cluster.json
+#   2. cp -n config/examples/nodes.example.json config/local/nodes.json
+#   3. 准备 SSH 私钥到 deploy/ssh/（或设 COMPUTEDECK_SSH_DIR）
+#   4. docker compose up -d --build
+#   5. 浏览器 http://127.0.0.1:8787 （生产务必开鉴权）
+
+services:
+  control:
+    build: .
+    image: ${COMPUTEDECK_IMAGE:-ghcr.io/alexanderj-carter/computedeck:latest}
+    container_name: computedeck-control
+    ports:
+      - "${UI_PORT:-8787}:8787"
+    volumes:
+      - ./config/local:/app/config/local
+      - ./state:/app/state
+      - ${COMPUTEDECK_SSH_DIR:-./deploy/ssh}:/root/.ssh:ro
+    environment:
+      GPU_CONTROL_UI_HOST: "0.0.0.0"
+      GPU_CONTROL_UI_PORT: "8787"
+      GPU_CONTROL_UI_SECURE: "${GPU_CONTROL_UI_SECURE:-1}"
+    restart: unless-stopped

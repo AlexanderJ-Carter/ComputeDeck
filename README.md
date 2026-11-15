@@ -68,7 +68,7 @@
 
 ```bash
 git clone https://github.com/AlexanderJ-Carter/ComputeDeck.git
-cd gpu-control
+cd ComputeDeck
 uv venv .venv && uv pip install -r requirements.txt
 ./examples/quickstart.sh
 cp -n config/examples/cluster.example.json config/local/cluster.json
@@ -82,6 +82,8 @@ gpu-control auth issue-token
 gpu-control ui --background
 gpu-control watchdog --background
 ```
+
+容器起控制面（可选）：`docker compose up -d --build`，见 [`docs/develop/docker.md`](docs/develop/docker.md)。
 
 本机看 UI（主控在远端时）：
 

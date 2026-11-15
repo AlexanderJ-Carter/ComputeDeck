@@ -11,18 +11,14 @@
   <link rel="icon" href="assets/logo.svg" type="image/svg+xml" />
   <link rel="preload" href="styles.css" as="style" />
   <link rel="preload" href="assets/logo.svg" as="image" type="image/svg+xml" />
+  <!-- 主样式先加载，不依赖外网字体；字体作为可选增强 -->
+  <link rel="stylesheet" href="styles.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
     rel="stylesheet"
     href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&family=Syne:wght@700;800&display=swap"
-    media="print"
-    onload="this.media='all'"
   />
-  <noscript>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
-  </noscript>
-  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <a class="skip" href="#deck">跳到内容</a>
