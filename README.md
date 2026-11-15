@@ -1,4 +1,8 @@
 <!-- BEAUTIFIED -->
+<p align="center">
+  <img src="docs/assets/logo.svg" alt="ComputeDeck" width="88" height="88" />
+</p>
+
 <h1 align="center">ComputeDeck</h1>
 
 <p align="center">

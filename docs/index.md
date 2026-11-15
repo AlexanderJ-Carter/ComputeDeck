@@ -1,5 +1,9 @@
 # ComputeDeck 文档
 
+<p align="center">
+  <img src="assets/logo.svg" alt="ComputeDeck" width="72" height="72" />
+</p>
+
 **ComputeDeck**（命令：`gpu-control`）是多节点 GPU 控制面：Web、CLI、MCP，SSH / Ansible 编排。场景在 `config/local/`。许可证 **AGPL-3.0**。
 
 ![架构总览](assets/architecture-overview.svg)

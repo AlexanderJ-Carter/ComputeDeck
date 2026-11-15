@@ -16,12 +16,13 @@
 - 开源治理文件：`CODE_OF_CONDUCT` · `AUTHORS` · `NOTICE` · `SUPPORT` · `GOVERNANCE` · Issue/PR 模板
 - 产品名 **ComputeDeck**，命令行 `gpu-control`
 - 文档配图：`docs/assets/` 架构总览 / Edge / 分层 / 分布式注入
+- 产品 logo：`docs/assets/logo.svg`（README / MkDocs / UI favicon 与侧栏）
 
 ### Changed
 
 - 许可证由 MIT 改为 **AGPL-3.0-only**（网络提供修改版须提供源码）
 - README / 用户文档定稿：自然表述、架构图；不做无产品依据的伪性能对标
-- 用户文档统一自然表述
+- UI 品牌展示改为 ComputeDeck + logo（原文字 `gc`）
 - Docstring 统一为中文 Sphinx 冒号字段；CLI 报错中文化
 - `state_util` 明确仅 POSIX flock
 - 新增 GitHub Actions CI、`docs/develop/ci.md`、`docs/develop/layout.md`
