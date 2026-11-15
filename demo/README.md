@@ -21,6 +21,14 @@ python3 -m http.server 4173
 
 ## 交互
 
-- ↓ / 空格 / 圆点翻页；顶栏「自动播放」
-- 开场粒子与指针光斑；GPU 格轮换；Agent 终端逐行打字
-- 能力卡片轻微透视跟随指针（尊重 `prefers-reduced-motion`）
+- 默认自动播放（约 6.2s 一页）；滚轮 / 触摸 / 键盘会暂停；顶栏可再开
+- ↓ / 空格 / 圆点翻页（小屏隐藏圆点，用手势滑动）
+- 开场粒子与指针光斑；可见页才跑 GPU 轮换与粒子；Agent 终端逐行打字
+- 细指针设备上能力卡片轻微透视（尊重 `prefers-reduced-motion`）
+
+## 性能注意
+
+- CSS / logo `preload`；字体异步加载（`media=print` → `all`），先系统中文字体兜底
+- 下方配图 `loading=lazy`；`app.js` `defer`
+- 非当前页粒子停画；切后台停定时器；`content-visibility` 减轻离屏绘制
+- GitHub Pages CDN 自带协商缓存；改静态资源后重新部署即可失效

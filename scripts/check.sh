@@ -10,6 +10,7 @@ echo "== py_compile =="
 
 echo "== unit tests =="
 "$PY" -m unittest discover -s tests -v
+# tests/test_api_catalog_mcp.py 会核对 mcp_tools_summary ↔ mcp_server @mcp.tool
 
 NODE_BIN="${NODE_BIN:-$(command -v node || true)}"
 if [[ -n "$NODE_BIN" ]] && "$NODE_BIN" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 16 ? 0 : 1)' 2>/dev/null; then

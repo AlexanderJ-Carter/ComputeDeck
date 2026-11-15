@@ -124,6 +124,63 @@ _BODY: dict[str, dict[str, Any]] = {
             },
         },
     },
+    "lease_acquire": {
+        "type": "object",
+        "required": ["job", "nodes"],
+        "properties": {
+            "job": {"type": "string"},
+            "nodes": {"type": "string", "description": "逗号分隔节点名"},
+            "gpus": {"type": "integer"},
+            "note": {"type": "string"},
+        },
+    },
+    "queue_submit": {
+        "type": "object",
+        "required": ["job"],
+        "properties": {
+            "job": {"type": "string"},
+            "gpus": {"type": "integer", "description": "省略则用 scheduling.unit_gpus"},
+            "nodes": {"type": "string"},
+            "note": {"type": "string"},
+            "schedule": {"type": "boolean", "description": "入队后立即 schedule"},
+        },
+    },
+    "node_name": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+            "name": {"type": "string"},
+            "reason": {"type": "string", "description": "cordon 原因（可选）"},
+        },
+    },
+    "node_add": {
+        "type": "object",
+        "required": ["name", "host"],
+        "properties": {
+            "name": {"type": "string"},
+            "host": {"type": "string"},
+            "gpus": {"type": "integer", "default": 4},
+            "labels": {"type": "string", "description": "逗号分隔标签"},
+        },
+    },
+    "diagnose_repair": {
+        "type": "object",
+        "properties": {
+            "ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "要修复的 finding id；省略则按 diagnose 默认集",
+            },
+        },
+    },
+    "models_check": {
+        "type": "object",
+        "properties": {
+            "node": {"type": "string"},
+            "nodes": {"type": "string"},
+            "model": {"type": "string", "description": "verify 时可选"},
+        },
+    },
 }
 
 
@@ -201,7 +258,6 @@ def http_endpoints() -> list[dict[str, Any]]:
         {"method": "POST", "path": "/api/auth/logout", "summary": "退出并清除 Cookie", "group": "auth", "auth": "public"},
         {"method": "GET", "path": "/api/doctor", "summary": "配置自检 JSON", "group": "meta"},
         {"method": "GET", "path": "/api/diagnose", "summary": "一键检测常见问题", "group": "meta"},
-        {"method": "POST", "path": "/api/diagnose/repair", "summary": "安全自动修复 body.ids?", "group": "ops"},
         {"method": "GET", "path": "/api/runlog", "summary": "运行日志 ?limit=&kind=", "group": "meta"},
         {"method": "POST", "path": "/api/runlog/clear", "summary": "清空运行日志", "group": "ops"},
         {
@@ -306,15 +362,57 @@ def http_endpoints() -> list[dict[str, Any]]:
             "group": "ops",
             "body": "procs_kill",
         },
-        {"method": "POST", "path": "/api/node/cordon", "summary": "隔离节点", "group": "ops"},
-        {"method": "POST", "path": "/api/node/uncordon", "summary": "取消隔离", "group": "ops"},
-        {"method": "POST", "path": "/api/node/add", "summary": "添加节点", "group": "ops"},
-        {"method": "POST", "path": "/api/node/remove", "summary": "移除节点", "group": "ops"},
+        {
+            "method": "POST",
+            "path": "/api/node/cordon",
+            "summary": "隔离节点",
+            "group": "ops",
+            "body": "node_name",
+        },
+        {
+            "method": "POST",
+            "path": "/api/node/uncordon",
+            "summary": "取消隔离",
+            "group": "ops",
+            "body": "node_name",
+        },
+        {
+            "method": "POST",
+            "path": "/api/node/add",
+            "summary": "添加节点",
+            "group": "ops",
+            "body": "node_add",
+        },
+        {
+            "method": "POST",
+            "path": "/api/node/remove",
+            "summary": "移除节点",
+            "group": "ops",
+            "body": "node_name",
+        },
         {"method": "POST", "path": "/api/exec", "summary": "远程命令", "group": "ops", "body": "exec"},
         {"method": "POST", "path": "/api/run-python", "summary": "远程跑 Python", "group": "ops"},
-        {"method": "POST", "path": "/api/models/check", "summary": "模型路径检查", "group": "models"},
-        {"method": "POST", "path": "/api/models/verify", "summary": "模型校验", "group": "models"},
-        {"method": "POST", "path": "/api/models/deps", "summary": "节点 HF/MS/docker 依赖", "group": "models"},
+        {
+            "method": "POST",
+            "path": "/api/models/check",
+            "summary": "模型路径检查",
+            "group": "models",
+            "body": "models_check",
+        },
+        {
+            "method": "POST",
+            "path": "/api/models/verify",
+            "summary": "模型校验",
+            "group": "models",
+            "body": "models_check",
+        },
+        {
+            "method": "POST",
+            "path": "/api/models/deps",
+            "summary": "节点 HF/MS/docker 依赖",
+            "group": "models",
+            "body": "models_check",
+        },
         {"method": "POST", "path": "/api/models/install-tools", "summary": "节点安装拉取工具", "group": "models"},
         {
             "method": "POST",
@@ -329,9 +427,21 @@ def http_endpoints() -> list[dict[str, Any]]:
             "summary": "保存/清除 HF·ModelScope token",
             "group": "models",
         },
-        {"method": "POST", "path": "/api/leases", "summary": "登记占用", "group": "ops"},
+        {
+            "method": "POST",
+            "path": "/api/leases",
+            "summary": "登记占用",
+            "group": "ops",
+            "body": "lease_acquire",
+        },
         {"method": "POST", "path": "/api/leases/{id}/release", "summary": "释放占用", "group": "ops"},
-        {"method": "POST", "path": "/api/queue/submit", "summary": "入队", "group": "ops"},
+        {
+            "method": "POST",
+            "path": "/api/queue/submit",
+            "summary": "入队",
+            "group": "ops",
+            "body": "queue_submit",
+        },
         {"method": "POST", "path": "/api/queue/schedule", "summary": "调度队列", "group": "ops"},
         {"method": "POST", "path": "/api/queue/{id}/cancel", "summary": "取消队列项", "group": "ops"},
         {"method": "POST", "path": "/api/probe/run", "summary": "跑互通探测", "group": "ops"},
@@ -350,6 +460,13 @@ def http_endpoints() -> list[dict[str, Any]]:
             "summary": "停止入口",
             "group": "ops",
             "body": "gateway_kind",
+        },
+        {
+            "method": "POST",
+            "path": "/api/diagnose/repair",
+            "summary": "安全自动修复",
+            "group": "ops",
+            "body": "diagnose_repair",
         },
         {"method": "POST", "path": "/api/actions/oneclick", "summary": "一键运维", "group": "ops"},
         {
@@ -371,7 +488,9 @@ def cli_commands() -> list[dict[str, str]]:
         {"cmd": "gpu-control get jobs|nodes|leases|queue|endpoints", "summary": "列资源"},
         {"cmd": "gpu-control describe job|node NAME", "summary": "详情"},
         {"cmd": "gpu-control start|stop|restart|status|wait JOB", "summary": "Job 动作"},
-        {"cmd": "gpu-control deploy JOB --gpus N|--nodes …", "summary": "一键部署"},
+        {"cmd": "gpu-control deploy JOB --gpus N|--nodes … [--force]", "summary": "一键部署"},
+        {"cmd": "gpu-control queue list|submit|schedule|cancel …", "summary": "工作负载队列"},
+        {"cmd": "gpu-control lease list|release …", "summary": "占用租约"},
         {"cmd": "gpu-control procs list|kill …", "summary": "GPU 进程"},
         {"cmd": "gpu-control free --node N [--cordon] [--no-kill]", "summary": "腾空"},
         {"cmd": "gpu-control models list|deps|check|verify|pull|paths", "summary": "模型模块"},
@@ -380,7 +499,8 @@ def cli_commands() -> list[dict[str, str]]:
         {"cmd": "gpu-control exec --node N -- CMD", "summary": "远程命令"},
         {"cmd": "gpu-control node render|cordon|uncordon …", "summary": "节点/inventory"},
         {"cmd": "gpu-control auth status|set-password|issue-token|set-mode", "summary": "控制面鉴权"},
-        {"cmd": "gpu-control gateway start|stop|status [--kind edge]", "summary": "统一入口"},
+        {"cmd": "gpu-control gateway start|stop|status|render [--kind edge]", "summary": "统一入口"},
+        {"cmd": "gpu-control probe|endpoints|metrics|watchdog …", "summary": "探测 / 健康 / 指标 / 巡检"},
         {"cmd": "gpu-control ui --background", "summary": "启动 Web :8787"},
     ]
 
@@ -396,13 +516,18 @@ def mcp_tools_summary() -> list[dict[str, str]]:
         {"name": "gc_job_action", "summary": "启停 Job（start|stop|…）"},
         {"name": "gc_get_config", "summary": "读 cluster / nodes / job 配置"},
         {"name": "gc_put_config", "summary": "写配置（Agent 改配置主入口）"},
-        {"name": "gc_models", "summary": "模型 list / deps / check / verify / paths"},
+        {"name": "gc_models", "summary": "模型 list/show/deps/check/verify/paths/pull"},
         {"name": "gc_toolkits", "summary": "工具栈 list / probe / install"},
         {"name": "gc_procs", "summary": "列出或结束 GPU 进程"},
-        {"name": "gc_free_node", "summary": "腾空 / 隔离节点"},
-        {"name": "gc_deploy", "summary": "部署 Job"},
+        {"name": "gc_free_node", "summary": "腾空节点（可选顺带 cordon）"},
+        {"name": "gc_deploy", "summary": "部署 Job（支持 force/restart/no_wait）"},
+        {"name": "gc_queue", "summary": "队列 list/submit/schedule/cancel"},
+        {"name": "gc_lease", "summary": "租约 list/acquire/release"},
+        {"name": "gc_diagnose", "summary": "诊断 check / 安全修复 repair"},
+        {"name": "gc_gateway", "summary": "入口 status/get/render/start/stop"},
+        {"name": "gc_node", "summary": "节点 render/cordon/uncordon/add/remove"},
         {"name": "gc_exec", "summary": "远程执行命令"},
-        {"name": "gc_cli", "summary": "直接跑 gpu-control 子命令（逃生舱）"},
+        {"name": "gc_cli", "summary": "任意子命令逃生舱"},
     ]
 
 
@@ -443,11 +568,13 @@ def catalog_payload() -> dict[str, Any]:
             "env": auth["mcp_env"],
         },
         "ai_notes": [
+            "产品名 ComputeDeck；CLI/MCP/service 仍为 gpu-control。",
             "鉴权启用后，HTTP 客户端必须带 Bearer；MCP 设 GPU_CONTROL_API_TOKEN。",
-            "改配置优先 POST /api/config/{cluster,nodes,job/NAME}，再 node render / doctor。",
-            "启停负载用 Job 插件（含 train-job）；不要假设只有某一业务 Job。",
-            "腾空占卡用 /api/free 或 /api/procs/kill。",
-            "完整说明见 docs/ai-接入.md 与 /api/docs。",
+            "改配置优先 POST /api/config/{cluster,nodes,job/NAME}，再 gc_node(render) / doctor。",
+            "启停负载用 Job 插件；不要假设只有某一业务 Job。",
+            "腾空占卡用 /api/free 或 /api/procs/kill；纯隔离用 gc_node(cordon)。",
+            "调度：gc_queue / gc_lease；排障：gc_diagnose；入口：gc_gateway。",
+            "完整说明见 docs/ai-接入.md、AGENTS.md 与 /api/docs。",
         ],
     }
 
@@ -512,15 +639,15 @@ def openapi_payload() -> dict[str, Any]:
     return {
         "openapi": "3.0.3",
         "info": {
-            "title": "gpu-control",
+            "title": "ComputeDeck (gpu-control)",
             "version": _version(),
             "description": (
-                "多节点 GPU 控制面 HTTP API（UI / Agent / MCP）。\n\n"
+                "ComputeDeck 多节点 GPU 控制面 HTTP API（CLI/服务名 gpu-control）。\n\n"
                 f"**鉴权**：mode=`{auth['mode']}`；"
                 f"{auth['note']}\n\n"
-                "交互文档：`/api/docs` · 机器目录：`/api`"
+                "交互文档：`/api/docs` · 机器目录：`/api` · Agent：`docs/ai-接入.md`"
             ),
-            "contact": {"name": "gpu-control"},
+            "contact": {"name": "ComputeDeck"},
         },
         "servers": [{"url": "/", "description": "当前控制面"}],
         "tags": [

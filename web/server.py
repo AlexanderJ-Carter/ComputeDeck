@@ -2126,6 +2126,8 @@ class Handler(BaseHTTPRequestHandler):
                 args.append("--restart")
             if body.get("force"):
                 args.append("--force")
+            if body.get("no_wait"):
+                args.append("--no-wait")
             if body.get("note"):
                 args.extend(["--note", body["note"]])
             with _action_lock:

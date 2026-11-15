@@ -2,15 +2,26 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ComputeDeck — 多节点 GPU 控制面</title>
-  <meta name="description" content="ComputeDeck：发现、租约、Job、统一入口与 Agent 契约，一套控制面管住 GPU 集群。" />
+  <meta name="description" content="ComputeDeck：发现、租约、Job、统一入口与 Agent，一套控制面管住 GPU 集群。" />
   <meta property="og:title" content="ComputeDeck" />
   <meta property="og:description" content="多节点 GPU 控制面 · Web · CLI · MCP" />
+  <meta name="theme-color" content="#eef3f0" />
   <link rel="icon" href="assets/logo.svg" type="image/svg+xml" />
+  <link rel="preload" href="styles.css" as="style" />
+  <link rel="preload" href="assets/logo.svg" as="image" type="image/svg+xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link
+    rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&family=Syne:wght@700;800&display=swap"
+    media="print"
+    onload="this.media='all'"
+  />
+  <noscript>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+  </noscript>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -20,11 +31,11 @@
 
   <header class="top">
     <a class="brand" href="#s1">
-      <img src="assets/logo.svg" width="36" height="36" alt="" />
+      <img src="assets/logo.svg" width="36" height="36" alt="" decoding="async" fetchpriority="high" />
       <span>ComputeDeck</span>
     </a>
     <nav class="top-nav" aria-label="快捷">
-      <button type="button" id="btn-play" class="ghost-btn" data-keep>自动播放</button>
+      <button type="button" id="btn-play" class="ghost-btn" data-keep aria-pressed="false">自动播放</button>
       <a href="https://github.com/AlexanderJ-Carter/ComputeDeck">GitHub</a>
       <a class="cta" href="https://github.com/AlexanderJ-Carter/ComputeDeck#快速开始">开始使用</a>
     </nav>
@@ -33,92 +44,88 @@
   <nav class="dots" id="dots" aria-label="展板导航"></nav>
 
   <main id="deck" class="deck">
-    <!-- 1 Hero -->
     <section class="slide hero" id="s1" data-title="开场">
       <div class="slide-bg hero-bg">
         <canvas id="hero-canvas" aria-hidden="true"></canvas>
         <div class="spotlight" id="hero-spot" aria-hidden="true"></div>
       </div>
       <div class="slide-inner hero-inner">
-        <img class="hero-logo reveal" src="assets/logo.svg" width="104" height="104" alt="ComputeDeck" />
+        <img class="hero-logo reveal" src="assets/logo.svg" width="104" height="104" alt="ComputeDeck" decoding="async" fetchpriority="high" />
         <p class="eyebrow reveal d1">多节点 GPU 控制面</p>
         <h1 class="reveal d2">ComputeDeck</h1>
-        <p class="lede reveal d3" id="hero-lede">一台 Control，管住整甲板的卡、任务与入口。</p>
-        <p class="lede sub reveal d3">Web · CLI · MCP，同一套运维语义。</p>
+        <p class="lede reveal d3">主控一台，卡、任务和入口都管得住。</p>
+        <p class="lede sub reveal d3">看板、命令行、Agent，说的是同一套事。</p>
         <div class="hero-stats reveal d4">
-          <div class="stat-card"><b data-count="15">0</b><span>MCP 工具</span></div>
+          <div class="stat-card"><b data-count="20">0</b><span>MCP 工具</span></div>
           <div class="stat-card"><b data-count="10">0</b><span>推荐 Job 模板</span></div>
           <div class="stat-card"><b data-count="3">0</b><span>入口方式</span></div>
         </div>
-        <p class="hint reveal d5">向下滚动 · ↓ / 空格 · 右侧圆点 · 可开自动播放</p>
+        <p class="hint reveal d5">下滑浏览 · ↓ / 空格 · 右侧圆点跳页 · 默认自动播放</p>
       </div>
     </section>
 
-    <!-- 2 Pain -->
     <section class="slide" id="s2" data-title="为什么">
       <div class="slide-bg mesh-dark"></div>
       <div class="slide-inner">
         <p class="eyebrow reveal">为什么需要</p>
-        <h2 class="reveal d1">从「群聊 + nvidia-smi」到控制面</h2>
+        <h2 class="reveal d1">别再靠群聊和 nvidia-smi 对账</h2>
         <div class="compare reveal d2">
           <div class="compare-col before">
-            <h3>之前</h3>
+            <h3>以前</h3>
             <ul>
-              <li>占用靠口头同步</li>
+              <li>谁占了卡，口头问问</li>
               <li>启停脚本各写各的</li>
-              <li>换机就改路径端口</li>
-              <li>Agent 没有统一契约</li>
-              <li>入口与在服卡对不上</li>
+              <li>换台机器就改路径、端口</li>
+              <li>Agent 没有统一接口</li>
+              <li>对外入口和在服卡对不上</li>
             </ul>
           </div>
           <div class="compare-arrow" aria-hidden="true">→</div>
           <div class="compare-col after">
             <h3>有了 ComputeDeck</h3>
             <ul>
-              <li>租约 / 队列可记账</li>
-              <li>Job JSON 插件化启停</li>
-              <li><code>${paths.*}</code> 适配异构目录</li>
+              <li>租约、队列能记账</li>
+              <li>Job 用 JSON 插件启停</li>
+              <li><code>${paths.*}</code> 适配各机目录</li>
               <li>OpenAPI + <code>gc_*</code> MCP</li>
-              <li>Edge 健康转发 + 冷却重试</li>
+              <li>Edge 健康转发，失败会换路</li>
             </ul>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- 3 Capability map -->
-    <section class="slide" id="s3" data-title="能力全景">
+    <section class="slide" id="s3" data-title="能力">
       <div class="slide-bg mesh-a"></div>
       <div class="slide-inner">
         <p class="eyebrow reveal">能力全景</p>
-        <h2 class="reveal d1">一甲板，全链路</h2>
-        <p class="body narrow reveal d2">从看见卡、占住卡、跑起任务，到对外入口与 Agent 接入——都在同一套配置与状态里。</p>
+        <h2 class="reveal d1">从看见卡，到对外服务</h2>
+        <p class="body narrow reveal d2">占卡、跑任务、对外入口、Agent 接入，都落在同一套配置和状态里，不用东拼西凑。</p>
         <div class="feat-mosaic reveal d3">
-          <article><strong>单屏看板</strong><span>健康评分 · GPU 池 · 入口状态</span></article>
-          <article><strong>Job 插件</strong><span>推理 / 训练 / Ray / Docker 模板</span></article>
-          <article><strong>路径异构</strong><span>defaults.paths · 节点覆盖</span></article>
-          <article><strong>统一入口</strong><span>Edge LB · 重试 · least-conn</span></article>
-          <article><strong>腾空隔离</strong><span>free · cordon · 进程清理</span></article>
-          <article><strong>模型工具栈</strong><span>拉取校验 · train/serve stack</span></article>
-          <article><strong>Agent</strong><span>OpenAPI · 15 个 gc_*</span></article>
-          <article><strong>可靠性</strong><span>flock · watchdog · diagnose</span></article>
-          <article class="wide"><strong>配置驱动</strong><span>场景在 config/local，换集群主要改 JSON，不改框架</span></article>
+          <article><strong>单屏看板</strong><span>健康分、GPU 池、入口状态</span></article>
+          <article><strong>Job 插件</strong><span>推理、训练、Ray、Docker 模板</span></article>
+          <article><strong>路径异构</strong><span>defaults.paths，节点可覆盖</span></article>
+          <article><strong>统一入口</strong><span>Edge 负载、重试、least-conn</span></article>
+          <article><strong>腾空隔离</strong><span>free、cordon、清进程</span></article>
+          <article><strong>模型工具栈</strong><span>拉取校验，训练/推理栈</span></article>
+          <article><strong>Agent</strong><span>OpenAPI，20 个 gc_*</span></article>
+          <article><strong>可靠性</strong><span>flock、watchdog、diagnose</span></article>
+          <article class="wide"><strong>配置驱动</strong><span>场景写在 config/local，换集群主要改 JSON，框架不用动</span></article>
         </div>
       </div>
     </section>
 
-    <!-- 4 Observe -->
     <section class="slide" id="s4" data-title="看得见">
       <div class="slide-bg mesh-b"></div>
       <div class="slide-inner split">
         <div>
           <p class="eyebrow reveal">看得见</p>
           <h2 class="reveal d1">池子、占用、入口一眼排开</h2>
-          <p class="body reveal d2">看板聚焦总览：健康环、节点条带、队列与租约摘要。腾空、隔离、探测 API 有明确动作，不靠猜。</p>
+          <p class="body reveal d2">看板先看总览：健康环、节点条带、队列和租约。腾空、隔离、探测都是明确动作，不用猜。</p>
           <ul class="bullet reveal d3">
-            <li>GPU 快照刷新与主机指标</li>
-            <li><code>free</code> 停 Job + 杀进程 + 释租约</li>
-            <li><code>cordon</code> 隔离调度，部署默认识别</li>
+            <li>GPU 快照和主机指标可刷新</li>
+            <li><code>free</code>：停 Job、清进程、释租约</li>
+            <li><code>cordon</code>：隔离调度，部署会躲开</li>
           </ul>
         </div>
         <div class="mock-panel reveal d3" aria-hidden="true">
@@ -136,14 +143,13 @@
       </div>
     </section>
 
-    <!-- 5 Jobs -->
     <section class="slide" id="s5" data-title="Job">
       <div class="slide-bg mesh-a"></div>
       <div class="slide-inner split">
         <div>
           <p class="eyebrow reveal">Job 插件</p>
-          <h2 class="reveal d1">装模板，就能启停</h2>
-          <p class="body reveal d2">内置通用壳；推荐包一键装齐 vLLM、微调、Ray、Docker。多机训练自动注入 <code>NNODES</code> / <code>MASTER_ADDR</code>。</p>
+          <h2 class="reveal d1">装上模板，就能启停</h2>
+          <p class="body reveal d2">自带通用壳；推荐包一次装齐 vLLM、微调、Ray、Docker。多机训练会自动注入 <code>NNODES</code>、<code>MASTER_ADDR</code>。</p>
           <p class="cmd reveal d3"><code>gpu-control jobs install --recommended</code></p>
         </div>
         <div class="tpl-stack reveal d3">
@@ -152,20 +158,19 @@
           <div class="tpl"><span class="tag dist">分布式</span> ray-cluster</div>
           <div class="tpl"><span class="tag">通用</span> shell-job · docker-job</div>
           <figure class="viz mini">
-            <img src="assets/distributed-inject.svg" alt="多机环境变量注入示意" />
+            <img src="assets/distributed-inject.svg" alt="多机环境变量注入示意" loading="lazy" decoding="async" width="640" height="360" />
           </figure>
         </div>
       </div>
     </section>
 
-    <!-- 6 Config paths -->
     <section class="slide" id="s6" data-title="配置">
       <div class="slide-bg mesh-b"></div>
       <div class="slide-inner split">
         <div>
           <p class="eyebrow reveal">配置驱动</p>
           <h2 class="reveal d1">换集群，主要改 JSON</h2>
-          <p class="body reveal d2">真实场景只在 <code>config/local/</code>。路径、SSH、标签、默认 Job、<code>unit_gpus</code> 写清楚，框架保持中性可迁移。</p>
+          <p class="body reveal d2">真实环境写在 <code>config/local/</code>。路径、SSH、标签、默认 Job、<code>unit_gpus</code> 写清楚就行，框架保持中性，方便搬家。</p>
         </div>
         <pre class="code-panel reveal d3" tabindex="0"><code>// nodes.json · defaults.paths
 {
@@ -181,36 +186,34 @@
       </div>
     </section>
 
-    <!-- 7 Edge -->
     <section class="slide" id="s7" data-title="入口">
       <div class="slide-bg mesh-a"></div>
       <div class="slide-inner split">
         <div>
           <p class="eyebrow reveal">统一入口</p>
-          <h2 class="reveal d1">健康上游，失败换路</h2>
-          <p class="body reveal d2">内置 Edge：round_robin / least-conn、连接失败重试、上游冷却。可叠加 nginx 或 LiteLLM；策略词汇表分清「集群标签 ≠ 入口算法」。</p>
+          <h2 class="reveal d1">上游健康，不行就换路</h2>
+          <p class="body reveal d2">内置 Edge：轮询或 least-conn，连接失败会重试，上游可冷却。需要时再叠 nginx 或 LiteLLM；「集群标签」和「入口算法」别混着说。</p>
           <ul class="bullet reveal d3">
-            <li><code>gateway ensure</code> 一键规整</li>
-            <li>端点健康探测与客户端 LB 片段</li>
-            <li>TLS / 对外 URL 可配</li>
+            <li><code>gateway ensure</code> 一次规整</li>
+            <li>端点健康探测，附带客户端 LB 片段</li>
+            <li>TLS、对外 URL 可配</li>
           </ul>
           <div class="flow reveal d4" aria-hidden="true">
             <span>Client</span><i></i><span>Edge</span><i></i><span class="ok">Healthy</span><i></i><span>GPU API</span>
           </div>
         </div>
         <figure class="viz reveal d3">
-          <img src="assets/edge-ingress.svg" alt="Edge 健康转发拓扑" />
+          <img src="assets/edge-ingress.svg" alt="Edge 健康转发拓扑" loading="lazy" decoding="async" width="640" height="400" />
         </figure>
       </div>
     </section>
 
-    <!-- 8 Models / toolkits -->
     <section class="slide" id="s8" data-title="模型栈">
       <div class="slide-bg mesh-b"></div>
       <div class="slide-inner">
         <p class="eyebrow reveal">模型与工具栈</p>
         <h2 class="reveal d1">拉取、校验、装栈一条链</h2>
-        <p class="body narrow reveal d2">HF / ModelScope 拉取与登记；deps / check / verify。训练栈、推理栈按 bundle 探测与安装到节点 Python。</p>
+        <p class="body narrow reveal d2">HF / ModelScope 拉取登记；deps、check、verify。训练栈、推理栈按 bundle 探测，装到节点自己的 Python 里。</p>
         <div class="stack-row reveal d3">
           <div class="stack-card">
             <strong>train-stack</strong>
@@ -228,14 +231,13 @@
       </div>
     </section>
 
-    <!-- 9 Agent -->
     <section class="slide" id="s9" data-title="Agent">
       <div class="slide-bg mesh-a"></div>
       <div class="slide-inner split">
         <div>
           <p class="eyebrow reveal">Agent 友好</p>
-          <h2 class="reveal d1">人机共用一条能力面</h2>
-          <p class="body reveal d2">浏览器、CLI、MCP 读同一份目录。Cursor 等用 <code>gc_*</code>；脚本用 Bearer；人用看板——语义不分裂。</p>
+          <h2 class="reveal d1">人和程序共用一套能力</h2>
+          <p class="body reveal d2">浏览器、CLI、MCP 读同一份目录。Cursor 走 <code>gc_*</code>，脚本带 Bearer，人看看板——语义不各说各话。</p>
         </div>
         <div class="term reveal d3" aria-hidden="true">
           <div class="term-bar">mcp · gc_*</div>
@@ -244,28 +246,27 @@
       </div>
     </section>
 
-    <!-- 10 Reliability -->
     <section class="slide" id="s10" data-title="可靠">
       <div class="slide-bg mesh-b"></div>
       <div class="slide-inner">
         <p class="eyebrow reveal">可靠性</p>
-        <h2 class="reveal d1">记账可讲清，漂移看得见</h2>
+        <h2 class="reveal d1">账记得清，漂移看得见</h2>
         <div class="reli-grid reveal d2">
           <article>
             <strong>flock 状态</strong>
-            <p>leases / queue / cordon 跨进程锁写入，CLI 与 UI 不互相踩。</p>
+            <p>leases、queue、cordon 跨进程加锁写，CLI 和 UI 不会互相踩。</p>
           </article>
           <article>
             <strong>租约语义</strong>
-            <p>异主租约部署默认拒绝；<code>--force</code> 才覆盖。崩溃不对账时 diagnose 会喊。</p>
+            <p>别人的租约默认不让覆盖；要覆盖才加 <code>--force</code>。账对不上，diagnose 会提示。</p>
           </article>
           <article>
             <strong>watchdog</strong>
-            <p>按 Job 巡检 status，不健康则 restart + wait，隔离节点自动跳过。</p>
+            <p>按 Job 巡检 status，不健康就 restart 再 wait；隔离节点自动跳过。</p>
           </article>
           <article>
             <strong>鉴权</strong>
-            <p>密码 / OIDC · Session · Bearer Token；生产默认不裸奔。</p>
+            <p>密码或 OIDC，Session 与 Bearer；生产环境不要裸奔。</p>
           </article>
           <article>
             <strong>终端</strong>
@@ -273,19 +274,18 @@
           </article>
           <article>
             <strong>开源</strong>
-            <p>AGPL-3.0：网络提供修改版须给源码，控制面改造可审计。</p>
+            <p>AGPL-3.0：网络提供修改版须给源码，控制面改动能审计。</p>
           </article>
         </div>
       </div>
     </section>
 
-    <!-- 11 CTA -->
     <section class="slide finale" id="s11" data-title="开始">
       <div class="slide-bg hero-bg"><canvas id="finale-canvas" aria-hidden="true"></canvas></div>
       <div class="slide-inner">
         <p class="eyebrow reveal">开源 · AGPL-3.0</p>
-        <h2 class="reveal d1">把甲板铺到你的机房</h2>
-        <p class="body narrow reveal d2">克隆 · 写好 <code>config/local</code> · <code>jobs install --recommended</code> · 开 UI。</p>
+        <h2 class="reveal d1">拿到你的机房里用</h2>
+        <p class="body narrow reveal d2">克隆仓库，写好 <code>config/local</code>，装推荐 Job，打开 UI 就行。</p>
         <pre class="code-panel slim reveal d3"><code>git clone https://github.com/AlexanderJ-Carter/ComputeDeck.git
 cd ComputeDeck
 uv venv .venv && uv pip install -r requirements.txt
@@ -300,6 +300,6 @@ gpu-control doctor && gpu-control ui --background</code></pre>
     </section>
   </main>
 
-  <script src="app.js"></script>
+  <script src="app.js" defer></script>
 </body>
 </html>

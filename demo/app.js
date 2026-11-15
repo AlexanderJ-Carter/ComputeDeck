@@ -6,13 +6,16 @@
   if (!slides.length || !dotsRoot) return;
 
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const AUTO_MS = 6200;
   let current = 0;
   let autoplay = false;
   let autoTimer = 0;
+  let userStopped = false;
   let termStarted = false;
   let counted = false;
+  let gpuTimer = 0;
+  const particleCtl = new Map();
 
-  // Build dots from slides
   dotsRoot.innerHTML = slides
     .map(
       (s, i) =>
@@ -25,7 +28,11 @@
 
   const setActive = (index) => {
     current = index;
-    slides.forEach((s, i) => s.classList.toggle("is-in", i === index));
+    slides.forEach((s, i) => {
+      const on = i === index;
+      s.classList.toggle("is-in", on);
+      s.toggleAttribute("data-active", on);
+    });
     dots.forEach((d, i) => {
       const on = i === index;
       d.classList.toggle("is-on", on);
@@ -37,7 +44,10 @@
     }
     const id = slides[index]?.id;
     if (id === "s1") runCounters();
+    if (id === "s4") startGpuShuffle();
+    else stopGpuShuffle();
     if (id === "s9") runTerminal();
+    syncParticles(id);
   };
 
   const goIndex = (index) => {
@@ -50,7 +60,12 @@
     if (el) el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
   };
 
-  dots.forEach((btn) => btn.addEventListener("click", () => go(btn.dataset.go)));
+  dots.forEach((btn) =>
+    btn.addEventListener("click", () => {
+      stopAuto();
+      go(btn.dataset.go);
+    })
+  );
 
   if ("IntersectionObserver" in window) {
     const io = new IntersectionObserver(
@@ -62,7 +77,7 @@
         const idx = slides.indexOf(visible.target);
         if (idx >= 0) setActive(idx);
       },
-      { threshold: [0.55, 0.7] }
+      { threshold: [0.45, 0.6, 0.75] }
     );
     slides.forEach((s) => io.observe(s));
   }
@@ -73,42 +88,51 @@
     if (/INPUT|TEXTAREA|SELECT/.test(tag)) return;
     if (ev.key === "ArrowDown" || ev.key === "PageDown" || ev.key === " ") {
       ev.preventDefault();
+      stopAuto();
       goIndex(current + 1);
     }
     if (ev.key === "ArrowUp" || ev.key === "PageUp") {
       ev.preventDefault();
+      stopAuto();
       goIndex(current - 1);
     }
     if (ev.key === "Home") {
       ev.preventDefault();
+      stopAuto();
       goIndex(0);
     }
     if (ev.key === "End") {
       ev.preventDefault();
+      stopAuto();
       goIndex(slides.length - 1);
     }
   });
 
   const stopAuto = () => {
     autoplay = false;
+    userStopped = true;
     if (playBtn) {
       playBtn.classList.remove("is-on");
       playBtn.textContent = "自动播放";
+      playBtn.setAttribute("aria-pressed", "false");
     }
     window.clearInterval(autoTimer);
   };
 
   const startAuto = () => {
+    if (reduce) return;
     autoplay = true;
+    userStopped = false;
     if (playBtn) {
       playBtn.classList.add("is-on");
-      playBtn.textContent = "停止播放";
+      playBtn.textContent = "暂停播放";
+      playBtn.setAttribute("aria-pressed", "true");
     }
     window.clearInterval(autoTimer);
     autoTimer = window.setInterval(() => {
       const next = current + 1 >= slides.length ? 0 : current + 1;
       goIndex(next);
-    }, 5200);
+    }, AUTO_MS);
   };
 
   playBtn?.addEventListener("click", () => {
@@ -116,48 +140,59 @@
     else startAuto();
   });
 
-  // Pause autoplay on user scroll/touch
-  let scrollQuiet = 0;
-  window.addEventListener(
-    "wheel",
-    () => {
-      if (!autoplay) return;
-      window.clearTimeout(scrollQuiet);
-      scrollQuiet = window.setTimeout(() => {}, 0);
-      stopAuto();
-    },
-    { passive: true }
-  );
+  const pauseOnInteract = () => {
+    if (autoplay) stopAuto();
+  };
+  window.addEventListener("wheel", pauseOnInteract, { passive: true });
+  window.addEventListener("touchstart", pauseOnInteract, { passive: true });
 
-  // GPU mosaic + live shuffle
-  const grid = document.getElementById("gpu-grid");
-  if (grid) {
+  if (!reduce) {
+    window.setTimeout(() => {
+      if (!userStopped && !document.hidden) startAuto();
+    }, 900);
+  }
+
+  function startGpuShuffle() {
+    const grid = document.getElementById("gpu-grid");
+    if (!grid || gpuTimer) return;
     const n = 32;
     const paint = () => {
       const busy = new Set();
       while (busy.size < 8) busy.add(Math.floor(Math.random() * n));
-      grid.innerHTML = Array.from({ length: n }, (_, i) => {
-        const cls = busy.has(i) ? "busy" : Math.random() > 0.3 ? "free" : "";
-        return `<i class="${cls}"></i>`;
-      }).join("");
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < n; i++) {
+        const el = document.createElement("i");
+        if (busy.has(i)) el.className = "busy";
+        else if (Math.random() > 0.3) el.className = "free";
+        frag.appendChild(el);
+      }
+      grid.replaceChildren(frag);
     };
     paint();
-    if (!reduce) window.setInterval(paint, 2800);
+    if (!reduce) gpuTimer = window.setInterval(paint, 2800);
   }
 
-  // Hero spotlight follows pointer
+  function stopGpuShuffle() {
+    window.clearInterval(gpuTimer);
+    gpuTimer = 0;
+  }
+
   const hero = document.getElementById("s1");
   const spot = document.getElementById("hero-spot");
   if (hero && spot && !reduce) {
+    let rafSpot = 0;
     hero.addEventListener("pointermove", (ev) => {
-      const r = hero.getBoundingClientRect();
-      spot.style.setProperty("--mx", `${((ev.clientX - r.left) / r.width) * 100}%`);
-      spot.style.setProperty("--my", `${((ev.clientY - r.top) / r.height) * 100}%`);
+      if (rafSpot) return;
+      rafSpot = requestAnimationFrame(() => {
+        rafSpot = 0;
+        const r = hero.getBoundingClientRect();
+        spot.style.setProperty("--mx", `${((ev.clientX - r.left) / r.width) * 100}%`);
+        spot.style.setProperty("--my", `${((ev.clientY - r.top) / r.height) * 100}%`);
+      });
     });
   }
 
-  // Soft tilt on feature tiles
-  if (!reduce) {
+  if (!reduce && window.matchMedia("(pointer: fine)").matches) {
     document.querySelectorAll(".feat-mosaic article, .stack-card, .reli-grid article").forEach((el) => {
       el.addEventListener("pointermove", (ev) => {
         const r = el.getBoundingClientRect();
@@ -214,9 +249,7 @@
       { text: "selected=[gpu-5,gpu-6] · wait=ready · lease ok", cls: "ok" },
     ];
     if (reduce) {
-      pre.innerHTML = lines
-        .map((l) => `<span class="${l.cls}">${l.text}</span>`)
-        .join("\n");
+      pre.innerHTML = lines.map((l) => `<span class="${l.cls}">${l.text}</span>`).join("\n");
       return;
     }
     let i = 0;
@@ -240,15 +273,17 @@
     }, lines.length * 380 + 40);
   }
 
-  // Soft particle field on hero / finale
   function mountParticles(canvas) {
-    if (!canvas || reduce) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    let w = 0;
-    let h = 0;
+    if (!canvas || reduce) return null;
+    const ctx = canvas.getContext("2d", { alpha: true });
+    if (!ctx) return null;
+    let cssW = 0;
+    let cssH = 0;
+    let dpr = 1;
     let raf = 0;
-    const dots = Array.from({ length: 48 }, () => ({
+    let running = false;
+    const count = window.matchMedia("(max-width: 700px)").matches ? 28 : 48;
+    const dots = Array.from({ length: count }, () => ({
       x: Math.random(),
       y: Math.random(),
       r: 0.6 + Math.random() * 1.8,
@@ -258,15 +293,17 @@
 
     const resize = () => {
       const rect = canvas.parentElement.getBoundingClientRect();
-      w = canvas.width = Math.floor(rect.width * devicePixelRatio);
-      h = canvas.height = Math.floor(rect.height * devicePixelRatio);
-      ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+      dpr = Math.min(devicePixelRatio || 1, 2);
+      cssW = rect.width;
+      cssH = rect.height;
+      canvas.width = Math.floor(cssW * dpr);
+      canvas.height = Math.floor(cssH * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
 
     const draw = () => {
-      const cw = w / devicePixelRatio;
-      const ch = h / devicePixelRatio;
-      ctx.clearRect(0, 0, cw, ch);
+      if (!running) return;
+      ctx.clearRect(0, 0, cssW, cssH);
       for (const d of dots) {
         d.x += d.vx;
         d.y += d.vy;
@@ -274,22 +311,21 @@
         if (d.y < 0 || d.y > 1) d.vy *= -1;
         ctx.beginPath();
         ctx.fillStyle = "rgba(13, 148, 136, 0.35)";
-        ctx.arc(d.x * cw, d.y * ch, d.r, 0, Math.PI * 2);
+        ctx.arc(d.x * cssW, d.y * cssH, d.r, 0, Math.PI * 2);
         ctx.fill();
       }
-      // faint links
       ctx.strokeStyle = "rgba(15, 118, 110, 0.12)";
       ctx.lineWidth = 1;
       for (let a = 0; a < dots.length; a++) {
         for (let b = a + 1; b < dots.length; b++) {
-          const dx = (dots[a].x - dots[b].x) * cw;
-          const dy = (dots[a].y - dots[b].y) * ch;
+          const dx = (dots[a].x - dots[b].x) * cssW;
+          const dy = (dots[a].y - dots[b].y) * cssH;
           const dist = Math.hypot(dx, dy);
           if (dist < 120) {
             ctx.globalAlpha = 1 - dist / 120;
             ctx.beginPath();
-            ctx.moveTo(dots[a].x * cw, dots[a].y * ch);
-            ctx.lineTo(dots[b].x * cw, dots[b].y * ch);
+            ctx.moveTo(dots[a].x * cssW, dots[a].y * cssH);
+            ctx.lineTo(dots[b].x * cssW, dots[b].y * cssH);
             ctx.stroke();
             ctx.globalAlpha = 1;
           }
@@ -298,15 +334,55 @@
       raf = requestAnimationFrame(draw);
     };
 
-    resize();
-    draw();
-    window.addEventListener("resize", resize);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("resize", resize);
+    const start = () => {
+      if (running) return;
+      running = true;
+      resize();
+      draw();
     };
+    const stop = () => {
+      running = false;
+      cancelAnimationFrame(raf);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    };
+
+    window.addEventListener("resize", () => {
+      if (running) resize();
+    });
+
+    return { start, stop };
   }
 
-  mountParticles(document.getElementById("hero-canvas"));
-  mountParticles(document.getElementById("finale-canvas"));
+  function syncParticles(activeId) {
+    for (const [id, ctl] of particleCtl) {
+      if (id === activeId) ctl.start();
+      else ctl.stop();
+    }
+  }
+
+  const heroCanvas = document.getElementById("hero-canvas");
+  const finaleCanvas = document.getElementById("finale-canvas");
+  const heroCtl = mountParticles(heroCanvas);
+  const finaleCtl = mountParticles(finaleCanvas);
+  if (heroCtl) particleCtl.set("s1", heroCtl);
+  if (finaleCtl) particleCtl.set("s11", finaleCtl);
+  syncParticles("s1");
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      for (const ctl of particleCtl.values()) ctl.stop();
+      stopGpuShuffle();
+      window.clearInterval(autoTimer);
+    } else {
+      syncParticles(slides[current]?.id);
+      if (slides[current]?.id === "s4") startGpuShuffle();
+      if (autoplay && !reduce) {
+        window.clearInterval(autoTimer);
+        autoTimer = window.setInterval(() => {
+          const next = current + 1 >= slides.length ? 0 : current + 1;
+          goIndex(next);
+        }, AUTO_MS);
+      }
+    }
+  });
 })();

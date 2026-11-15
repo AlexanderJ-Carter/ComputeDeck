@@ -36,11 +36,12 @@ except ImportError as exc:  # pragma: no cover
 mcp = MCPServer(
     name="gpu-control",
     instructions=(
-        "gpu-control 是可迁移的多节点 GPU 控制面。"
-        "用工具读/改 config、启停任意 Job（含推理与微调）、腾空节点。"
-        "不要假设特定模型或 Job 名；以 get jobs / config 为准。"
+        "ComputeDeck（CLI/MCP：gpu-control）是可迁移的多节点 GPU 控制面。"
+        "先 gc_api_catalog；不要假设特定 Job 名，以 gc_get_jobs / config 为准。"
+        "调度用 gc_queue / gc_lease；排障用 gc_diagnose；入口用 gc_gateway；"
+        "隔离/render 用 gc_node；异主租约部署用 gc_deploy(force=true)。"
         "HTTP 模式下若返回 401，检查 GPU_CONTROL_API_TOKEN。"
-        "改配置后建议 gc_cli(['node','render']) 与 gc_doctor()。"
+        "改配置后建议 gc_node(action='render') 与 gc_doctor()。"
     ),
 )
 
@@ -105,6 +106,28 @@ def _cli(args: list[str], *, timeout: int = 600) -> dict:
 
 def _prefer_http() -> bool:
     return bool(_api_base())
+
+
+def _read_state_json(filename: str, default: dict[str, Any]) -> dict[str, Any]:
+    from paths import STATE_DIR
+
+    path = STATE_DIR / filename
+    if not path.is_file():
+        return dict(default)
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _cli_json(args: list[str], *, timeout: int = 120) -> dict[str, Any]:
+    """跑 CLI 并解析 stdout JSON；失败时带上原始 cli 结果。"""
+    result = _cli(args, timeout=timeout)
+    try:
+        payload = json.loads(result["stdout"] or "{}")
+    except json.JSONDecodeError:
+        return {"ok": False, "error": "stdout 非 JSON", "_cli": result}
+    if isinstance(payload, dict):
+        payload["_cli"] = result
+        return payload
+    return {"ok": result["rc"] == 0, "data": payload, "_cli": result}
 
 
 @mcp.tool()
@@ -218,7 +241,7 @@ def _read_local(kind: str) -> dict:
 def gc_put_config(kind: str, data: dict, name: str | None = None) -> dict:
     """写入配置。kind=cluster|nodes|job；job 时传 name 与完整 Job JSON。
 
-    修改 nodes/路径后请再调用 gc_cli(['node','render']) 与 gc_doctor()。
+    修改 nodes/路径后请再调用 gc_node(action='render') 与 gc_doctor()。
     """
     kind = kind.strip().lower()
     if not _prefer_http():
@@ -297,22 +320,77 @@ def gc_toolkits(
 
 
 @mcp.tool()
-def gc_models(action: str = "list", node: str | None = None, model: str | None = None) -> dict:
-    """模型模块。action=list|show|deps|check|verify|paths。"""
-    if action not in {"list", "show", "deps", "check", "verify", "paths"}:
-        return {"ok": False, "error": "不支持的 action"}
+def gc_models(
+    action: str = "list",
+    node: str | None = None,
+    nodes: str | None = None,
+    model: str | None = None,
+    name: str | None = None,
+    tool: str | None = None,
+    register: bool = False,
+    register_id: str | None = None,
+    timeout_sec: int = 3600,
+) -> dict:
+    """模型模块。action=list|show|deps|check|verify|paths|pull。
+
+    pull 时传 ``name``（仓库 id）或已登记 ``model``；可选 ``register`` / ``tool``。
+    """
+    if action not in {"list", "show", "deps", "check", "verify", "paths", "pull"}:
+        return {"ok": False, "error": "action 须为 list|show|deps|check|verify|paths|pull"}
+    if action == "pull":
+        if not name and not model:
+            return {"ok": False, "error": "pull 需要 name（仓库 id）或 model（已登记 id）"}
+        if _prefer_http():
+            body: dict[str, Any] = {}
+            if name:
+                body["name"] = name
+            if model:
+                body["model"] = model
+            if tool:
+                body["tool"] = tool
+            if register:
+                body["register"] = True
+            if register_id:
+                body["register_id"] = register_id
+            if node:
+                body["node"] = node
+            elif nodes:
+                body["nodes"] = nodes
+            body["timeout"] = timeout_sec
+            return _http_json_safe("POST", "/api/models/pull", body, timeout=timeout_sec)
+        args = ["models", "pull"]
+        if name:
+            args.extend(["--name", name])
+        if model:
+            args.extend(["--model", model])
+        if tool:
+            args.extend(["--tool", tool])
+        if register:
+            args.append("--register")
+        if register_id:
+            args.extend(["--register-id", register_id])
+        if node:
+            args.extend(["--node", node])
+        elif nodes:
+            args.extend(["--nodes", nodes])
+        return _cli(args, timeout=timeout_sec)
     if _prefer_http() and action in {"deps", "check", "verify"}:
-        body: dict[str, Any] = {}
+        body = {}
         if node:
             body["node"] = node
+        elif nodes:
+            body["nodes"] = nodes
         if model and action == "verify":
             body["model"] = model
         return _http_json_safe("POST", f"/api/models/{action}", body, timeout=300)
     if _prefer_http() and action == "list":
-        return _http_json_safe("GET", "/api/models")
+        q = f"?node={node}" if node else ""
+        return _http_json_safe("GET", f"/api/models{q}")
     args = ["models", action]
     if node:
         args.extend(["--node", node])
+    elif nodes:
+        args.extend(["--nodes", nodes])
     if model and action == "verify":
         args.extend(["--model", model])
     return _cli(args, timeout=300)
@@ -381,11 +459,19 @@ def gc_free_node(
 
 
 @mcp.tool()
-def gc_deploy(job: str, gpus: int | None = None, nodes: str | None = None) -> dict:
+def gc_deploy(
+    job: str,
+    gpus: int | None = None,
+    nodes: str | None = None,
+    force: bool = False,
+    restart: bool = False,
+    no_wait: bool = False,
+    note: str | None = None,
+) -> dict:
     """按 GPU 数或指定节点部署 Job。
 
     ``gpus`` 省略时使用 ``cluster.scheduling.unit_gpus``（与 CLI 一致）；
-    未配置且未传 ``gpus``/``nodes`` 时会报错。
+    异主租约默认拒绝，设 ``force=true`` 才覆盖。
     """
     if _prefer_http():
         body: dict[str, Any] = {"job": job}
@@ -393,13 +479,245 @@ def gc_deploy(job: str, gpus: int | None = None, nodes: str | None = None) -> di
             body["nodes"] = nodes
         if gpus is not None:
             body["gpus"] = gpus
+        if force:
+            body["force"] = True
+        if restart:
+            body["restart"] = True
+        if no_wait:
+            body["no_wait"] = True
+        if note:
+            body["note"] = note
         return _http_json_safe("POST", "/api/deploy", body, timeout=1800)
     args = ["deploy", job]
     if nodes:
         args.extend(["--nodes", nodes])
     if gpus is not None:
         args.extend(["--gpus", str(gpus)])
+    if force:
+        args.append("--force")
+    if restart:
+        args.append("--restart")
+    if no_wait:
+        args.append("--no-wait")
+    if note:
+        args.extend(["--note", note])
     return _cli(args, timeout=1800)
+
+
+@mcp.tool()
+def gc_queue(
+    action: str = "list",
+    job: str | None = None,
+    gpus: int | None = None,
+    nodes: str | None = None,
+    note: str | None = None,
+    schedule: bool = False,
+    workload_id: str | None = None,
+) -> dict:
+    """工作负载队列。action=list|submit|schedule|cancel。
+
+    submit 需要 ``job``；cancel 需要 ``workload_id``；submit 时可 ``schedule=true`` 立即调度。
+    """
+    action = action.strip().lower()
+    if action not in {"list", "submit", "schedule", "cancel"}:
+        return {"ok": False, "error": "action 须为 list|submit|schedule|cancel"}
+    if action == "list":
+        if _prefer_http():
+            return _http_json_safe("GET", "/api/queue")
+        return _read_state_json("queue.json", {"workloads": []})
+    if action == "submit":
+        if not job:
+            return {"ok": False, "error": "submit 需要 job"}
+        if _prefer_http():
+            body: dict[str, Any] = {"job": job}
+            if gpus is not None:
+                body["gpus"] = gpus
+            if nodes:
+                body["nodes"] = nodes
+            if note:
+                body["note"] = note
+            if schedule:
+                body["schedule"] = True
+            return _http_json_safe("POST", "/api/queue/submit", body, timeout=1800)
+        args = ["queue", "submit", job]
+        if gpus is not None:
+            args.extend(["--gpus", str(gpus)])
+        if nodes:
+            args.extend(["--nodes", nodes])
+        if note:
+            args.extend(["--note", note])
+        if schedule:
+            args.append("--schedule")
+        return _cli(args, timeout=1800)
+    if action == "schedule":
+        if _prefer_http():
+            return _http_json_safe("POST", "/api/queue/schedule", {}, timeout=1800)
+        return _cli(["queue", "schedule", "--quiet"], timeout=1800)
+    if not workload_id:
+        return {"ok": False, "error": "cancel 需要 workload_id"}
+    if _prefer_http():
+        return _http_json_safe("POST", f"/api/queue/{workload_id}/cancel", {}, timeout=120)
+    return _cli(["queue", "cancel", "--id", workload_id], timeout=120)
+
+
+@mcp.tool()
+def gc_lease(
+    action: str = "list",
+    job: str | None = None,
+    nodes: str | None = None,
+    gpus: int | None = None,
+    note: str | None = None,
+    lease_id: str | None = None,
+) -> dict:
+    """占用租约。action=list|acquire|release。
+
+    acquire 需要 ``job`` + ``nodes``；release 传 ``lease_id`` 或 ``nodes``。
+    """
+    action = action.strip().lower()
+    if action not in {"list", "acquire", "release"}:
+        return {"ok": False, "error": "action 须为 list|acquire|release"}
+    if action == "list":
+        if _prefer_http():
+            return _http_json_safe("GET", "/api/leases")
+        return _read_state_json("leases.json", {"leases": []})
+    if action == "acquire":
+        if not job or not nodes:
+            return {"ok": False, "error": "acquire 需要 job 与 nodes"}
+        if _prefer_http():
+            body: dict[str, Any] = {"job": job, "nodes": nodes}
+            if gpus is not None:
+                body["gpus"] = gpus
+            if note:
+                body["note"] = note
+            return _http_json_safe("POST", "/api/leases", body, timeout=120)
+        args = ["lease", "acquire", "--job", job, "--nodes", nodes]
+        if gpus is not None:
+            args.extend(["--gpus", str(gpus)])
+        if note:
+            args.extend(["--note", note])
+        return _cli(args, timeout=120)
+    if not lease_id and not nodes:
+        return {"ok": False, "error": "release 需要 lease_id 或 nodes"}
+    if lease_id:
+        if _prefer_http():
+            return _http_json_safe("POST", f"/api/leases/{lease_id}/release", {}, timeout=60)
+        return _cli(["lease", "release", "--id", lease_id], timeout=60)
+    if _prefer_http():
+        # HTTP 仅支持按 id 释放；按节点走 CLI
+        return _cli(["lease", "release", "--nodes", nodes], timeout=60)
+    return _cli(["lease", "release", "--nodes", nodes], timeout=60)
+
+
+@mcp.tool()
+def gc_diagnose(action: str = "check", ids: list[str] | None = None) -> dict:
+    """一键检测 / 安全修复。action=check|repair；repair 可传 ``ids``。"""
+    action = action.strip().lower()
+    if action not in {"check", "repair"}:
+        return {"ok": False, "error": "action 须为 check|repair"}
+    if action == "check":
+        if _prefer_http():
+            return _http_json_safe("GET", "/api/diagnose")
+        return _cli_json(["diagnose", "check"], timeout=60)
+    if _prefer_http():
+        body: dict[str, Any] = {}
+        if ids:
+            body["ids"] = ids
+        return _http_json_safe("POST", "/api/diagnose/repair", body, timeout=120)
+    args = ["diagnose", "repair"]
+    for fid in ids or []:
+        args.extend(["--id", fid])
+    return _cli_json(args, timeout=120)
+
+
+@mcp.tool()
+def gc_gateway(action: str = "status", kind: str | None = None) -> dict:
+    """统一入口。action=status|get|render|start|stop；start/stop 可传 ``kind``（edge|litellm|all）。"""
+    action = action.strip().lower()
+    if action not in {"status", "get", "render", "start", "stop"}:
+        return {"ok": False, "error": "action 须为 status|get|render|start|stop"}
+    if action == "status":
+        if _prefer_http():
+            return _http_json_safe("GET", "/api/gateway/status")
+        return _cli(["gateway", "status"], timeout=30)
+    if action == "get":
+        if _prefer_http():
+            return _http_json_safe("GET", "/api/gateway")
+        return _cli(["gateway", "render"], timeout=60)
+    if action == "render":
+        if _prefer_http():
+            return _http_json_safe("POST", "/api/gateway/render", {}, timeout=60)
+        return _cli(["gateway", "render"], timeout=60)
+    if action == "start":
+        if _prefer_http():
+            body: dict[str, Any] = {}
+            if kind:
+                body["kind"] = kind
+            return _http_json_safe("POST", "/api/gateway/start", body, timeout=60)
+        args = ["gateway", "start"]
+        if kind:
+            args.extend(["--kind", kind])
+        return _cli(args, timeout=60)
+    if _prefer_http():
+        return _http_json_safe(
+            "POST",
+            "/api/gateway/stop",
+            {"kind": kind or "all"},
+            timeout=30,
+        )
+    return _cli(["gateway", "stop", "--kind", kind or "all"], timeout=30)
+
+
+@mcp.tool()
+def gc_node(
+    action: str,
+    name: str | None = None,
+    host: str | None = None,
+    gpus: int | None = None,
+    labels: str | None = None,
+    reason: str | None = None,
+) -> dict:
+    """节点生命周期。action=render|cordon|uncordon|add|remove。
+
+    cordon/uncordon/remove/add 需要 ``name``；add 还要 ``host``，可选 ``gpus`` / ``labels``。
+    """
+    action = action.strip().lower()
+    if action not in {"render", "cordon", "uncordon", "add", "remove"}:
+        return {"ok": False, "error": "action 须为 render|cordon|uncordon|add|remove"}
+    if action == "render":
+        if _prefer_http():
+            return _http_json_safe("POST", "/api/setup/render", {}, timeout=60)
+        return _cli(["node", "render"], timeout=60)
+    if not name:
+        return {"ok": False, "error": f"{action} 需要 name"}
+    if action == "cordon":
+        if _prefer_http():
+            body: dict[str, Any] = {"name": name}
+            if reason:
+                body["reason"] = reason
+            return _http_json_safe("POST", "/api/node/cordon", body, timeout=60)
+        args = ["node", "cordon", name]
+        if reason:
+            args.extend(["--reason", reason])
+        return _cli(args, timeout=60)
+    if action == "uncordon":
+        if _prefer_http():
+            return _http_json_safe("POST", "/api/node/uncordon", {"name": name}, timeout=60)
+        return _cli(["node", "uncordon", name], timeout=60)
+    if action == "remove":
+        if _prefer_http():
+            return _http_json_safe("POST", "/api/node/remove", {"name": name}, timeout=60)
+        return _cli(["node", "remove", name], timeout=60)
+    if not host:
+        return {"ok": False, "error": "add 需要 host"}
+    if _prefer_http():
+        body = {"name": name, "host": host, "gpus": gpus if gpus is not None else 4}
+        if labels:
+            body["labels"] = labels
+        return _http_json_safe("POST", "/api/node/add", body, timeout=60)
+    args = ["node", "add", name, "--host", host, "--gpus", str(gpus if gpus is not None else 4)]
+    if labels:
+        args.extend(["--labels", labels])
+    return _cli(args, timeout=60)
 
 
 @mcp.tool()
