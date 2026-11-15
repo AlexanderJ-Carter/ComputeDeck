@@ -49,6 +49,7 @@ from state_util import atomic_write_json as state_atomic_write_json, read_json a
 from jobs_util import (  # noqa: E402
     default_job_name,
     install_job_template,
+    install_recommended_templates,
     list_job_templates,
     load_job_summaries,
 )
@@ -2116,10 +2117,15 @@ class Handler(BaseHTTPRequestHandler):
             args = ["deploy", job]
             if body.get("nodes"):
                 args.extend(["--nodes", body["nodes"]])
-            else:
-                args.extend(["--gpus", str(body.get("gpus", 4))])
+            if body.get("gpus") not in (None, ""):
+                args.extend(["--gpus", str(int(body["gpus"]))])
+            elif not body.get("nodes"):
+                # 交给 CLI 读 cluster.scheduling.unit_gpus；皆缺则 CLI 报错
+                pass
             if body.get("restart"):
                 args.append("--restart")
+            if body.get("force"):
+                args.append("--force")
             if body.get("note"):
                 args.extend(["--note", body["note"]])
             with _action_lock:
@@ -2218,10 +2224,20 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/jobs/install-template":
+            recommended = bool(body.get("recommended"))
+            force = bool(body.get("force"))
+            if recommended:
+                with _action_lock:
+                    payload = install_recommended_templates(force=force)
+                self._json(200, {
+                    **payload,
+                    "overview": build_overview(),
+                })
+                return
             template_id = str(body.get("template") or body.get("id") or "").strip()
             name = (body.get("name") or "").strip() or None
             if not template_id:
-                self._json(400, {"error": "template required"})
+                self._json(400, {"error": "template required（或传 recommended=true）"})
                 return
             try:
                 with _action_lock:

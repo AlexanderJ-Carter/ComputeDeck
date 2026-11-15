@@ -56,6 +56,35 @@ class StateUtilTests(unittest.TestCase):
         with file_lock(self.path):
             pass
 
+    def test_queue_style_append_under_lock(self) -> None:
+        """模拟 queue submit：两次 mutate 不丢条目。"""
+        atomic_write_json(self.path, {"workloads": []})
+
+        def append_one(data):
+            data.setdefault("workloads", []).append({"id": f"wl-{len(data['workloads'])}"})
+
+        update_json(self.path, append_one, default={"workloads": []})
+        update_json(self.path, append_one, default={"workloads": []})
+        rows = read_json(self.path, {})["workloads"]
+        self.assertEqual([r["id"] for r in rows], ["wl-0", "wl-1"])
+
+    def test_lease_style_conflict_detect(self) -> None:
+        """模拟 lease acquire：同节点二次占用应被 mutator 看见。"""
+        atomic_write_json(self.path, {"leases": [{"id": "a", "nodes": ["n1"]}]})
+        conflicts: list[str] = []
+
+        def try_acquire(data):
+            occupied = {n for lease in data.get("leases", []) for n in lease.get("nodes", [])}
+            hit = sorted({"n1"} & occupied)
+            if hit:
+                conflicts.extend(hit)
+                return
+            data.setdefault("leases", []).append({"id": "b", "nodes": ["n1"]})
+
+        update_json(self.path, try_acquire, default={"leases": []})
+        self.assertEqual(conflicts, ["n1"])
+        self.assertEqual(len(read_json(self.path, {})["leases"]), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

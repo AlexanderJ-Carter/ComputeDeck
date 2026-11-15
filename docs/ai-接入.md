@@ -57,7 +57,7 @@ open http://127.0.0.1:8787/api/docs
 运维：
 
 - `GET /api/doctor` · `GET /api/overview?refresh=1` · `GET /api/overview?light=1`
-- `GET /api/jobs` · `POST /api/jobs/install-template`
+- `GET /api/jobs` · `POST /api/jobs/install-template`（`template` 或 `recommended=true`）
 - `POST /api/jobs/{name}/action` — `{"action":"start|stop|…","node":"…"}`
 - `POST /api/free` — `{"node":"…","cordon":false,"no_kill":false,"wait":20}`
 - `POST /api/procs` / `POST /api/procs/kill`
@@ -104,6 +104,9 @@ Cursor MCP 配置（示例见 `config/examples/mcp.cursor.json`）：
 | （均未设） | 工具直接调本地 CLI，不依赖 UI |
 
 常用工具：`gc_api_catalog` · `gc_auth_status` · `gc_doctor` · `gc_get_config` / `gc_put_config` · `gc_get_jobs` · `gc_job_action` · `gc_free_node` · `gc_procs` · `gc_models` · `gc_overview` · `gc_toolkits` · `gc_deploy` · `gc_exec` · `gc_cli`。
+
+`gc_deploy` 的 `gpus` 可省略，与 CLI 一样回落到 `cluster.scheduling.unit_gpus`。  
+队列 / 租约暂无一等 MCP 工具，用 `gc_cli(["queue", …])` / `gc_cli(["lease", …])`。
 
 ---
 

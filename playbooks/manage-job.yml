@@ -144,6 +144,8 @@
           docker inspect -f '{{ '{{' }}.State.Status{{ '}}' }}' {{ docker_name }}
           || (echo missing; exit 1)
 
+    # docker wait = 容器 State.Status==running，不探业务 HTTP；
+    # 需要应用就绪请用 runtime=process + 管理脚本自实现 wait。
     - name: Docker wait command
       when: runtime == 'docker' and job_action == 'wait'
       ansible.builtin.set_fact:

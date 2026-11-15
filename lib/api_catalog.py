@@ -40,10 +40,17 @@ _BODY: dict[str, dict[str, Any]] = {
         "type": "object",
         "properties": {
             "job": {"type": "string"},
-            "gpus": {"type": "integer"},
+            "gpus": {
+                "type": "integer",
+                "description": "省略则用 cluster.scheduling.unit_gpus",
+            },
             "nodes": {"type": "string"},
             "restart": {"type": "boolean"},
             "no_wait": {"type": "boolean"},
+            "force": {
+                "type": "boolean",
+                "description": "覆盖异主租约",
+            },
             "note": {"type": "string"},
         },
     },
@@ -104,10 +111,17 @@ _BODY: dict[str, dict[str, Any]] = {
     },
     "install_template": {
         "type": "object",
-        "required": ["template"],
         "properties": {
-            "template": {"type": "string"},
-            "name": {"type": "string"},
+            "template": {"type": "string", "description": "模板 id；与 recommended 二选一"},
+            "name": {"type": "string", "description": "安装后的 Job 名（默认模板名）"},
+            "recommended": {
+                "type": "boolean",
+                "description": "为 true 时安装推荐模板包（忽略 template/name）",
+            },
+            "force": {
+                "type": "boolean",
+                "description": "与 recommended 同用：覆盖已安装同名 Job",
+            },
         },
     },
 }
@@ -205,7 +219,7 @@ def http_endpoints() -> list[dict[str, Any]]:
         {
             "method": "POST",
             "path": "/api/jobs/install-template",
-            "summary": "安装模板到 local/jobs",
+            "summary": "安装模板到 local/jobs（body.recommended=true 装推荐包）",
             "group": "ops",
             "body": "install_template",
         },
@@ -269,6 +283,18 @@ def http_endpoints() -> list[dict[str, Any]]:
             "summary": "Job 动作 start|stop|restart|status|wait",
             "group": "ops",
             "body": "job_action",
+        },
+        {
+            "method": "GET",
+            "path": "/api/jobs/{name}/logs",
+            "summary": "Job 日志尾部 ?lines=&node=",
+            "group": "read",
+        },
+        {
+            "method": "POST",
+            "path": "/api/jobs/{name}/logs",
+            "summary": "Job 日志尾部 body.lines|node",
+            "group": "ops",
         },
         {"method": "POST", "path": "/api/deploy", "summary": "一键部署", "group": "ops", "body": "deploy"},
         {"method": "POST", "path": "/api/free", "summary": "腾空节点", "group": "ops", "body": "free"},
@@ -385,6 +411,7 @@ def catalog_payload() -> dict[str, Any]:
     auth = _auth_info()
     return {
         "service": "gpu-control",
+        "product": "ComputeDeck",
         "version": _version(),
         "base": API_BASE,
         "docs": {

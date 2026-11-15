@@ -82,6 +82,7 @@
           <button id="btn-refresh" class="primary" data-keep-enabled="1" data-action="1">刷新 GPU</button>
           <span id="busy-indicator" class="chip chip--info" hidden>执行中…</span>
           <button type="button" id="console-unread" class="chip warn console-unread" hidden data-keep-enabled="1">有新输出</button>
+          <span id="auth-session-chip" class="chip chip--neutral" hidden data-keep-enabled="1"></span>
           <button id="btn-logout" class="ghost tiny" data-keep-enabled="1" hidden>退出</button>
         </div>
       </header>
@@ -150,14 +151,11 @@
             <button id="btn-quick-health" class="ghost" data-action="1">探测 API</button>
           </div>
           <div class="dash-deploy">
-            <div class="quick-deploy">
-              <select id="quick-job" aria-label="快捷部署任务"></select>
-              <input id="quick-gpus" type="number" min="1" step="1" value="4" aria-label="快捷部署 GPU 数" title="GPU 数" />
-              <button class="primary" data-oneclick="deploy" data-action="1">启动 Job</button>
-            </div>
-            <button class="ghost" data-view-jump="config" data-action="1">配置向导</button>
+            <button class="primary" data-view-jump="workloads" data-keep-enabled="1">去任务页部署</button>
+            <button class="ghost" data-view-jump="endpoints" data-keep-enabled="1">统一入口 / 端点</button>
+            <button class="ghost" data-view-jump="config" data-keep-enabled="1">配置向导</button>
           </div>
-          <p class="meta dash-action-hint" id="dash-action-hint"></p>
+          <p class="meta dash-action-hint" id="dash-action-hint">看板只做总览；启停 Job、队列与网关操作请到对应页面。</p>
         </section>
 
         <div class="dash-grid dash-grid-2 dash-secondary">
@@ -193,11 +191,7 @@
             <div class="panel">
               <div class="panel-h">
                 <h2>统一入口</h2>
-                <div class="btn-row">
-                  <button id="btn-dash-gw-refresh" class="ghost tiny" data-keep-enabled="1" data-action="1">刷新</button>
-                  <button id="btn-dash-gw-start" class="primary tiny" data-keep-enabled="1" data-action="1">规整启动</button>
-                  <button id="btn-dash-gw-stop" class="ghost tiny" data-keep-enabled="1" data-action="1">停</button>
-                </div>
+                <button class="ghost tiny" data-view-jump="endpoints" data-keep-enabled="1">端点页操作</button>
               </div>
               <div id="dash-gateway" class="dash-gateway"></div>
               <p class="meta" id="dash-ingress-url">-</p>
@@ -350,7 +344,7 @@ gpu-control jobs install vllm-serve --name vllm</pre>
           <div class="panel">
             <div class="panel-h">
               <h2>任务操作</h2>
-              <span class="meta">仅显示已安装 Job · 内置只有 shell-job</span>
+              <span class="meta">仅显示已安装 Job · 其余从模板安装</span>
             </div>
             <label class="field"><span>已安装任务</span><select id="job-select"></select></label>
             <span id="job-select-hint" class="meta"></span>
@@ -395,15 +389,19 @@ gpu-control jobs install vllm-serve --name vllm</pre>
                 <select id="deploy-node"></select>
               </label>
             </details>
-            <details class="fold" style="margin-top:10px" open>
-              <summary>从模板安装（http-serve / train / vllm …）</summary>
-              <p class="meta">框架不预装业务 Job；需要时安装到 config/local/jobs/</p>
+            <details class="fold" style="margin-top:10px" id="job-templates-fold">
+              <summary>从模板安装（推理 / 训练 / Ray / Docker）</summary>
+              <p class="meta">内置仅 shell-job；推荐包一键装齐常用模板到 config/local/jobs/</p>
+              <div class="btn-row" style="margin-top:8px">
+                <button id="btn-install-recommended-jobs" class="primary tiny" data-keep-enabled="1" data-action="1">安装推荐包</button>
+              </div>
               <div class="compact-fields" style="margin-top:8px">
                 <label class="field"><span>模板</span><select id="job-template" data-keep-enabled="1"></select></label>
                 <label class="field"><span>安装为名</span><input id="job-template-name" placeholder="可选，默认模板名" data-keep-enabled="1" /></label>
                 <button id="btn-install-job-template" class="primary tiny" data-keep-enabled="1" data-action="1">安装</button>
               </div>
               <span class="meta" id="job-templates-meta"></span>
+              <div id="job-templates-list" class="list" style="margin-top:8px"></div>
             </details>
             <div id="jobs" class="list" style="margin-top:12px"></div>
           </div>
@@ -762,7 +760,7 @@ gpu-control ui --background</pre>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
   <div id="auth-gate" class="auth-gate" hidden>
     <form id="auth-form" class="auth-card" autocomplete="current-password">
-      <div class="auth-brand">gpu-control</div>
+      <div class="auth-brand">ComputeDeck</div>
       <h2>控制面登录</h2>
       <p class="meta" id="auth-hint">已启用鉴权 · 会话 Cookie · HttpOnly</p>
       <div id="auth-oidc-box" hidden>

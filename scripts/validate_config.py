@@ -98,10 +98,14 @@ def main() -> int:
     jobs = list_job_files()
     if not jobs:
         issues.append(
-            "no jobs registered（复制 config/examples/shell-job.example.json → config/local/jobs/）"
+            "no jobs registered（gpu-control jobs install --recommended）"
         )
     else:
         notes.append(f"jobs: {', '.join(p.stem for p in jobs)}")
+        from jobs_util import validate_registered_jobs
+
+        for problem in validate_registered_jobs():
+            issues.append(f"job schema: {problem}")
 
     if (CONFIG_DIR / "examples").is_dir():
         notes.append("config/examples present")

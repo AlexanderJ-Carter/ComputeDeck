@@ -17,17 +17,21 @@
 - 产品名 **ComputeDeck**，命令行 `gpu-control`
 - 文档配图：`docs/assets/` 架构总览 / Edge / 分层 / 分布式注入
 - 产品 logo：`docs/assets/logo.svg`（README / MkDocs / UI favicon 与侧栏）
+- Job 推荐包：`gpu-control jobs install --recommended`、`POST /api/jobs/install-template`（`recommended=true`）、任务页一键安装；模板带分类与推荐标记
+- Job 最小契约校验（`validate_job_dict` / doctor / diagnose）；队列与租约状态机说明；state flock 契约文档
+- `diagnose` 租约漂移检测；`deploy --force` 覆盖异主租约
 
 ### Changed
 
 - 许可证由 MIT 改为 **AGPL-3.0-only**（网络提供修改版须提供源码）
 - README / 用户文档定稿：自然表述、架构图；不做无产品依据的伪性能对标
-- UI 品牌展示改为 ComputeDeck + logo（原文字 `gc`）
+- UI 品牌展示改为 ComputeDeck + logo（原文字 `gc`）；看板收敛为总览，部署/网关操作下沉到任务/端点页
 - Docstring 统一为中文 Sphinx 冒号字段；CLI 报错中文化
-- `state_util` 明确仅 POSIX flock
+- `state_util` 明确仅 POSIX flock；`queue` / `lease release --id` 统一走 `update_json`
 - 新增 GitHub Actions CI、`docs/develop/ci.md`、`docs/develop/layout.md`
 - 提交习惯改为 Conventional Commits；版本用 tag `vX.Y.Z` 标记
-- GPU 数量改读配置 / 实采 / `scheduling.unit_gpus`；清理场景专用默认与文案
+- GPU 数量改读配置 / 实采 / `scheduling.unit_gpus`；清理场景专用默认与文案；`gc_deploy` / `/api/deploy` 与 CLI 对齐
+- API catalog 补 `jobs/{name}/logs`；高可用文档增加 strategy 词汇表
 - 删除 `legacy_vllm` 别名；训练日志预设对齐 `/tmp/gpu-control-jobs`；`check.sh` 覆盖 `mcp_server`
 
 ## [0.21.0] - 2026-11-14

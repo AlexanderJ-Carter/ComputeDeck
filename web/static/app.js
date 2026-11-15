@@ -381,9 +381,8 @@ function showSteps(steps, title) {
       .map((step) => {
         const ok = !!step.ok;
         return `<div class="node-block">
-        <header class="${ok ? "ok" : "fail"}"><span>${escapeHtml(step.name || "?")}</span><span>${
-          ok ? "成功" : "失败"
-        } · ${escapeHtml(String(step.ms ?? "-"))}ms</span></header>
+        <header class="${ok ? "ok" : "fail"}"><span>${escapeHtml(step.name || "?")}</span><span>${ok ? "成功" : "失败"
+          } · ${escapeHtml(String(step.ms ?? "-"))}ms</span></header>
         <pre>${escapeHtml(formatStepBody(step))}</pre>
       </div>`;
       })
@@ -467,6 +466,19 @@ function showAuthGate(show) {
   }
 }
 
+function renderAuthSessionChip(auth) {
+  const chip = document.getElementById("auth-session-chip");
+  if (!chip) return;
+  if (!auth || !auth.enabled || !auth.authenticated) {
+    chip.hidden = true;
+    chip.textContent = "";
+    return;
+  }
+  const mode = auth.mode || "session";
+  chip.hidden = false;
+  chip.textContent = mode === "oidc" ? "已登录 · OIDC" : "已登录 · 密码";
+}
+
 async function refreshAuthStatus() {
   const data = await api("/api/auth/status");
   state.auth = data;
@@ -474,6 +486,7 @@ async function refreshAuthStatus() {
   showAuthGate(needLogin);
   const logout = document.getElementById("btn-logout");
   if (logout) logout.hidden = !(data.enabled && data.authenticated);
+  renderAuthSessionChip(data);
   const hint = document.getElementById("auth-hint");
   const oidcBox = document.getElementById("auth-oidc-box");
   const pwBox = document.getElementById("auth-password-box");
@@ -504,6 +517,24 @@ async function refreshAuthStatus() {
   return data;
 }
 
+async function enterConsoleAfterAuth() {
+  const route = currentRoute();
+  setView(route.view, { updateHash: false });
+  if (route.view === "config" && route.tab) setConfigTab(route.tab);
+  setBusy(true);
+  try {
+    await refresh(false);
+    await loadSetup();
+    await loadQuality();
+    await seedConsole();
+    hideConsoleUnread();
+  } catch (err) {
+    log(String(err.message || err));
+  } finally {
+    setBusy(false);
+  }
+}
+
 async function submitLogin(ev) {
   if (ev) ev.preventDefault();
   const errEl = document.getElementById("auth-error");
@@ -523,8 +554,7 @@ async function submitLogin(ev) {
     document.getElementById("auth-password").value = "";
     showAuthGate(false);
     toast("已登录");
-    await refresh(false);
-    await loadSetup();
+    await enterConsoleAfterAuth();
   } catch (err) {
     errEl.textContent = String(err.message || err);
     errEl.hidden = false;
@@ -752,8 +782,8 @@ function renderHostMetrics(overview) {
         <div class="row"><span>内存</span><b>${n.mem_used_mb ?? "-"} / ${n.mem_total_mb ?? "-"} MB</b></div>
         <div class="metric-bar"><span style="width:${memPct}%"></span></div>
         <div class="row"><span>操作</span><button class="tiny primary" data-open-term="${escapeHtml(
-          n.name
-        )}" data-keep-enabled="1">终端</button></div>
+        n.name
+      )}" data-keep-enabled="1">终端</button></div>
       </div>`;
     })
     .join("");
@@ -943,12 +973,11 @@ function renderIngressMeta(status) {
     settings.strategy ? `LB ${settings.strategy}` : null,
     pool.upstream_count != null ? `上游 ${pool.available ?? "?"}/${pool.upstream_count}` : null,
     `litellm ${ll.running ? "运行中" : ll.ready ? "可选·就绪" : "可选·未配"}`,
-    `nginx ${
-      status.nginx && status.nginx.binary
-        ? "已装"
-        : status.nginx && status.nginx.needed
-          ? "未装"
-          : "不必装"
+    `nginx ${status.nginx && status.nginx.binary
+      ? "已装"
+      : status.nginx && status.nginx.needed
+        ? "未装"
+        : "不必装"
     }`,
   ]
     .filter(Boolean)
@@ -999,6 +1028,13 @@ async function stopIngress() {
 function renderNodes(nodes) {
   const root = $("nodes");
   if (!root) return;
+  if (!nodes?.length) {
+    root.innerHTML =
+      '<div class="empty-state"><strong>暂无节点快照</strong><p>先在「集群 · 节点」添加节点并刷新 GPU。</p></div>';
+    renderNodeAdmin(nodes || []);
+    renderDrawer();
+    return;
+  }
   root.innerHTML = nodes
     .map((node) => {
       const selected = state.selectedNode === node.name;
@@ -1028,8 +1064,7 @@ function renderNodes(nodes) {
         <span class="name">${name}</span>
         <span class="host">${escapeHtml(node.host || "-")}</span>
         <span class="stats"><span class="meta">空闲 ${node.free}/${node.total}</span>${badge}</span>
-        <span class="meta node-usage">CPU ${node.cpu_percent ?? "-"}% · 负载 ${node.load1 ?? "-"} · 内存 ${
-          node.mem_used_mb != null ? Math.round(node.mem_used_mb / 1024) + "G" : "-"
+        <span class="meta node-usage">CPU ${node.cpu_percent ?? "-"}% · 负载 ${node.load1 ?? "-"} · 内存 ${node.mem_used_mb != null ? Math.round(node.mem_used_mb / 1024) + "G" : "-"
         }</span>
         <span class="bars">${bars || '<span class="meta">暂无快照</span>'}</span>
       </button>`;
@@ -1045,6 +1080,11 @@ function renderNodes(nodes) {
 function renderNodeAdmin(nodes) {
   const root = $("node-admin");
   if (!root) return;
+  if (!nodes?.length) {
+    root.innerHTML =
+      '<div class="empty-state compact"><strong>尚未登记节点</strong><p>在上方表单填写主机后添加，再执行 node render。</p></div>';
+    return;
+  }
   root.innerHTML = nodes
     .map(
       (n) => `<div class="item">
@@ -1081,18 +1121,18 @@ function renderDrawer() {
   const procRows = procs.length
     ? `<table class="table"><thead><tr><th>GPU</th><th>PID</th><th>MEM</th><th>NAME</th><th></th></tr></thead><tbody>
         ${procs
-          .map(
-            (p) => `<tr>
+      .map(
+        (p) => `<tr>
               <td>${escapeHtml(String(p.gpu))}</td>
               <td>${escapeHtml(String(p.pid))}</td>
               <td>${escapeHtml(String(p.memory_mib))}MiB</td>
               <td class="meta">${escapeHtml(p.name || "-")}</td>
               <td><button class="danger tiny" data-kill-pid="${p.pid}" data-kill-node="${escapeHtml(
-                node.name
-              )}">结束</button></td>
+          node.name
+        )}">结束</button></td>
             </tr>`
-          )
-          .join("")}
+      )
+      .join("")}
       </tbody></table>`
     : '<p class="muted tiny">当前快照无 GPU compute 进程</p>';
   const safeName = escapeHtml(node.name);
@@ -1125,10 +1165,10 @@ function renderDrawer() {
       <button data-open-term="${node.name}" class="primary">打开终端</button>
     </div>
     <p class="meta" style="margin-top:12px">CLI: gpu-control procs list --node ${escapeHtml(
-      node.name
-    )} --refresh<br/>gpu-control procs kill --node ${escapeHtml(node.name)} --all<br/>gpu-control free --node ${escapeHtml(
-      node.name
-    )}</p>`;
+    node.name
+  )} --refresh<br/>gpu-control procs kill --node ${escapeHtml(node.name)} --all<br/>gpu-control free --node ${escapeHtml(
+    node.name
+  )}</p>`;
   bindNodeActions(body);
   body.querySelectorAll("[data-open-term]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -1343,7 +1383,7 @@ function renderJobs(jobs) {
   const opts =
     list.map((j) => `<option value="${escapeHtml(j.name)}">${escapeHtml(jobOptionLabel(j))}</option>`).join("") ||
     `<option value="">（无任务 — 请安装模板）</option>`;
-  for (const id of ["job-select", "quick-job", "setup-job-pick"]) {
+  for (const id of ["job-select", "setup-job-pick"]) {
     const sel = document.getElementById(id);
     if (!sel) continue;
     const prev = sel.value;
@@ -1366,16 +1406,14 @@ function renderJobs(jobs) {
           const dist = j.distributed ? "distributed" : "";
           return `<div class="item"><div><strong>${escapeHtml(j.name)}</strong>
           <div class="meta">${escapeHtml(j.description || "")}</div>
-          <div class="meta">${escapeHtml(runtime)}${kind ? " · " + kind : ""}${
-            dist ? " · " + dist : ""
-          }${src ? " · " + escapeHtml(src) : ""}${
-            j.model ? " · model=" + escapeHtml(j.model) : ""
-          }
+          <div class="meta">${escapeHtml(runtime)}${kind ? " · " + kind : ""}${dist ? " · " + dist : ""
+            }${src ? " · " + escapeHtml(src) : ""}${j.model ? " · model=" + escapeHtml(j.model) : ""
+            }
           ${args ? " · " + escapeHtml(args) : ""}</div></div>
           <span class="chip">${j.gpus_per_node || "?"} GPU</span></div>`;
         })
         .join("") ||
-        '<div class="empty-state"><strong>暂无已安装 Job</strong><p>展开下方「从模板安装」安装 http-serve / train / vllm 等模板。</p></div>';
+      '<div class="empty-state"><strong>暂无已安装 Job</strong><p>展开下方「从模板安装」安装 http-serve / train / vllm 等模板。</p></div>';
   }
   syncJobArgsHint(list);
   syncJobSelectHint(list);
@@ -1387,29 +1425,21 @@ function syncJobSelectHint(jobs) {
   const describe = (name) => {
     const job = list.find((j) => j.name === name);
     if (!job) return "还没有任务。到「任务」页安装模板或创建 Job。";
-    return `${job.description || job.name} · ${job.gpus_per_node ?? "?"} GPU/节点${
-      job.distributed ? " · 多机" : ""
-    }`;
+    return `${job.description || job.name} · ${job.gpus_per_node ?? "?"} GPU/节点${job.distributed ? " · 多机" : ""
+      }`;
   };
   const sel = $("job-select");
-  const quick = $("quick-job");
   const hint = $("job-select-hint");
-  const quickHint = $("dash-action-hint");
   if (hint) hint.textContent = describe(sel?.value);
-  if (quickHint) quickHint.textContent = describe(quick?.value);
 }
 
 function syncDeployGpusDefault(jobs) {
-  const sel = document.getElementById("job-select") || document.getElementById("quick-job");
+  const sel = document.getElementById("job-select");
   const input = document.getElementById("deploy-gpus");
-  const quick = document.getElementById("quick-gpus");
   const job = (jobs || state.overview?.jobs || []).find((j) => j.name === sel?.value);
   if (!job) return;
   const per = Number(job.gpus_per_node || 4);
   if (input && !input.dataset.touched) input.value = String(per);
-  if (quick) {
-    if (!quick.dataset.touched) quick.value = String(per);
-  }
 }
 
 async function refreshJobTemplates() {
@@ -1417,19 +1447,74 @@ async function refreshJobTemplates() {
   const templates = data.templates || [];
   state.jobTemplates = templates;
   const sel = document.getElementById("job-template");
-  const meta = document.getElementById("job-templates-meta");
   if (sel) {
-    sel.innerHTML = templates
-      .map((t) => {
+    const byCat = new Map();
+    for (const t of templates) {
+      const cat = t.category || "其他";
+      if (!byCat.has(cat)) byCat.set(cat, []);
+      byCat.get(cat).push(t);
+    }
+    const parts = [];
+    for (const [cat, rows] of byCat) {
+      parts.push(`<optgroup label="${escapeHtml(cat)}">`);
+      for (const t of rows) {
         const mark = t.installed ? "已有" : "可装";
-        return `<option value="${escapeHtml(t.id)}">${escapeHtml(t.id)} · ${escapeHtml(
-          t.runtime || ""
-        )} (${mark})</option>`;
-      })
-      .join("") || `<option value="">（无模板）</option>`;
+        const star = t.recommended ? "★ " : "";
+        parts.push(
+          `<option value="${escapeHtml(t.id)}">${star}${escapeHtml(t.id)} · ${escapeHtml(
+            t.runtime || ""
+          )} (${mark})</option>`
+        );
+      }
+      parts.push("</optgroup>");
+    }
+    sel.innerHTML = parts.join("") || `<option value="">（无模板）</option>`;
   }
+  renderJobTemplatesList(templates);
   syncJobTemplateHint();
   return templates;
+}
+
+function renderJobTemplatesList(templates) {
+  const el = $("job-templates-list");
+  if (!el) return;
+  if (!templates?.length) {
+    el.innerHTML = `<div class="empty">未发现模板</div>`;
+    return;
+  }
+  el.innerHTML = templates
+    .map((t) => {
+      const badges = [
+        t.category || "通用",
+        t.runtime || "process",
+        t.installed ? "已安装" : "可安装",
+        t.recommended ? "推荐" : "",
+      ]
+        .filter(Boolean)
+        .map((b) => `<span class="chip">${escapeHtml(b)}</span>`)
+        .join("");
+      return `<button type="button" class="item item-btn" data-pick-template="${escapeHtml(t.id)}">
+        <div>
+          <strong>${escapeHtml(t.id)}</strong>
+          <div class="meta">${escapeHtml(t.description || "")}</div>
+          <div class="chip-row">${badges}</div>
+        </div>
+      </button>`;
+    })
+    .join("");
+  el.querySelectorAll("[data-pick-template]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const sel = $("job-template");
+      if (sel) {
+        sel.value = btn.dataset.pickTemplate;
+        syncJobTemplateHint();
+      }
+    });
+  });
+  const fold = $("job-templates-fold");
+  if (fold && templates.some((t) => t.recommended && !t.installed)) {
+    fold.open = true;
+  }
 }
 
 function syncJobTemplateHint() {
@@ -1437,13 +1522,16 @@ function syncJobTemplateHint() {
   if (!meta) return;
   const id = $("job-template")?.value;
   const tpl = (state.jobTemplates || []).find((t) => t.id === id);
+  const total = (state.jobTemplates || []).length;
+  const pending = (state.jobTemplates || []).filter((t) => t.recommended && !t.installed).length;
   if (!tpl) {
-    meta.textContent = (state.jobTemplates || []).length
-      ? `${state.jobTemplates.length} 个模板可用`
+    meta.textContent = total
+      ? `${total} 个模板 · 推荐待装 ${pending}`
       : "未发现模板";
     return;
   }
-  meta.textContent = `${tpl.description || tpl.id} · ${tpl.runtime || "process"}${tpl.installed ? " · 已安装" : " · 可安装"}`;
+  meta.textContent = `${tpl.category || ""} · ${tpl.description || tpl.id} · ${tpl.runtime || "process"
+    }${tpl.installed ? " · 已安装" : " · 可安装"}${tpl.recommended ? " · 推荐" : ""} · 待装推荐 ${pending}`;
 }
 
 async function installSelectedJobTemplate() {
@@ -1463,6 +1551,27 @@ async function installSelectedJobTemplate() {
     stateSetup.data = null;
   } catch (err) {
     actionError("安装 Job 模板", err);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function installRecommendedJobTemplates() {
+  setBusy(true);
+  try {
+    const data = await api("/api/jobs/install-template", {
+      method: "POST",
+      body: JSON.stringify({ recommended: true }),
+    });
+    const n = (data.installed || []).length;
+    const skip = (data.skipped || []).length;
+    toast(n ? `推荐包：新装 ${n}，跳过 ${skip}` : `推荐包已齐（跳过 ${skip}）`);
+    if (data.overview) applyOverview(data.overview);
+    else await refresh(false);
+    await refreshJobTemplates();
+    stateSetup.data = null;
+  } catch (err) {
+    actionError("安装推荐 Job 包", err);
   } finally {
     setBusy(false);
   }
@@ -1510,7 +1619,7 @@ function renderModels(payload) {
             )}</div></div></div>`
         )
         .join("") ||
-        '<div class="empty-state compact"><strong>无缓存目录</strong><p>可在 models.json 中登记 cache 路径。</p></div>';
+      '<div class="empty-state compact"><strong>无缓存目录</strong><p>可在 models.json 中登记 cache 路径。</p></div>';
   }
   const defaults = document.getElementById("model-defaults-paths");
   if (defaults) {
@@ -1731,7 +1840,8 @@ function renderToolkits(payload) {
             ${escapeHtml(b.name || b.id)}
           </button>`
         )
-        .join("") || "";
+        .join("") ||
+      '<div class="empty-state compact"><strong>无工具栈捆绑</strong><p>检查 toolkits 配置中的 bundles。</p></div>';
     bundleRoot.querySelectorAll("[data-toolkit-bundle]").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const ok = await confirmDialog({
@@ -1761,7 +1871,7 @@ function renderToolkits(payload) {
           </div>`;
         })
         .join("") ||
-        '<div class="empty-state compact"><strong>无工具栈定义</strong><p>检查 config/local/toolkits.json。</p></div>';
+      '<div class="empty-state compact"><strong>无工具栈定义</strong><p>检查 config/local/toolkits.json。</p></div>';
     list.querySelectorAll("[data-toolkit-id]").forEach((btn) => {
       btn.addEventListener("click", () => runToolkit("probe", { ids: [btn.dataset.toolkitId] }));
     });
@@ -1991,9 +2101,9 @@ function renderGpuPool(data) {
           (node.gpus || []).length > 0
             ? node.gpus
             : Array.from({ length: totalGpus }, (_, i) => ({
-                index: i,
-                status: i < usedGpus ? "occupied" : "free",
-              }));
+              index: i,
+              status: i < usedGpus ? "occupied" : "free",
+            }));
         const segs = gpus
           .map((g) => {
             const status = g.status === "free" ? "free" : "occupied";
@@ -2125,69 +2235,69 @@ function renderDashGateway(status) {
   const companions = Array.isArray(status.companions) ? status.companions : null;
   const rows = companions
     ? companions.map((c) => {
-        const links = [];
-        if (c.id === "edge") {
-          if (publicUrl) links.push({ href: publicUrl, label: publicUrl });
-          if (healthz) links.push({ href: healthz, label: "health" });
-        } else if (c.id === "litellm" && ll.url && ll.running) {
-          links.push({ href: ll.url, label: ll.url });
-        }
-        let detail = c.detail || "";
-        if (c.id === "edge") {
-          const extra = [
-            settings.strategy ? `LB ${settings.strategy}` : null,
-            pool.upstream_count != null ? `上游 ${pool.available ?? "?"}/${pool.upstream_count}` : null,
-          ]
-            .filter(Boolean)
-            .join(" · ");
-          if (extra) detail = detail ? `${detail} · ${extra}` : extra;
-        }
-        if (c.id === "litellm" && detail.includes("/")) {
-          detail = detail.replace(/\/opt\/[^\s·]+/g, (p) => {
-            const parts = p.split("/").filter(Boolean);
-            return parts.length > 2 ? `…/${parts.slice(-2).join("/")}` : p;
-          });
-        }
-        return {
-          name: c.name,
-          tone: c.state === "running" || c.state === "installed" || c.state === "ready" || c.state === "not_needed"
-            ? c.state === "running" || c.state === "installed"
-              ? "on"
-              : "idle"
-            : c.severity === "error" || c.severity === "warn"
-              ? "bad"
-              : "off",
-          chip: c.label,
-          detail,
-          links,
-        };
-      })
+      const links = [];
+      if (c.id === "edge") {
+        if (publicUrl) links.push({ href: publicUrl, label: publicUrl });
+        if (healthz) links.push({ href: healthz, label: "health" });
+      } else if (c.id === "litellm" && ll.url && ll.running) {
+        links.push({ href: ll.url, label: ll.url });
+      }
+      let detail = c.detail || "";
+      if (c.id === "edge") {
+        const extra = [
+          settings.strategy ? `LB ${settings.strategy}` : null,
+          pool.upstream_count != null ? `上游 ${pool.available ?? "?"}/${pool.upstream_count}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        if (extra) detail = detail ? `${detail} · ${extra}` : extra;
+      }
+      if (c.id === "litellm" && detail.includes("/")) {
+        detail = detail.replace(/\/opt\/[^\s·]+/g, (p) => {
+          const parts = p.split("/").filter(Boolean);
+          return parts.length > 2 ? `…/${parts.slice(-2).join("/")}` : p;
+        });
+      }
+      return {
+        name: c.name,
+        tone: c.state === "running" || c.state === "installed" || c.state === "ready" || c.state === "not_needed"
+          ? c.state === "running" || c.state === "installed"
+            ? "on"
+            : "idle"
+          : c.severity === "error" || c.severity === "warn"
+            ? "bad"
+            : "off",
+        chip: c.label,
+        detail,
+        links,
+      };
+    })
     : [
-        {
-          name: "Edge LB",
-          tone: edge.running ? "on" : "bad",
-          chip: edge.running ? "运行中" : "应启动",
-          detail: edge.listen || "",
-          links: [
-            publicUrl ? { href: publicUrl, label: publicUrl } : null,
-            healthz ? { href: healthz, label: "health" } : null,
-          ].filter(Boolean),
-        },
-        {
-          name: "nginx",
-          tone: nginx.binary ? "on" : "idle",
-          chip: nginx.binary ? "已装" : nginx.needed ? "未装" : "不必装",
-          detail: nginx.hint || "",
-          links: [],
-        },
-        {
-          name: "LiteLLM",
-          tone: ll.running ? "on" : ll.ready ? "idle" : "off",
-          chip: ll.running ? "运行中" : ll.ready ? "可选·就绪" : "可选·未配",
-          detail: ll.dir || "",
-          links: [],
-        },
-      ];
+      {
+        name: "Edge LB",
+        tone: edge.running ? "on" : "bad",
+        chip: edge.running ? "运行中" : "应启动",
+        detail: edge.listen || "",
+        links: [
+          publicUrl ? { href: publicUrl, label: publicUrl } : null,
+          healthz ? { href: healthz, label: "health" } : null,
+        ].filter(Boolean),
+      },
+      {
+        name: "nginx",
+        tone: nginx.binary ? "on" : "idle",
+        chip: nginx.binary ? "已装" : nginx.needed ? "未装" : "不必装",
+        detail: nginx.hint || "",
+        links: [],
+      },
+      {
+        name: "LiteLLM",
+        tone: ll.running ? "on" : ll.ready ? "idle" : "off",
+        chip: ll.running ? "运行中" : ll.ready ? "可选·就绪" : "可选·未配",
+        detail: ll.dir || "",
+        links: [],
+      },
+    ];
   root.innerHTML = rows
     .map((row) => {
       const links = (row.links || [])
@@ -2304,7 +2414,7 @@ function renderRunlog(payload) {
         </div>`;
       })
       .join("") ||
-      '<div class="empty-state compact"><strong>暂无运行日志</strong><p>CLI / 一键动作 / 检测修复会自动记录。</p></div>';
+    '<div class="empty-state compact"><strong>暂无运行日志</strong><p>CLI / 一键动作 / 检测修复会自动记录。</p></div>';
   if (meta) {
     meta.textContent = payload.total
       ? `${items.length}/${payload.total} · ${payload.path || "state/runlog.jsonl"}`
@@ -2323,12 +2433,16 @@ async function runOneclick(action, extra = {}) {
   try {
     const body = { action, ...extra };
     if (action === "deploy") {
-      body.job = document.getElementById("quick-job").value || "";
+      body.job = document.getElementById("job-select")?.value || "";
       if (!body.job) {
-        showSteps([{ name: "deploy", ok: false, ms: 0, error: "请先选择任务（或注册 Job）" }], action);
-        return log("请先选择任务（或注册 Job）");
+        showSteps([{ name: "deploy", ok: false, ms: 0, error: "请先到任务页选择 Job" }], action);
+        return log("请先到任务页选择 Job");
       }
-      body.gpus = Number(document.getElementById("quick-gpus").value || 4);
+      body.gpus = Number(
+        document.getElementById("deploy-gpus")?.value ||
+        state.overview?.jobs?.find((j) => j.name === body.job)?.gpus_per_node ||
+        4
+      );
       const ok = await confirmDialog({
         title: "一键部署",
         message: `确认部署 ${body.job}（${body.gpus} GPU）？由服务端按空闲 GPU 自动选机。`,
@@ -2344,7 +2458,7 @@ async function runOneclick(action, extra = {}) {
     renderActionSteps(data.steps || [], data.elapsed_ms);
     if (data.quality) renderQuality(data.quality);
     if (data.overview) applyOverview(data.overview);
-    refreshRunlog().catch(() => {});
+    refreshRunlog().catch(() => { });
     if (data.error && !(data.steps || []).length) {
       showSteps([{ name: action, ok: false, ms: data.elapsed_ms, error: data.error }], action);
     } else {
@@ -2583,9 +2697,9 @@ function setView(name, { updateHash = true } = {}) {
     refreshToolkits().catch((err) => log(String(err.message || err)));
   }
   if (name === "actions") {
-    if (!state.quality) loadQuality().catch(() => {});
-    refreshRunlog().catch(() => {});
-    refreshIngressStatus().catch(() => {});
+    if (!state.quality) loadQuality().catch(() => { });
+    refreshRunlog().catch(() => { });
+    refreshIngressStatus().catch(() => { });
   }
   if (name === "terminal") {
     ensureTerminal();
@@ -3044,7 +3158,7 @@ function setupAutoRefresh() {
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
   if (Date.now() - state.lastRefreshAt > 12000) {
-    refresh(false, { light: true }).catch(() => {});
+    refresh(false, { light: true }).catch(() => { });
   }
 });
 
@@ -3134,11 +3248,6 @@ async function boot() {
   document.getElementById("btn-runlog-refresh")?.addEventListener("click", () => {
     refreshRunlog().then(() => toast("日志已刷新")).catch((err) => log(String(err.message || err)));
   });
-  document.getElementById("btn-dash-gw-refresh")?.addEventListener("click", () => {
-    refreshIngressStatus().then(() => toast("入口状态已刷新")).catch((err) => log(String(err.message || err)));
-  });
-  document.getElementById("btn-dash-gw-start")?.addEventListener("click", () => startIngress());
-  document.getElementById("btn-dash-gw-stop")?.addEventListener("click", () => stopIngress());
   on("btn-load-quality", "click", async () => {
     try {
       await loadQuality();
@@ -3287,23 +3396,18 @@ async function boot() {
   document.getElementById("job-select")?.addEventListener("change", () => {
     syncJobArgsHint(state.overview?.jobs);
   });
-  document.getElementById("quick-job")?.addEventListener("change", () => {
-    const quick = document.getElementById("quick-job");
-    const sel = document.getElementById("job-select");
-    if (sel && quick) sel.value = quick.value;
-    syncJobArgsHint(state.overview?.jobs);
-  });
   document.getElementById("deploy-gpus")?.addEventListener("input", (ev) => {
     ev.target.dataset.touched = "1";
   });
-  on("quick-gpus", "input", (ev) => {
-    ev.target.dataset.touched = "1";
-  });
   document.getElementById("btn-install-job-template")?.addEventListener("click", installSelectedJobTemplate);
+  document
+    .getElementById("btn-install-recommended-jobs")
+    ?.addEventListener("click", installRecommendedJobTemplates);
+  on("job-template", "change", () => syncJobTemplateHint());
   on("setup-job-pick", "change", (ev) => {
     loadJobIntoForm(ev.target.value).catch((err) => actionError("加载 Job", err));
   });
-  refreshJobTemplates().catch(() => {});
+  refreshJobTemplates().catch(() => { });
   document.getElementById("job-extra-args")?.addEventListener("input", (ev) => {
     ev.target.dataset.touched = "1";
   });
@@ -3331,8 +3435,8 @@ async function boot() {
       const rows = data.results || [];
       const output = rows.length
         ? rows
-            .map((r) => `[${resultOk(r) ? "OK" : "FAIL"}] ${r.node || r.host || "?"}\n${resultBody(r)}`)
-            .join("\n\n")
+          .map((r) => `[${resultOk(r) ? "OK" : "FAIL"}] ${r.node || r.host || "?"}\n${resultBody(r)}`)
+          .join("\n\n")
         : [data.result?.stdout, data.result?.stderr].filter(Boolean).join("\n").trim() || label;
       if (rows.length) showResults(rows, label);
       else writeConsoleText(output, { meta: label });
@@ -3481,10 +3585,6 @@ async function boot() {
       const jobSel = document.getElementById("job-select");
       if (jobSel && [...jobSel.options].some((o) => o.value === m.launch.job)) {
         jobSel.value = m.launch.job;
-      }
-      const quick = document.getElementById("quick-job");
-      if (quick && [...quick.options].some((o) => o.value === m.launch.job)) {
-        quick.value = m.launch.job;
       }
     }
     const input = document.getElementById("job-extra-args");

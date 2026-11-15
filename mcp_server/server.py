@@ -381,19 +381,23 @@ def gc_free_node(
 
 
 @mcp.tool()
-def gc_deploy(job: str, gpus: int = 4, nodes: str | None = None) -> dict:
-    """按 GPU 数或指定节点部署 Job。"""
+def gc_deploy(job: str, gpus: int | None = None, nodes: str | None = None) -> dict:
+    """按 GPU 数或指定节点部署 Job。
+
+    ``gpus`` 省略时使用 ``cluster.scheduling.unit_gpus``（与 CLI 一致）；
+    未配置且未传 ``gpus``/``nodes`` 时会报错。
+    """
     if _prefer_http():
         body: dict[str, Any] = {"job": job}
         if nodes:
             body["nodes"] = nodes
-        else:
+        if gpus is not None:
             body["gpus"] = gpus
         return _http_json_safe("POST", "/api/deploy", body, timeout=1800)
     args = ["deploy", job]
     if nodes:
         args.extend(["--nodes", nodes])
-    else:
+    if gpus is not None:
         args.extend(["--gpus", str(gpus)])
     return _cli(args, timeout=1800)
 

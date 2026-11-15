@@ -39,6 +39,54 @@ class JobInstallTests(unittest.TestCase):
         result = jobs_util.install_job_template("shell-job")
         self.assertEqual(result["name"], "shell-job")
 
+    def test_list_templates_marks_recommended(self) -> None:
+        rows = {t["id"]: t for t in jobs_util.list_job_templates()}
+        self.assertIn("vllm-serve", rows)
+        self.assertTrue(rows["vllm-serve"]["recommended"])
+        self.assertEqual(rows["vllm-serve"]["category"], "推理")
+        self.assertIn("domain-job", rows)
+        self.assertFalse(rows["domain-job"]["recommended"])
+
+    def test_install_recommended_skips_existing(self) -> None:
+        jobs_util.install_job_template("shell-job")
+        result = jobs_util.install_recommended_templates()
+        names = {item["name"] for item in result["installed"]}
+        self.assertNotIn("shell-job", names)
+        self.assertIn("shell-job", result["skipped"])
+        self.assertIn("http-serve", names)
+
+    def test_install_recommended_force_overwrites(self) -> None:
+        jobs_util.install_job_template("shell-job")
+        result = jobs_util.install_recommended_templates(force=True)
+        names = {item["name"] for item in result["installed"]}
+        self.assertIn("shell-job", names)
+        self.assertEqual(result["skipped"], [])
+
+    def test_validate_job_dict_process_requires_script(self) -> None:
+        issues = jobs_util.validate_job_dict(
+            {"name": "x", "runtime": "process", "python": "python3"},
+            label="x.json",
+        )
+        self.assertTrue(any("script" in item for item in issues))
+
+    def test_validate_job_dict_docker_requires_image(self) -> None:
+        issues = jobs_util.validate_job_dict(
+            {"name": "x", "runtime": "docker", "docker": {}},
+            label="x.json",
+        )
+        self.assertTrue(any("image" in item for item in issues))
+
+    def test_validate_job_dict_ok(self) -> None:
+        self.assertEqual(
+            jobs_util.validate_job_dict({
+                "name": "ok",
+                "runtime": "process",
+                "python": "python3",
+                "script": "/tmp/m.py",
+            }),
+            [],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

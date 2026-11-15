@@ -9,22 +9,23 @@ import sys
 
 import _bootstrap  # noqa: F401
 from paths import RESOURCES_FILE, STATE_DIR, nodes_file
+from state_util import read_json
 
 LEASES_FILE = STATE_DIR / "leases.json"
 NODE_STATE_FILE = STATE_DIR / "node_state.json"
 
 
 def leased_nodes() -> set[str]:
-    if not LEASES_FILE.is_file():
-        return set()
-    data = json.loads(LEASES_FILE.read_text(encoding="utf-8"))
-    return {node for lease in data.get("leases", []) for node in lease.get("nodes", [])}
+    data = read_json(LEASES_FILE, {"leases": []})
+    return {
+        node
+        for lease in data.get("leases", [])
+        for node in lease.get("nodes", [])
+    }
 
 
 def cordoned_nodes() -> set[str]:
-    if not NODE_STATE_FILE.is_file():
-        return set()
-    data = json.loads(NODE_STATE_FILE.read_text(encoding="utf-8"))
+    data = read_json(NODE_STATE_FILE, {"cordoned": {}})
     return set((data.get("cordoned") or {}).keys())
 
 

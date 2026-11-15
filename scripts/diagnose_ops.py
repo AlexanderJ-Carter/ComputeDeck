@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "lib"))
 from paths import (  # noqa: E402
     INVENTORY_FILE,
     PROJECT_DIR,
+    RESOURCES_FILE,
     STATE_DIR,
     VENV_PYTHON,
     CLI,
@@ -24,6 +25,7 @@ from paths import (  # noqa: E402
     nodes_file,
 )
 from runlog_util import append_runlog  # noqa: E402
+from state_util import read_json  # noqa: E402
 
 
 def _pid_alive(pid_file: Path) -> bool | None:
@@ -185,9 +187,52 @@ def collect_findings() -> list[dict[str, Any]]:
             severity="info",
             title="尚未注册任何 Job",
             detail="框架仅内置 shell-job；其余从模板安装",
-            fix="gpu-control jobs install shell-job",
+            fix="gpu-control jobs install --recommended",
             auto=False,
         )
+    else:
+        from jobs_util import validate_registered_jobs
+
+        for problem in validate_registered_jobs():
+            add(
+                f"job-schema:{problem.split(':', 1)[0]}",
+                severity="error",
+                title="Job 契约校验失败",
+                detail=problem,
+                fix="对照 jobs/README.md 补全字段后重装或编辑 JSON",
+                auto=False,
+            )
+
+    leases = read_json(STATE_DIR / "leases.json", {"leases": []}).get("leases") or []
+    resources = read_json(RESOURCES_FILE, {})
+    if leases and isinstance(resources, dict) and resources:
+        for lease in leases:
+            lease_id = str(lease.get("id") or "")
+            job = str(lease.get("job") or "")
+            for node in lease.get("nodes") or []:
+                snap = resources.get(node)
+                if not isinstance(snap, dict) or "gpus" not in snap:
+                    continue
+                gpus = snap.get("gpus") or []
+                if not gpus:
+                    continue
+                if all(str(g.get("status") or "") == "free" for g in gpus):
+                    add(
+                        f"stale-lease:{lease_id or node}",
+                        severity="warn",
+                        title=f"租约可能漂移：{node}",
+                        detail=(
+                            f"lease={lease_id or '-'} job={job or '-'} "
+                            f"但 resources 显示该节点 GPU 全空闲"
+                            "（进程崩溃 / procs kill 不会自动释租约）"
+                        ),
+                        fix=(
+                            f"gpu-control lease release --id {lease_id}"
+                            if lease_id
+                            else f"gpu-control lease release --nodes {node}"
+                        ),
+                        auto=False,
+                    )
 
     return findings
 

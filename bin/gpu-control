@@ -38,6 +38,7 @@ from state_util import (  # noqa: E402
 from jobs_util import (  # noqa: E402
     default_job_name,
     install_job_template,
+    install_recommended_templates,
     list_job_templates,
     load_job_summaries,
 )
@@ -160,8 +161,9 @@ def load_leases() -> dict:
     return _read_json_state(LEASES_FILE, {"leases": []})
 
 
-def save_leases(data: dict) -> None:
-    _atomic_write_json(LEASES_FILE, data)
+def mutate_leases(mutator) -> dict:
+    """在 flock 下读改写 ``leases.json``。"""
+    return _update_json_state(LEASES_FILE, mutator, default={"leases": []})
 
 
 def load_resources() -> dict:
@@ -174,8 +176,24 @@ def load_queue() -> dict:
     return _read_json_state(QUEUE_FILE, {"workloads": []})
 
 
-def save_queue(data: dict) -> None:
-    _atomic_write_json(QUEUE_FILE, data)
+def mutate_queue(mutator) -> dict:
+    """在 flock 下读改写 ``queue.json``。"""
+    return _update_json_state(QUEUE_FILE, mutator, default={"workloads": []})
+
+
+def patch_queue_workload(workload_id: str, **fields) -> dict | None:
+    """按 id 更新一条队列项；返回更新后的条目，未找到则 ``None``。"""
+    found: dict = {}
+
+    def mutate(data: dict) -> None:
+        for wl in data.setdefault("workloads", []):
+            if wl.get("id") == workload_id:
+                wl.update(fields)
+                found.update(wl)
+                return
+
+    mutate_queue(mutate)
+    return found or None
 
 
 def now_utc() -> str:
@@ -374,7 +392,7 @@ def acquire_lease(
         leases.append(lease)
         created.update(lease)
 
-    _update_json_state(LEASES_FILE, mutate, default={"leases": []})
+    mutate_leases(mutate)
     return created
 
 
@@ -388,7 +406,20 @@ def release_lease_nodes(nodes: list[str]) -> int:
         leases[:] = [lease for lease in leases if not drop.intersection(lease.get("nodes", []))]
         dropped["count"] = before - len(leases)
 
-    _update_json_state(LEASES_FILE, mutate, default={"leases": []})
+    mutate_leases(mutate)
+    return int(dropped["count"])
+
+
+def release_lease_id(lease_id: str) -> int:
+    dropped = {"count": 0}
+
+    def mutate(data: dict) -> None:
+        leases: list[dict] = data.setdefault("leases", [])
+        before = len(leases)
+        leases[:] = [lease for lease in leases if lease.get("id") != lease_id]
+        dropped["count"] = before - len(leases)
+
+    mutate_leases(mutate)
     return int(dropped["count"])
 
 
@@ -485,15 +516,26 @@ def cmd_jobs(args: argparse.Namespace) -> int:
             return 0
         for t in rows:
             mark = "installed" if t.get("installed") else "available"
+            rec = " ★" if t.get("recommended") else ""
+            cat = t.get("category") or ""
             print(
                 f"{t['id']}: {t.get('description', '')} "
-                f"[{t.get('runtime')}] ({mark})"
+                f"[{cat}/{t.get('runtime')}] ({mark}){rec}"
             )
         return 0
     if action == "install":
+        if getattr(args, "recommended", False):
+            if args.template or args.name:
+                die("jobs install --recommended 不可与模板 id / --name 同用")
+            result = install_recommended_templates(force=bool(getattr(args, "force", False)))
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
         template = args.template
         if not template:
-            die("jobs install 需要模板 id，如: gpu-control jobs install http-serve")
+            die(
+                "jobs install 需要模板 id，如: gpu-control jobs install http-serve\n"
+                "或一键推荐包: gpu-control jobs install --recommended"
+            )
         try:
             result = install_job_template(template, name=args.name)
         except (FileNotFoundError, ValueError, OSError) as exc:
@@ -509,7 +551,11 @@ def cmd_jobs(args: argparse.Namespace) -> int:
         }, ensure_ascii=False, indent=2))
         return 0
     if not jobs:
-        print("No jobs registered. Try: gpu-control jobs install shell-job")
+        print(
+            "No jobs registered. Try:\n"
+            "  gpu-control jobs install --recommended\n"
+            "  gpu-control jobs install shell-job"
+        )
         return 0
     print(f"default_job={default_job_name()}")
     for job in jobs:
@@ -681,6 +727,49 @@ def cmd_overview(args: argparse.Namespace) -> int:
     return 0
 
 
+def leases_by_node() -> dict[str, dict]:
+    """节点名 → 当前租约条目。"""
+    mapping: dict[str, dict] = {}
+    for lease in load_leases().get("leases") or []:
+        for node in lease.get("nodes") or []:
+            mapping[str(node)] = lease
+    return mapping
+
+
+def assert_deploy_leases(
+    selected: list[str],
+    job_name: str,
+    *,
+    force: bool = False,
+) -> None:
+    """部署前检查租约：同名 Job 可重入；异主租约默认拒绝。
+
+    :param force: 为真时释放异主租约后继续。
+    """
+    by_node = leases_by_node()
+    foreign_nodes: list[str] = []
+    details: list[str] = []
+    for node in selected:
+        lease = by_node.get(node)
+        if not lease:
+            continue
+        holder = str(lease.get("job") or "")
+        if holder == job_name:
+            continue
+        foreign_nodes.append(node)
+        details.append(f"{node}→{holder or '?'}({lease.get('id') or '-'})")
+    if not foreign_nodes:
+        return
+    if not force:
+        die(
+            "节点已有异主租约："
+            + ", ".join(details)
+            + "。先 free/lease release，或加 --force 覆盖"
+        )
+    released = release_lease_nodes(foreign_nodes)
+    print(f"--force：已释放异主租约 {released} 条（节点 {','.join(foreign_nodes)}）")
+
+
 def deploy_job(
     job_name: str,
     *,
@@ -692,6 +781,7 @@ def deploy_job(
     quiet: bool = False,
     selected: list[str] | None = None,
     allow_cordoned: bool = False,
+    force: bool = False,
 ) -> tuple[int, list[str]]:
     """部署 Job。
 
@@ -724,6 +814,7 @@ def deploy_job(
         return 1, []
 
     refuse_cordoned(selected, allow_cordoned=allow_cordoned)
+    assert_deploy_leases(selected, job["name"], force=force)
     limit = ",".join(selected)
     print(f"Deploying job={job['name']} nodes={limit}")
 
@@ -744,19 +835,28 @@ def deploy_job(
     # Whole nodes are allocated by deploy; use the job's per-node GPU count
     # (not a hard-coded 4) when a node list was supplied.
     per_node_gpus = int(job.get("gpus_per_node") or 1)
-    lease_gpus = len(selected) * per_node_gpus if nodes else gpus
-    existing = {
-        node
-        for lease in load_leases().get("leases", [])
-        for node in lease["nodes"]
-    }
-    to_lease = [n for n in selected if n not in existing]
+    by_node = leases_by_node()
+    to_lease = [
+        n
+        for n in selected
+        if not by_node.get(n) or str(by_node[n].get("job") or "") != job["name"]
+    ]
     if to_lease:
-        lease = acquire_lease(job["name"], to_lease, gpus=lease_gpus, note=note or "deploy")
+        # 同 Job 已占节点不重复登记；剩余节点登记一条合租约。
+        if set(to_lease) == set(selected) and not nodes:
+            lease_gpus = gpus
+        else:
+            lease_gpus = len(to_lease) * per_node_gpus
+        lease = acquire_lease(
+            job["name"],
+            to_lease,
+            gpus=lease_gpus,
+            note=note or "deploy",
+        )
         print("Lease acquired:")
         print(json.dumps(lease, ensure_ascii=False, indent=2))
     else:
-        print("Nodes already leased; skipped acquire")
+        print("Nodes already leased by this job; skipped acquire")
     print(f"Deploy done: {job['name']} on {limit}")
     return 0, selected
 
@@ -771,6 +871,7 @@ def cmd_deploy(args: argparse.Namespace) -> int:
         note=args.note,
         quiet=bool(args.quiet),
         allow_cordoned=bool(getattr(args, "allow_cordoned", False)),
+        force=bool(getattr(args, "force", False)),
     )
     if code != 0 and not _selected:
         die("未选择部署节点")
@@ -1483,10 +1584,8 @@ def cmd_watchdog(args: argparse.Namespace) -> int:
 
 
 def cmd_queue(args: argparse.Namespace) -> int:
-    data = load_queue()
-    workloads: list[dict] = data.setdefault("workloads", [])
-
     if args.queue_action == "list":
+        workloads = load_queue().get("workloads") or []
         if not workloads:
             print("Queue empty")
             return 0
@@ -1516,8 +1615,11 @@ def cmd_queue(args: argparse.Namespace) -> int:
             "created_at": now_utc(),
             "updated_at": now_utc(),
         }
-        workloads.append(wl)
-        save_queue(data)
+
+        def append_wl(data: dict) -> None:
+            data.setdefault("workloads", []).append(wl)
+
+        mutate_queue(append_wl)
         print(json.dumps(wl, ensure_ascii=False, indent=2))
         if args.schedule:
             args.queue_action = "schedule"
@@ -1527,22 +1629,33 @@ def cmd_queue(args: argparse.Namespace) -> int:
     if args.queue_action == "cancel":
         if not args.workload_id:
             die("queue cancel 需要 --id")
-        found = False
-        for wl in workloads:
-            if wl["id"] == args.workload_id and wl["status"] in {"pending", "admitted"}:
-                wl["status"] = "cancelled"
-                wl["updated_at"] = now_utc()
-                wl["message"] = "cancelled by user"
-                found = True
-        if not found:
+        cancelled = {"ok": False}
+
+        def cancel_wl(data: dict) -> None:
+            for item in data.setdefault("workloads", []):
+                if item.get("id") == args.workload_id and item.get("status") in {
+                    "pending",
+                    "admitted",
+                }:
+                    item["status"] = "cancelled"
+                    item["updated_at"] = now_utc()
+                    item["message"] = "cancelled by user"
+                    cancelled["ok"] = True
+                    return
+
+        mutate_queue(cancel_wl)
+        if not cancelled["ok"]:
             die(f"无可取消的工作负载：{args.workload_id}")
-        save_queue(data)
         print(f"Cancelled {args.workload_id}")
         return 0
 
     if args.queue_action == "schedule":
-        pending = [wl for wl in workloads if wl["status"] == "pending"]
-        if not pending:
+        pending_ids = [
+            wl["id"]
+            for wl in (load_queue().get("workloads") or [])
+            if wl.get("status") == "pending"
+        ]
+        if not pending_ids:
             print("No pending workloads")
             return 0
         quiet = bool(args.quiet)
@@ -1551,62 +1664,88 @@ def cmd_queue(args: argparse.Namespace) -> int:
             return code
 
         admitted = 0
-        for wl in pending:
-            print(f"\n--- scheduling {wl['id']} job={wl['job']} gpus={wl['gpus']} ---")
-            wl["status"] = "admitted"
-            wl["updated_at"] = now_utc()
-            save_queue(data)
+        for wl_id in pending_ids:
+            current = next(
+                (
+                    item
+                    for item in (load_queue().get("workloads") or [])
+                    if item.get("id") == wl_id
+                ),
+                None,
+            )
+            if not current or current.get("status") != "pending":
+                continue
+            print(
+                f"\n--- scheduling {wl_id} job={current['job']} gpus={current['gpus']} ---"
+            )
+            patch_queue_workload(wl_id, status="admitted", updated_at=now_utc())
 
             selected = None
-            if wl.get("nodes"):
-                if wl["nodes"] == "all":
+            if current.get("nodes"):
+                if current["nodes"] == "all":
                     selected = inventory_nodes()
                 else:
-                    selected = [n.strip() for n in wl["nodes"].split(",") if n.strip()]
+                    selected = [
+                        n.strip() for n in current["nodes"].split(",") if n.strip()
+                    ]
             else:
                 result = run_python_capture(
-                    "select_nodes.py", *select_nodes_cli_args(wl["gpus"])
+                    "select_nodes.py", *select_nodes_cli_args(current["gpus"])
                 )
                 print(result.stdout, end="")
                 if result.returncode != 0:
-                    wl["status"] = "pending"
-                    wl["message"] = "insufficient free GPUs; kept pending"
-                    wl["updated_at"] = now_utc()
-                    save_queue(data)
-                    print(f"{wl['id']}: still pending (no capacity)")
+                    patch_queue_workload(
+                        wl_id,
+                        status="pending",
+                        message="insufficient free GPUs; kept pending",
+                        updated_at=now_utc(),
+                    )
+                    print(f"{wl_id}: still pending (no capacity)")
                     continue
                 selected = json.loads(result.stdout.strip().splitlines()[-1])["selected"]
 
-            wl["status"] = "running"
-            wl["selected_nodes"] = selected
-            wl["updated_at"] = now_utc()
-            save_queue(data)
+            patch_queue_workload(
+                wl_id,
+                status="running",
+                selected_nodes=selected,
+                updated_at=now_utc(),
+            )
 
             rc, selected_nodes = deploy_job(
-                wl["job"],
-                gpus=wl["gpus"],
+                current["job"],
+                gpus=current["gpus"],
                 nodes=None,
                 selected=selected,
                 restart=False,
                 no_wait=False,
-                note=wl.get("note") or f"queue:{wl['id']}",
+                note=current.get("note") or f"queue:{wl_id}",
                 quiet=quiet,
             )
             if rc == 0:
-                wl["status"] = "ready"
-                wl["selected_nodes"] = selected_nodes
-                wl["message"] = "deployed"
+                patch_queue_workload(
+                    wl_id,
+                    status="ready",
+                    selected_nodes=selected_nodes,
+                    message="deployed",
+                    updated_at=now_utc(),
+                )
                 admitted += 1
             else:
-                wl["status"] = "failed"
-                wl["message"] = f"deploy failed rc={rc}"
-            wl["updated_at"] = now_utc()
-            save_queue(data)
+                patch_queue_workload(
+                    wl_id,
+                    status="failed",
+                    message=f"deploy failed rc={rc}",
+                    updated_at=now_utc(),
+                )
             # Refresh after each admission so next pending sees new leases/usage
             refresh_resources(quiet=quiet)
 
-        print(f"\nSchedule finished: admitted/ready={admitted}, pending_left="
-              f"{sum(1 for wl in workloads if wl['status'] == 'pending')}")
+        pending_left = sum(
+            1
+            for wl in (load_queue().get("workloads") or [])
+            if wl.get("status") == "pending"
+        )
+        print(f"\nSchedule finished: admitted/ready={admitted}, pending_left={pending_left}")
         return 0
 
     die(f"未知 queue 动作：{args.queue_action}")
@@ -1614,10 +1753,8 @@ def cmd_queue(args: argparse.Namespace) -> int:
 
 
 def cmd_lease(args: argparse.Namespace) -> int:
-    data = load_leases()
-    leases: list[dict] = data.setdefault("leases", [])
-
     if args.lease_action == "list":
+        leases = load_leases().get("leases") or []
         if not leases:
             print("No active leases")
             return 0
@@ -1659,11 +1796,9 @@ def cmd_lease(args: argparse.Namespace) -> int:
     if args.lease_action == "release":
         if not args.lease_id and not args.nodes:
             die("lease release 需要 --id 或 --nodes")
-        before = len(leases)
         if args.lease_id:
-            leases[:] = [lease for lease in leases if lease["id"] != args.lease_id]
-            save_leases(data)
-            print(f"Released {before - len(leases)} lease(s)")
+            released = release_lease_id(args.lease_id)
+            print(f"Released {released} lease(s)")
         else:
             released = release_lease_nodes(
                 [n.strip() for n in args.nodes.split(",") if n.strip()]
@@ -1839,6 +1974,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="允许部署到已隔离节点（默认拒绝）",
     )
+    p_deploy.add_argument(
+        "--force",
+        action="store_true",
+        help="覆盖异主租约（先 release 再部署）",
+    )
     p_deploy.add_argument("--quiet", action="store_true")
     p_deploy.set_defaults(func=cmd_deploy)
 
@@ -1851,6 +1991,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_jobs.add_argument("template", nargs="?", help="install 的模板 id / logs 的 Job 名")
     p_jobs.add_argument("--name", help="install 时写入的 Job 名（默认用模板名）")
+    p_jobs.add_argument(
+        "--recommended",
+        action="store_true",
+        help="install 时一键安装推荐模板包（推理/训练/Ray/Docker）",
+    )
+    p_jobs.add_argument(
+        "--force",
+        action="store_true",
+        help="与 --recommended 同用：覆盖已安装同名 Job",
+    )
     p_jobs.add_argument("--lines", type=int, default=120, help="logs 尾部行数")
     p_jobs.add_argument("--node", help="logs 只看一个节点")
     p_jobs.add_argument("--nodes", help="logs 节点列表（逗号分隔）")
