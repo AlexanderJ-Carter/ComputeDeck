@@ -20,6 +20,7 @@
 - MCP 一等工具：`gc_queue` · `gc_lease` · `gc_diagnose` · `gc_gateway` · `gc_node`；`gc_deploy(force/…)` · `gc_models(pull)`；catalog↔MCP 同步测试
 - 发版：`scripts/release_notes.py` + tag `v*` 自动 GitHub Release；推送 GHCR 控制面镜像（暂不上传 PyPI）
 - 发版便捷：`scripts/prepare_release.py`（bump / 折叠 CHANGELOG / 可选 check）；`.env.example` 配合 compose
+- control 同步：`scripts/deploy_control.sh`（tar + 重启 UI，保留 `config/local` / `state`）
 - 容器：`Dockerfile`（OCI label）· `docker-compose.yml` · `deploy/ssh/`；CI 构建冒烟；Release 推送附 SBOM/provenance
 - `AGENTS.md`：Agent 硬约束与权威契约入口
 - 开源治理文件：`CODE_OF_CONDUCT` · `AUTHORS` · `NOTICE` · `SUPPORT` · `GOVERNANCE` · Issue/PR 模板
