@@ -193,7 +193,7 @@
   }
 
   if (!reduce && window.matchMedia("(pointer: fine)").matches) {
-    document.querySelectorAll(".feat-mosaic article, .stack-card, .reli-grid article").forEach((el) => {
+    document.querySelectorAll(".cap-rail li, .stack-steps article, .reli-grid article").forEach((el) => {
       el.addEventListener("pointermove", (ev) => {
         const r = el.getBoundingClientRect();
         const x = (ev.clientX - r.left) / r.width - 0.5;
