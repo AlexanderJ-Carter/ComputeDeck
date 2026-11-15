@@ -55,6 +55,24 @@ def _bump(version: str, kind: str) -> str:
     raise SystemExit(f"未知 bump: {kind}")
 
 
+def _anchor_slug(version: str, date: str) -> str:
+    """Keep a Changelog 本地锚点（与历史条目风格一致）。"""
+    compact = version.replace(".", "")
+    return f"#{compact}---{date}"
+
+
+def _upsert_changelog_anchor(text: str, version: str, date: str) -> str:
+    """在文末版本锚点表中插入或更新 ``[version]``。"""
+    line = f"[{version}]: {_anchor_slug(version, date)}"
+    pattern = re.compile(rf"^\[{re.escape(version)}\]:\s*.*$", re.M)
+    if pattern.search(text):
+        return pattern.sub(line, text, count=1)
+    marker = "[Unreleased]: #unreleased"
+    if marker in text:
+        return text.replace(marker, marker + "\n" + line, 1)
+    return text.rstrip() + "\n\n" + line + "\n"
+
+
 def _fold_changelog(text: str, version: str, date: str) -> str:
     match = _UNRELEASED.search(text)
     if not match:
@@ -66,15 +84,12 @@ def _fold_changelog(text: str, version: str, date: str) -> str:
         raise SystemExit(f"CHANGELOG 已有 ## [{version}]")
     stub = (
         "## [Unreleased]\n\n"
-        "### Added\n\n"
-        "### Changed\n\n"
-        "### Fixed\n\n"
-        "### Security\n\n"
         "---\n\n"
         f"## [{version}] - {date}\n\n"
         f"{body}\n"
     )
-    return _UNRELEASED.sub(stub, text, count=1)
+    folded = _UNRELEASED.sub(stub, text, count=1)
+    return _upsert_changelog_anchor(folded, version, date)
 
 
 def _write_version_files(version: str) -> None:

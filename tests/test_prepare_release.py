@@ -42,6 +42,8 @@ class PrepareReleaseTests(unittest.TestCase):
         self.assertIn("## [Unreleased]", out)
         self.assertLess(out.index("## [Unreleased]"), out.index("## [0.22.0]"))
         self.assertIn("## [0.21.0]", out)
+        self.assertIn("[0.22.0]: #0220---2026-11-15", out)
+        self.assertNotIn("### Added\n\n### Changed", out)
 
 
 if __name__ == "__main__":

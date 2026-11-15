@@ -14,6 +14,8 @@
   <a href="https://github.com/AlexanderJ-Carter/ComputeDeck"><img src="https://img.shields.io/github/stars/AlexanderJ-Carter/ComputeDeck?style=for-the-badge" alt="GitHub stars" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-red?style=for-the-badge" alt="AGPL-3.0" /></a>
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-Keep%20a%20Changelog-blue?style=for-the-badge" alt="Changelog" /></a>
+  <a href="https://github.com/AlexanderJ-Carter/ComputeDeck/pkgs/container/computedeck"><img src="https://img.shields.io/badge/GHCR-computedeck-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="GHCR" /></a>
+  <a href="https://github.com/AlexanderJ-Carter/ComputeDeck/releases/tag/v0.22.0"><img src="https://img.shields.io/badge/release-v0.22.0-green?style=for-the-badge" alt="Release" /></a>
 </p>
 
 <p align="center">

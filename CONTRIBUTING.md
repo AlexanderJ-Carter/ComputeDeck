@@ -48,7 +48,7 @@ python scripts/prepare_release.py --bump patch --apply --check
 # 再按脚本打印的 git commit / tag 步骤操作；push 前须明确允许
 ```
 
-首次镜像推送后：Packages → `computedeck` → **Public**（见 [`docs/develop/docker.md`](docs/develop/docker.md)）。
+官方 GHCR 包已 Public；fork 首次推送后若匿名 401，再到 Packages 改可见性（见 [`docs/develop/docker.md`](docs/develop/docker.md)）。
 
 **不发布 PyPI / npm**：仓库即控制面（`package = false`），用克隆 + `uv` 或容器。详见 [`docs/develop/ci.md`](docs/develop/ci.md)。  
 Agent 约定：[`AGENTS.md`](AGENTS.md) · [`CLAUDE.md`](CLAUDE.md) · [`docs/ai-接入.md`](docs/ai-接入.md)。

@@ -47,4 +47,4 @@
 
 - **默认**：克隆仓库 + `uv`；控制面与 `config/` / `web/` / Ansible 同树
 - **容器**：`docker compose` / GHCR `ghcr.io/alexanderj-carter/computedeck`（只跑 Control）
-- **不发** npm 包；**暂不发** PyPI（`package = false`，仓库即控制面）
+- **不发** npm / PyPI（`package = false`，仓库即控制面；发版走 GHCR）

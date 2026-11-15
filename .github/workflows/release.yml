@@ -80,7 +80,7 @@ jobs:
             echo "- MCP：\`uv pip install -r requirements-mcp.txt\` · 示例 \`config/examples/mcp.*\`"
             echo "- 展板：https://alexanderj-carter.github.io/ComputeDeck/"
             echo
-            echo "若 \`docker pull\` 401：到 GitHub → Packages → \`computedeck\` → Package settings → Change visibility → Public。"
+            echo "官方包已 Public。fork / 新 Package 若匿名 401：Packages → 设置 → Public。"
             echo
             cat /tmp/release-notes.md
           } > /tmp/github-release.md
@@ -153,5 +153,5 @@ jobs:
             echo "- \`ghcr.io/${{ github.repository_owner }}/computedeck:${{ needs.release.outputs.version }}\`"
             echo "- digest: \`${{ steps.build.outputs.digest }}\`"
             echo
-            echo "首次发布后请将 Package 设为 **Public**，否则匿名 pull 会 401。"
+            echo "官方包已 Public；fork 新包名首次推送后请确认 Packages 可见性。"
           } >> "$GITHUB_STEP_SUMMARY"

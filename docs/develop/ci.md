@@ -33,16 +33,14 @@ gpu-control doctor
 
 ### 打包与发布策略
 
-本仓库是 **clone / 容器部署的控制面**（Ansible、`config/`、`web/`、`state/` 与 `bin/gpu-control` 绑在一起），`pyproject.toml` 里 `[tool.uv] package = false`，**暂不发布 PyPI wheel**。
+本仓库是 **clone / 容器部署的控制面**（Ansible、`config/`、`web/`、`state/` 与 `bin/gpu-control` 绑在一起），`pyproject.toml` 里 `[tool.uv] package = false`，**不发布 PyPI wheel**。
 
 | 方式 | 说明 |
 |------|------|
-| 源码 | 克隆后 `uv pip install -r requirements.txt`（Agent/MCP 另装 `requirements-mcp.txt`） |
-| 容器 | `Dockerfile` + `docker compose`；发版镜像 `ghcr.io/alexanderj-carter/computedeck` |
+| 源码 | 克隆后 `uv venv && uv pip install -r requirements.txt`（可参考根目录 `uv.lock`；Agent/MCP 另装 `requirements-mcp.txt`） |
+| 容器 | `Dockerfile` + `docker compose`；发版镜像 `ghcr.io/alexanderj-carter/computedeck`（Public） |
 | PyPI | **不做**；控制面绑配置树 / Ansible / 静态资源，不是可独立 wheel 的库 |
 | npm | **不做**；前端依赖已 vendor（如 xterm），产品不是 Node 包 |
-
-可选后续：把 `uv.lock` 纳入仓库并统一 `uv sync`（锁文件已可本地生成）。
 
 ### 发版（tag）
 
@@ -59,4 +57,4 @@ python scripts/prepare_release.py --bump patch --apply --check
 2. 本地：`python scripts/release_notes.py --check X.Y.Z` 与 `./scripts/check.sh`。
 3. 提交后：`git tag -a vX.Y.Z -m "vX.Y.Z"` 并推送 tag（**需你明确允许 push**）。
 4. Actions `Release` 创建 GitHub Release，并推送 `ghcr.io/<owner>/computedeck:<version>`（及 `latest`，含 SBOM/provenance）。
-5. **首次**把 GHCR Package `computedeck` 设为 Public（否则匿名 pull 401），见 [docker.md](docker.md)。
+5. 官方包已 Public；**新 fork / 新 Package 名**首次推送后仍须在 Packages 设为 Public，见 [docker.md](docker.md)。

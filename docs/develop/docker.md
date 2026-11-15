@@ -37,14 +37,15 @@ docker pull ghcr.io/alexanderj-carter/computedeck:latest
 # COMPUTEDECK_IMAGE=ghcr.io/alexanderj-carter/computedeck:0.22.0 docker compose up -d
 ```
 
-### 首次发版后必做（公开包）
+### 包可见性
 
-GHCR 默认私有。匿名 `docker pull` 若 **401**：
+官方 `ghcr.io/alexanderj-carter/computedeck` 已 **Public**，可直接：
 
-1. GitHub → 仓库右侧 **Packages** → `computedeck`
-2. **Package settings** → **Change visibility** → **Public**
-3. 确认 Package 已关联本仓库（Actions 用 `GITHUB_TOKEN` 推送时一般会自动关联）
+```bash
+docker pull ghcr.io/alexanderj-carter/computedeck:0.22.0
+```
 
+GHCR **新建** Package 默认仍私有。fork / 改名后的首次推送若匿名 401：Packages → 该包 → **Package settings** → **Public**。  
 镜像带 OCI label（`org.opencontainers.image.source` 等），便于在 Packages 页跳回源码。
 
 ## 与 Agent / MCP

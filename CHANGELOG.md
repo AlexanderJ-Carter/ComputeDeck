@@ -11,13 +11,10 @@
 
 ## [Unreleased]
 
-### Added
-
-### Changed
-
 ### Fixed
 
-### Security
+- CHANGELOG 补 `0.22.0` 锚点；`prepare_release` 发版时同步写入锚点并去掉空分类壳
+- 文档对齐：官方 GHCR 已 Public；统一「不发 PyPI/npm」表述
 
 ---
 
@@ -326,6 +323,7 @@
 4. 版本锚点见下方；具备远程后可改为 compare URL。
 
 [Unreleased]: #unreleased
+[0.22.0]: #0220---2026-11-15
 [0.21.0]: #0210---2026-11-14
 [0.19.0]: #0190---2026-11-14
 [0.18.0]: #0180---2026-11-14

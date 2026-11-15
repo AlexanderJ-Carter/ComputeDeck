@@ -26,7 +26,7 @@ dependencies = [
 [project.optional-dependencies]
 mcp = ["mcp>=2.0.0"]
 docs = ["mkdocs>=1.6.0", "mkdocs-material>=9.5.0", "pymdown-extensions>=10.0.0"]
-models-worker = ["huggingface_hub[cli]>=0.24.0", "modelscope>=1.18.0"]
+models-worker = ["huggingface_hub>=0.24.0", "modelscope>=1.18.0"]
 
 [project.urls]
 Homepage = "https://github.com/AlexanderJ-Carter/ComputeDeck"
