@@ -37,18 +37,20 @@
     <section class="slide hero" id="s1" data-title="开场">
       <div class="slide-bg hero-bg">
         <canvas id="hero-canvas" aria-hidden="true"></canvas>
+        <div class="spotlight" id="hero-spot" aria-hidden="true"></div>
       </div>
       <div class="slide-inner hero-inner">
         <img class="hero-logo reveal" src="assets/logo.svg" width="104" height="104" alt="ComputeDeck" />
         <p class="eyebrow reveal d1">多节点 GPU 控制面</p>
         <h1 class="reveal d2">ComputeDeck</h1>
-        <p class="lede reveal d3">一台 Control，管住整甲板的卡、任务与入口。<br />Web · CLI · MCP，同一套运维语义。</p>
+        <p class="lede reveal d3" id="hero-lede">一台 Control，管住整甲板的卡、任务与入口。</p>
+        <p class="lede sub reveal d3">Web · CLI · MCP，同一套运维语义。</p>
         <div class="hero-stats reveal d4">
-          <div><b data-count="15">0</b><span>MCP 工具</span></div>
-          <div><b data-count="10">0</b><span>推荐 Job 模板</span></div>
-          <div><b>1</b><span>配置驱动集群</span></div>
+          <div class="stat-card"><b data-count="15">0</b><span>MCP 工具</span></div>
+          <div class="stat-card"><b data-count="10">0</b><span>推荐 Job 模板</span></div>
+          <div class="stat-card"><b data-count="3">0</b><span>入口方式</span></div>
         </div>
-        <p class="hint reveal d5">向下滚动 · ↓ / 空格 · 右侧圆点</p>
+        <p class="hint reveal d5">向下滚动 · ↓ / 空格 · 右侧圆点 · 可开自动播放</p>
       </div>
     </section>
 
@@ -192,6 +194,9 @@
             <li>端点健康探测与客户端 LB 片段</li>
             <li>TLS / 对外 URL 可配</li>
           </ul>
+          <div class="flow reveal d4" aria-hidden="true">
+            <span>Client</span><i></i><span>Edge</span><i></i><span class="ok">Healthy</span><i></i><span>GPU API</span>
+          </div>
         </div>
         <figure class="viz reveal d3">
           <img src="assets/edge-ingress.svg" alt="Edge 健康转发拓扑" />

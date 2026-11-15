@@ -25,6 +25,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare site
+        run: |
+          # 若存在 demo/CNAME（自定义域名），随站点一起发布
+          test -f demo/CNAME && echo "CNAME=$(cat demo/CNAME)" || echo "CNAME=(none)"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

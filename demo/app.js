@@ -129,15 +129,50 @@
     { passive: true }
   );
 
-  // GPU mosaic
+  // GPU mosaic + live shuffle
   const grid = document.getElementById("gpu-grid");
   if (grid) {
     const n = 32;
-    const busy = new Set([2, 3, 8, 9, 10, 16, 17, 24]);
-    grid.innerHTML = Array.from({ length: n }, (_, i) => {
-      const cls = busy.has(i) ? "busy" : Math.random() > 0.35 ? "free" : "";
-      return `<i class="${cls}"></i>`;
-    }).join("");
+    const paint = () => {
+      const busy = new Set();
+      while (busy.size < 8) busy.add(Math.floor(Math.random() * n));
+      grid.innerHTML = Array.from({ length: n }, (_, i) => {
+        const cls = busy.has(i) ? "busy" : Math.random() > 0.3 ? "free" : "";
+        return `<i class="${cls}"></i>`;
+      }).join("");
+    };
+    paint();
+    if (!reduce) window.setInterval(paint, 2800);
+  }
+
+  // Hero spotlight follows pointer
+  const hero = document.getElementById("s1");
+  const spot = document.getElementById("hero-spot");
+  if (hero && spot && !reduce) {
+    hero.addEventListener("pointermove", (ev) => {
+      const r = hero.getBoundingClientRect();
+      spot.style.setProperty("--mx", `${((ev.clientX - r.left) / r.width) * 100}%`);
+      spot.style.setProperty("--my", `${((ev.clientY - r.top) / r.height) * 100}%`);
+    });
+  }
+
+  // Soft tilt on feature tiles
+  if (!reduce) {
+    document.querySelectorAll(".feat-mosaic article, .stack-card, .reli-grid article").forEach((el) => {
+      el.addEventListener("pointermove", (ev) => {
+        const r = el.getBoundingClientRect();
+        const x = (ev.clientX - r.left) / r.width - 0.5;
+        const y = (ev.clientY - r.top) / r.height - 0.5;
+        el.classList.add("tilt");
+        el.style.setProperty("--ry", `${x * 8}deg`);
+        el.style.setProperty("--rx", `${-y * 8}deg`);
+      });
+      el.addEventListener("pointerleave", () => {
+        el.classList.remove("tilt");
+        el.style.removeProperty("--rx");
+        el.style.removeProperty("--ry");
+      });
+    });
   }
 
   function runCounters() {
@@ -197,6 +232,12 @@
       window.setTimeout(step, 380);
     };
     step();
+    window.setTimeout(() => {
+      const cur = document.createElement("span");
+      cur.className = "cursor";
+      cur.setAttribute("aria-hidden", "true");
+      pre.appendChild(cur);
+    }, lines.length * 380 + 40);
   }
 
   // Soft particle field on hero / finale
