@@ -154,7 +154,7 @@ def _auth_info() -> dict[str, Any]:
 
 
 def http_endpoints() -> list[dict[str, Any]]:
-    """控制面 HTTP 接口清单。"""
+    """控制面 HTTP / WebSocket 接口清单（供目录与 OpenAPI）。"""
     return [
         {"method": "GET", "path": "/api", "summary": "API 能力目录（本列表）", "group": "meta", "auth": "public"},
         {"method": "GET", "path": "/api/openapi.json", "summary": "OpenAPI 3.0 文档", "group": "meta", "auth": "public"},

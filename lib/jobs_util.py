@@ -24,10 +24,12 @@ EXAMPLES_DIR = CONFIG_DIR / "examples"
 
 
 def registered_job_names() -> list[str]:
+    """已注册 Job 名称列表（stem）。"""
     return [path.stem for path in list_job_files()]
 
 
 def job_source(path: Path) -> str:
+    """判断 Job 来源：``local`` / ``builtin`` / ``other``。"""
     try:
         path.resolve().relative_to(LOCAL_JOBS_DIR.resolve())
         return "local"
@@ -41,6 +43,7 @@ def job_source(path: Path) -> str:
 
 
 def load_job_summaries() -> list[dict]:
+    """加载已注册 Job 摘要列表（供 ``/api/jobs``）。"""
     rows = []
     for path in list_job_files():
         job = json.loads(path.read_text(encoding="utf-8"))
@@ -65,7 +68,10 @@ def load_job_summaries() -> list[dict]:
 
 
 def default_job_name(fallback: str | None = None) -> str | None:
-    """Prefer cluster.default_job when registered; else first job file."""
+    """解析默认 Job：优先 ``cluster.default_job``，再 watchdog，再 ``shell-job``。
+
+    :param fallback: 无已注册 Job 时的回落名。
+    """
     names = registered_job_names()
     if not names:
         return fallback
@@ -98,7 +104,7 @@ def _template_stem(path: Path) -> str:
 
 
 def list_job_templates() -> list[dict]:
-    """Templates from config/examples/*job* and *.example.json that look like jobs."""
+    """列出可安装模板（``config/examples`` 与内置 ``jobs/``）。"""
     registered = set(registered_job_names())
     found: dict[str, Path] = {}
     if EXAMPLES_DIR.is_dir():
@@ -139,7 +145,14 @@ def list_job_templates() -> list[dict]:
 
 
 def install_job_template(template_id: str, *, name: str | None = None) -> dict:
-    """Copy a template into config/local/jobs/<name>.json."""
+    """将模板复制到 ``config/local/jobs/<name>.json``。
+
+    :param template_id: 模板 id。
+    :param name: 目标 Job 名；默认沿用模板名。
+    :returns: 含 ``ok`` / ``path`` 等字段的结果。
+    :raises FileNotFoundError: 未知模板。
+    :raises ValueError: 名称为空。
+    """
     templates = {t["id"]: t for t in list_job_templates()}
     if template_id not in templates:
         raise FileNotFoundError(f"unknown template: {template_id}")
@@ -174,5 +187,5 @@ def install_job_template(template_id: str, *, name: str | None = None) -> dict:
 
 
 def ensure_builtin_jobs_visible() -> None:
-    """No-op helper for docs; builtins live in jobs/ and are listed automatically."""
+    """确保内置 ``jobs/`` 目录存在（内置 Job 会自动列入清单）。"""
     JOBS_DIR.mkdir(parents=True, exist_ok=True)

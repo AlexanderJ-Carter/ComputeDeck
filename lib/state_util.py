@@ -1,29 +1,25 @@
-"""Atomic JSON state helpers and advisory cross-process locks.
+"""原子 JSON 状态读写与跨进程 advisory flock。
 
-The control plane is used by the UI, CLI and watchdog at the same time. A
-partial write of leases/queue/node_state is the difference between "one task
-failed" and "the scheduler lost its state", so writes go through a temp file +
-``os.replace`` and read-modify-write paths take an advisory ``flock``.
+UI / CLI / watchdog 并发写 leases、queue、node_state；写走临时文件 + ``os.replace``，
+读改写路径加 ``flock``。仅支持 POSIX（Linux / macOS）。
 """
 
 from __future__ import annotations
 
 import contextlib
 import copy
+import fcntl
 import json
 import os
+import sys
 import tempfile
 import time
 from pathlib import Path
 from typing import Any, Iterator
 
-try:  # POSIX (Linux/macOS). Windows falls back to no cross-process lock.
-    import fcntl
-except ImportError:  # pragma: no cover - non-POSIX
-    fcntl = None  # type: ignore[assignment]
-
 
 def atomic_write_text(path: Path, text: str, *, mode: int = 0o644) -> None:
+    """原子写入文本（临时文件 + ``os.replace``）。"""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
@@ -40,11 +36,16 @@ def atomic_write_text(path: Path, text: str, *, mode: int = 0o644) -> None:
 
 
 def atomic_write_json(path: Path, data: Any, *, indent: int = 2, mode: int = 0o644) -> None:
+    """原子写入 JSON 文档。"""
     atomic_write_text(path, json.dumps(data, ensure_ascii=False, indent=indent) + "\n", mode=mode)
 
 
 def read_json(path: Path, default: Any = None) -> Any:
-    """Read JSON; on corruption move the bad file aside and return a deep copy of default."""
+    """读 JSON；损坏则旁路备份坏文件并返回 ``default`` 的深拷贝。
+
+    :param path: 目标文件。
+    :param default: 缺失或损坏时的回落值。
+    """
     path = Path(path)
     if not path.is_file():
         return copy.deepcopy(default)
@@ -54,16 +55,17 @@ def read_json(path: Path, default: Any = None) -> Any:
         bad = path.with_name(f"{path.name}.corrupt-{int(time.time())}")
         with contextlib.suppress(OSError):
             path.replace(bad)
-        print(f"[state] {path} is unreadable ({exc}); moved to {bad.name}", file=__import__("sys").stderr)
+        print(f"[state] {path} 不可读 ({exc})；已移至 {bad.name}", file=sys.stderr)
         return copy.deepcopy(default)
 
 
 @contextlib.contextmanager
 def file_lock(path: Path, *, timeout: float = 15.0) -> Iterator[None]:
-    """Advisory exclusive lock next to *path* (``<name>.lock``)."""
-    if fcntl is None:
-        yield
-        return
+    """在 *path* 旁建立排他 advisory 锁（``<name>.lock``）。
+
+    :param timeout: 获取锁超时秒数。
+    :raises TimeoutError: 超时仍未拿到锁。
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_name(path.name + ".lock")
@@ -93,7 +95,11 @@ def update_json(
     indent: int = 2,
     timeout: float = 15.0,
 ) -> Any:
-    """Atomic read-modify-write under a cross-process lock."""
+    """跨进程锁下的原子读改写。
+
+    :param mutator: 接收当前数据并返回新数据；返回 ``None`` 表示就地修改。
+    :returns: 最终写入的数据对象。
+    """
     path = Path(path)
     with file_lock(path, timeout=timeout):
         data = read_json(path, default)

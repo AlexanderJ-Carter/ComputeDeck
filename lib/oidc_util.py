@@ -31,7 +31,11 @@ class OidcError(Exception):
 
 
 def normalize_oidc(raw: dict | None, *, ui_base: str = "") -> dict[str, Any]:
-    """规范化 OIDC 配置。"""
+    """规范化 OIDC 配置（读 secret 文件、拼 redirect_uri 等）。
+
+    :param raw: ``cluster.control.auth.oidc`` 原始对象。
+    :param ui_base: UI 公网基址，用于拼 ``redirect_path``。
+    """
     raw = raw if isinstance(raw, dict) else {}
     secret = str(raw.get("client_secret") or "").strip()
     secret_file = str(raw.get("client_secret_file") or "").strip()
@@ -67,11 +71,16 @@ def normalize_oidc(raw: dict | None, *, ui_base: str = "") -> dict[str, Any]:
 
 
 def oidc_ready(cfg: dict[str, Any]) -> bool:
+    """是否具备发起登录所需的最小字段。"""
     return bool(cfg.get("issuer") and cfg.get("client_id") and cfg.get("redirect_uri"))
 
 
 def discover(cfg: dict[str, Any], *, force: bool = False) -> dict[str, Any]:
-    """拉取 OpenID Provider Metadata；支持本地覆盖 endpoint。"""
+    """拉取 OpenID Provider Metadata；支持本地覆盖 endpoint。
+
+    :param force: 为真时忽略本地缓存。
+    :raises OidcError: 缺少 issuer 或 HTTP/JSON 失败。
+    """
     if cfg.get("authorization_endpoint") and cfg.get("token_endpoint"):
         return {
             "authorization_endpoint": cfg["authorization_endpoint"],
@@ -101,7 +110,11 @@ def discover(cfg: dict[str, Any], *, force: bool = False) -> dict[str, Any]:
 
 
 def begin_login(cfg: dict[str, Any]) -> dict[str, str]:
-    """生成授权 URL 与 pending state。"""
+    """生成授权 URL 与 pending state。
+
+    :returns: ``authorize_url`` 与 ``state``。
+    :raises OidcError: 配置不完整或缺少 authorization_endpoint。
+    """
     if not oidc_ready(cfg):
         raise OidcError("OIDC 未配置完整（需要 issuer / client_id / redirect_uri）")
     meta = discover(cfg)
@@ -130,7 +143,12 @@ def begin_login(cfg: dict[str, Any]) -> dict[str, str]:
 
 
 def finish_login(cfg: dict[str, Any], *, code: str, state: str) -> dict[str, Any]:
-    """用授权码换 token，拉取 userinfo，返回主体信息。"""
+    """用授权码换 token，拉取 userinfo，返回主体信息。
+
+    :param code: 授权码。
+    :param state: 与 ``begin_login`` 对应的 state。
+    :raises OidcError: state 无效、端点缺失或用户不在白名单。
+    """
     pending = _load_pending(state)
     if not pending:
         raise OidcError("state 无效或已过期，请重新登录")
@@ -204,6 +222,7 @@ def probe_oidc(cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 def _pick_subject(cfg: dict[str, Any], claims: dict[str, Any]) -> str:
+    """按 ``username_claim`` 选取登录主体字符串。"""
     claim = cfg.get("username_claim") or "email"
     value = claims.get(claim) or claims.get("email") or claims.get("preferred_username") or claims.get("sub")
     if not value:
@@ -212,6 +231,7 @@ def _pick_subject(cfg: dict[str, Any], claims: dict[str, Any]) -> str:
 
 
 def _assert_allowed(cfg: dict[str, Any], claims: dict[str, Any], subject: str) -> None:
+    """按邮箱 / sub / 组白名单校验；不通过则抛 ``OidcError``。"""
     emails = cfg.get("allowed_emails") or []
     subs = cfg.get("allowed_subjects") or []
     groups_allow = cfg.get("allowed_groups") or []

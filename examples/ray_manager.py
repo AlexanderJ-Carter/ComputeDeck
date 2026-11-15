@@ -1,19 +1,15 @@
 #!/usr/bin/env python3
-"""Ray cluster manager for gpu-control Jobs.
+"""Ray 集群管理脚本（供 gpu-control Job 调用）。
 
-gpu-control's distributed job injection already provides NODE_RANK, NNODES,
-MASTER_ADDR and MASTER_PORT, so a Ray cluster can be expressed as one Job:
+分布式注入已提供 ``NODE_RANK`` / ``NNODES`` / ``MASTER_ADDR`` / ``MASTER_PORT``：
 
-  * rank 0  → `ray start --head` (GCS on MASTER_PORT, dashboard on 8265)
-  * rank >0 → `ray start --address=<MASTER_ADDR>:<MASTER_PORT>`
+- rank 0 → ``ray start --head``（GCS 用 MASTER_PORT，dashboard 8265）
+- rank >0 → ``ray start --address=<MASTER_ADDR>:<MASTER_PORT>``
 
-Template: ``config/examples/ray-cluster.example.json``.
-Use ``ray job submit --address http://<master>:8265 -- <cmd>`` to run jobs.
+模板：``config/examples/ray-cluster.example.json``。
+提交任务：``ray job submit --address http://<master>:8265 -- <cmd>``。
 
-Env:
-  GPU_CONTROL_JOB_RUNTIME  runtime/log directory (default /tmp/gpu-control-jobs/ray-cluster)
-  RAY_DASHBOARD_PORT       dashboard port (default 8265)
-  RAY_NUM_GPUS             GPUs to advertise per node (default NPROC_PER_NODE / 1)
+环境变量：``GPU_CONTROL_JOB_RUNTIME``、``RAY_DASHBOARD_PORT``、``RAY_NUM_GPUS``。
 """
 
 from __future__ import annotations
@@ -74,7 +70,7 @@ def cluster_address(top: dict[str, str]) -> str:
 
 
 def ray_status(top: dict[str, str]) -> bool:
-    """Return True when the GCS/Ray cluster answers ``ray status``."""
+    """GCS/Ray 集群对 ``ray status`` 有响应时返回 ``True``。"""
     cmd = ["ray", "status", f"--address={cluster_address(top)}"]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=15)

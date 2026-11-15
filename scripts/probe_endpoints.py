@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Probe inference-pool endpoint health.
+"""探测推理池端点健康。
 
-Default mode ``local``: Ansible asks each node to curl 127.0.0.1 (Codelab-safe).
-Optional mode ``direct``: control plane fan-out HTTP to node IPs (needs open ports).
+默认 ``local``：Ansible 让各节点 curl 本机 ``127.0.0.1``。
+可选 ``direct``：控制面直连节点 IP（需端口可达）。
 """
 
 from __future__ import annotations
@@ -101,9 +101,11 @@ def probe_direct(endpoints: list[dict], *, key: str | None, timeout: float, work
 
 
 def probe_local(cluster: dict) -> list[dict]:
-    """Probe using per-host ports from inventory (heterogeneous-safe).
+    """按 inventory 各主机端口探测（异构集群安全）。
 
-    Does not force a global ports_per_node via ``-e`` (that would override inventory).
+    不通过 ``-e`` 强制全局 ``ports_per_node``（否则会覆盖 inventory）。
+    :param cluster: ``cluster.json`` 内容。
+    :returns: 各节点探测结果列表。
     """
     api = cluster.get("api") or {}
     # refresh catalog so by_node / urls match current nodes.json

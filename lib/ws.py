@@ -1,4 +1,7 @@
-"""最小 RFC6455 WebSocket 编解码（供 ThreadingHTTPServer）。"""
+"""最小 RFC6455 WebSocket 编解码。
+
+供控制面 ``ThreadingHTTPServer`` 的 ``/ws/terminal`` 等入口使用。
+"""
 
 from __future__ import annotations
 
@@ -12,11 +15,13 @@ GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 
 def accept_key(sec_key: str) -> str:
+    """计算 ``Sec-WebSocket-Accept``。"""
     digest = hashlib.sha1((sec_key + GUID).encode("utf-8")).digest()
     return base64.b64encode(digest).decode("ascii")
 
 
 def handshake_headers(sec_key: str) -> list[tuple[str, str]]:
+    """握手成功时的响应头列表。"""
     return [
         ("Upgrade", "websocket"),
         ("Connection", "Upgrade"),
@@ -25,19 +30,23 @@ def handshake_headers(sec_key: str) -> list[tuple[str, str]]:
 
 
 def encode_text(message: str) -> bytes:
+    """编码文本帧。"""
     payload = message.encode("utf-8")
     return _encode_frame(0x1, payload)
 
 
 def encode_binary(payload: bytes) -> bytes:
+    """编码二进制帧。"""
     return _encode_frame(0x2, payload)
 
 
 def encode_close(code: int = 1000) -> bytes:
+    """编码关闭帧。"""
     return _encode_frame(0x8, struct.pack("!H", code))
 
 
 def encode_pong(payload: bytes = b"") -> bytes:
+    """编码 Pong 帧。"""
     return _encode_frame(0xA, payload)
 
 
@@ -54,7 +63,10 @@ def _encode_frame(opcode: int, payload: bytes) -> bytes:
 
 
 def read_frame(sock_file: BinaryIO) -> tuple[int, bytes] | None:
-    """Read one WebSocket frame. Client→server frames are masked."""
+    """读一帧 WebSocket（客户端→服务端带 mask）。
+
+    :returns: ``(opcode, payload)``；连接结束或非法超大帧返回 ``None``。
+    """
     header = sock_file.read(2)
     if not header or len(header) < 2:
         return None

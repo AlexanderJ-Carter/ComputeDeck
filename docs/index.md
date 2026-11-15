@@ -16,7 +16,9 @@
 | [AI / MCP 接入](ai-接入.md) | Agent、Bearer、Cursor MCP |
 | [HTTP API](api/index.md) | 接口分组与常用示例 |
 | [OpenAPI / Swagger](api/openapi.md) | `/api/docs` 交互文档 |
-| [Docstring 规范](develop/docstrings.md) | 中文注释约定 |
+| [Docstring 规范](develop/docstrings.md) | 中文 Sphinx docstring |
+| [仓库布局](develop/layout.md) | 目录职责与归档约定 |
+| [校验与 CI](develop/ci.md) | check.sh 与 GitHub Actions |
 
 ## 快速链接（控制面在线时）
 

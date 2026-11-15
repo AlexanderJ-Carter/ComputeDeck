@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-"""Control-host edge reverse proxy for the inference pool.
+"""主控 Edge 反向代理：对外一个端口负载到内网推理端点。
 
-Borrowing practical ideas from LiteLLM / Portkey / Kong AI gateways —
-kept small and local (no Redis / virtual keys):
+吸收 LiteLLM / Portkey / Kong 的实用能力，保持本地轻量（无 Redis / 虚拟密钥）：
 
-- health-aware upstream pool
-- round-robin or least-connections
-- short retries onto another upstream on connect failure
-- per-upstream cooldown after failures
-- optional sticky routing via request header hash
+- 健康感知上游池
+- round-robin / least-connections
+- 连接失败短重试切上游
+- 失败冷却
+- 可选请求头 sticky
 
-Clients hit one Control port; GPU workers stay on the private LAN.
+客户端只打 Control 端口；GPU worker 留在内网。
 """
 
 from __future__ import annotations
@@ -20,6 +19,7 @@ import hashlib
 import json
 import os
 import socket
+import sys
 import threading
 import time
 from http.client import HTTPConnection
@@ -29,8 +29,6 @@ from urllib.parse import urlsplit
 
 import _bootstrap  # noqa: F401
 from paths import PROJECT_DIR, STATE_DIR, cluster_file
-
-import sys
 
 sys.path.insert(0, str(PROJECT_DIR / "lib"))
 from ingress_tls import build_ssl_context, normalize_ingress, probe_tls  # noqa: E402

@@ -1,4 +1,4 @@
-"""Insert ``lib/`` onto ``sys.path`` for script entrypoints."""
+"""把仓库 ``lib/`` 插入 ``sys.path``，供 scripts 入口使用。"""
 
 from __future__ import annotations
 

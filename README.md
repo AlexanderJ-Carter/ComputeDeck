@@ -3,8 +3,9 @@
 多节点 GPU **通用控制面**（Web + CLI + MCP，SSH/Ansible）。  
 不替代 K8s；推理、模型、分布式训练、Ray、vLLM 都是可选模块，由 Job 模板组合。
 
-版本：[`VERSION`](VERSION) · 变更：[CHANGELOG.md](CHANGELOG.md)  
-文档： [手册](docs/手册.md) · [生产部署](docs/生产部署.md) · [安全加固](docs/安全加固.md) · [配置参考](docs/配置参考.md) · [分布式与推理](docs/分布式与推理.md) · [高可用与负载均衡](docs/高可用与负载均衡.md) · [故障排查](docs/故障排查.md) · [AI/MCP](docs/ai-接入.md)
+版本：[`VERSION`](VERSION) · 变更：[CHANGELOG.md](CHANGELOG.md) · 许可：[MIT](LICENSE)  
+文档：[手册](docs/手册.md) · [生产部署](docs/生产部署.md) · [安全加固](docs/安全加固.md) · [配置参考](docs/配置参考.md) · [分布式与推理](docs/分布式与推理.md) · [高可用与负载均衡](docs/高可用与负载均衡.md) · [故障排查](docs/故障排查.md) · [AI/MCP](docs/ai-接入.md)  
+贡献：[CONTRIBUTING.md](CONTRIBUTING.md) · 安全：[SECURITY.md](SECURITY.md)
 
 ## 支持边界
 

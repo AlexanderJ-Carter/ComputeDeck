@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collect CPU / memory / load metrics from all nodes via parallel SSH."""
+"""经并行 SSH 采集各节点 CPU / 内存 / load 指标。"""
 
 from __future__ import annotations
 

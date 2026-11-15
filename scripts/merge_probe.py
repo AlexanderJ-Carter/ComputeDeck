@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Merge per-node probe JSON files into state/probe.json matrix."""
+"""合并各节点 probe JSON，写入 ``state/probe.json`` 矩阵。"""
 
 from __future__ import annotations
 

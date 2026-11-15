@@ -5,6 +5,9 @@ description = "General multi-node GPU control plane (Core) with optional inferen
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
+authors = [
+  { name = "黄皓宇", email = "2253940186@qq.com" },
+]
 dependencies = [
   "ansible>=9.0.0",
   "paramiko>=3.0.0",
@@ -14,6 +17,11 @@ dependencies = [
 mcp = ["mcp>=2.0.0"]
 docs = ["mkdocs>=1.6.0", "mkdocs-material>=9.5.0", "pymdown-extensions>=10.0.0"]
 models-worker = ["huggingface_hub[cli]>=0.24.0", "modelscope>=1.18.0"]
+
+[project.urls]
+Changelog = "CHANGELOG.md"
+Documentation = "docs/index.md"
+Issues = "SECURITY.md"
 
 [tool.uv]
 package = false

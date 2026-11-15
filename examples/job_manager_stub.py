@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Minimal Job manager stub for gpu-control (copy & customize).
+"""gpu-control Job 管理脚本骨架（复制后按业务改）。
 
-Contract: argv[1] is one of start|stop|restart|status|wait, then optional extra_args.
-Exit 0 on success; status may exit 1 when not ready.
+约定：``argv[1]`` 为 ``start|stop|restart|status|wait``，其后为可选 extra_args。
+成功退出 0；``status`` 未就绪时可退出 1。
 """
 
 from __future__ import annotations

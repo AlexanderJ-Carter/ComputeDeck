@@ -21,7 +21,7 @@ results: list[tuple[bool, str, str]] = []
 
 
 def _load_token() -> str:
-    """Bearer token from env, or config/local/secrets/ui_api_token if present."""
+    """从环境变量或 ``config/local/secrets/ui_api_token`` 读取 Bearer token。"""
     env = (os.environ.get("GPU_CONTROL_UI_TOKEN") or "").strip()
     if env:
         return env
@@ -62,7 +62,7 @@ def get_text(path: str, timeout: int = 30) -> tuple[int, str]:
 
 
 def get_status(path: str, timeout: int = 15) -> int:
-    """Status code without auth header — used to prove the auth gate."""
+    """不带鉴权头请求，返回状态码（用于验证鉴权门控）。"""
     req = urllib.request.Request(BASE + path)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -173,7 +173,7 @@ def main() -> int:
         _, tpl = get("/api/jobs/templates")
         names = {t.get("id") for t in tpl.get("templates") or []}
         report("模板含 ray-cluster/vllm-serve", {"ray-cluster", "vllm-serve"} <= names, f"ids={sorted(names)}")
-        report("模板无场景 decider", "decider" not in names, f"ids={sorted(names)}")
+        report("模板无业务场景硬编码名", "decider" not in names, f"ids={sorted(names)}")
     except Exception as exc:  # noqa: BLE001
         report("新增模板/工具栈", False, str(exc))
 

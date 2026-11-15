@@ -1,6 +1,7 @@
 """项目路径解析与配置查找。
 
-配置查找顺序：``config/local/<name>`` → ``config/<name>`` → 仓库根 ``<name>``。
+查找顺序：``config/local/<name>`` → ``config/<name>`` → 仓库根 ``<name>``。
+供 CLI、脚本与 ``lib.*`` 统一引用。
 """
 
 from __future__ import annotations
@@ -29,11 +30,12 @@ CLI = BIN_DIR / "gpu-control"
 
 
 def ansible_cmd(*args: str) -> list[str]:
-    """Run ansible-playbook via venv python (avoids broken shebang paths)."""
+    """组装经 venv Python 调用的 ansible-playbook 命令行（避免 shebang 路径失效）。"""
     return [str(VENV_PYTHON), str(ANSIBLE), *args]
 
 
 def ensure_runtime_dirs() -> None:
+    """创建 local / jobs / state / snapshots 运行目录。"""
     LOCAL_DIR.mkdir(parents=True, exist_ok=True)
     LOCAL_JOBS_DIR.mkdir(parents=True, exist_ok=True)
     STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -41,7 +43,12 @@ def ensure_runtime_dirs() -> None:
 
 
 def resolve_config(name: str, *, write: bool = False) -> Path:
-    """Resolve a config filename. Prefer local overrides."""
+    """解析配置文件路径，优先 local 覆盖。
+
+    :param name: 文件名，如 ``cluster.json``。
+    :param write: 为真且文件不存在时，返回将写入的 ``config/local/`` 路径。
+    :returns: 已存在路径，或按 ``write`` 决定的落点。
+    """
     candidates = [LOCAL_DIR / name, CONFIG_DIR / name, PROJECT_DIR / name]
     for path in candidates:
         if path.exists():
@@ -53,15 +60,21 @@ def resolve_config(name: str, *, write: bool = False) -> Path:
 
 
 def cluster_file(*, write: bool = False) -> Path:
+    """``cluster.json`` 路径。"""
     return resolve_config("cluster.json", write=write)
 
 
 def nodes_file(*, write: bool = False) -> Path:
+    """``nodes.json`` 路径。"""
     return resolve_config("nodes.json", write=write)
 
 
 def job_file(name: str) -> Path | None:
-    """Find job JSON by stem name."""
+    """按 stem 查找 Job JSON（先 local 后内置）。
+
+    :param name: Job 名（不含 ``.json``）。
+    :returns: 文件路径；未找到为 ``None``。
+    """
     for folder in (LOCAL_JOBS_DIR, JOBS_DIR):
         path = folder / f"{name}.json"
         if path.is_file():
@@ -70,6 +83,7 @@ def job_file(name: str) -> Path | None:
 
 
 def list_job_files() -> list[Path]:
+    """列出已注册 Job 文件；同名时 local 覆盖内置。"""
     found: dict[str, Path] = {}
     for folder in (JOBS_DIR, LOCAL_JOBS_DIR):
         if not folder.is_dir():
@@ -82,5 +96,5 @@ def list_job_files() -> list[Path]:
 
 
 def expand_path(value: str) -> str:
-    """Expand ``$VAR`` and ``~`` in config path strings."""
+    """展开配置路径中的 ``$VAR`` 与 ``~``。"""
     return os.path.expanduser(os.path.expandvars(value))

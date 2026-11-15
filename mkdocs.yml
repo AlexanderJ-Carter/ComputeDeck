@@ -72,3 +72,5 @@ nav:
       - OpenAPI / Swagger: api/openapi.md
   - 开发约定:
       - Docstring 规范: develop/docstrings.md
+      - 仓库布局: develop/layout.md
+      - 校验与 CI: develop/ci.md

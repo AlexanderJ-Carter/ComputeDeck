@@ -58,8 +58,8 @@ def die(message: str, code: int = 1) -> None:
 def ensure_runtime() -> None:
     if not ANSIBLE.is_file():
         die(
-            f"Ansible not found: {ANSIBLE}\n"
-            "On the Control node, create .venv with ansible installed."
+            f"未找到 Ansible：{ANSIBLE}\n"
+            "请在 Control 节点创建 .venv 并安装 ansible。"
         )
     ensure_runtime_dirs()
 
@@ -68,7 +68,7 @@ def load_job(name: str) -> dict:
     path = job_file(name)
     if path is None:
         available = ", ".join(p.stem for p in list_job_files()) or "(none)"
-        die(f"Unknown job '{name}'. Available: {available}")
+        die(f"未知 Job '{name}'。可用：{available}")
     job = json.loads(path.read_text(encoding="utf-8"))
     for key in ("python", "script"):
         if key in job and isinstance(job[key], str):
@@ -89,7 +89,7 @@ def load_cluster() -> dict:
 
 
 def select_nodes_cli_args(gpus: int) -> list[str]:
-    """Build select_nodes.py args using cluster scheduling preferences."""
+    """按集群调度偏好组装 ``select_nodes.py`` 参数。"""
     args = ["--gpus", str(gpus), "--json"]
     scheduling = (load_cluster().get("scheduling") or {})
     prefer = scheduling.get("prefer_labels") or []
@@ -317,7 +317,7 @@ def acquire_lease(
         occupied = {n for lease in leases for n in lease.get("nodes", [])}
         conflict = sorted(set(nodes) & occupied)
         if conflict:
-            die(f"Nodes already leased: {', '.join(conflict)}")
+            die(f"节点已被租用：{', '.join(conflict)}")
         lease = {
             "id": f"lease-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}",
             "job": job,
@@ -480,7 +480,7 @@ def cmd_jobs(args: argparse.Namespace) -> int:
 
 
 def cmd_jobs_logs(args: argparse.Namespace) -> int:
-    """Tail a Job's runtime log on the selected nodes."""
+    """在选定节点上跟踪 Job 运行时日志。"""
     name = getattr(args, "template", None) or getattr(args, "name", None)
     if not name:
         die("jobs logs 需要 Job 名，如: gpu-control jobs logs sft")
@@ -521,7 +521,7 @@ def cmd_job_action(args: argparse.Namespace) -> int:
     action = args.action
     allowed = job.get("actions", ["start", "stop", "restart", "status", "wait"])
     if action not in allowed:
-        die(f"Job '{job['name']}' does not support action '{action}'")
+        die(f"Job '{job['name']}' 不支持动作 '{action}'")
 
     limit = resolve_limit(getattr(args, "node", None), getattr(args, "nodes", None))
     quiet = bool(getattr(args, "quiet", False))
@@ -558,7 +558,7 @@ def cmd_gpu(args: argparse.Namespace) -> int:
             quiet=quiet,
         )
 
-    die(f"Unknown gpu action: {args.action}")
+    die(f"未知 gpu 动作：{args.action}")
     return 1
 
 
@@ -583,7 +583,7 @@ def cmd_status_default(args: argparse.Namespace) -> int:
 
 
 def cmd_overview(args: argparse.Namespace) -> int:
-    """One-screen cluster view: GPUs + leases + optional job readiness."""
+    """单屏集群总览：GPU + lease，可选 Job 就绪状态。"""
     quiet = True
     if not args.cached:
         code = refresh_resources(quiet=quiet)
@@ -649,7 +649,10 @@ def deploy_job(
     selected: list[str] | None = None,
     allow_cordoned: bool = False,
 ) -> tuple[int, list[str]]:
-    """Deploy a job and return (exit_code, selected_nodes)."""
+    """部署 Job。
+
+    :returns: ``(exit_code, selected_nodes)``。
+    """
     job = load_job(job_name)
 
     if selected is None:
@@ -726,7 +729,7 @@ def cmd_deploy(args: argparse.Namespace) -> int:
         allow_cordoned=bool(getattr(args, "allow_cordoned", False)),
     )
     if code != 0 and not _selected:
-        die("No nodes selected for deployment")
+        die("未选择部署节点")
     return code
 
 def cmd_exec(args: argparse.Namespace) -> int:
@@ -735,7 +738,7 @@ def cmd_exec(args: argparse.Namespace) -> int:
         parts = parts[1:]
     command = " ".join(parts) if isinstance(parts, list) else str(parts)
     if not command.strip():
-        die("exec requires a remote command")
+        die("exec 需要远程命令")
     exec_dir = STATE_DIR / "exec"
     if exec_dir.is_dir():
         for stale in exec_dir.glob("*.json"):
@@ -760,7 +763,7 @@ def _pid_cmdline(pid: int) -> str:
 
 
 def _pid_looks_like_ui(pid: int) -> bool:
-    """Guard against PID reuse when deciding whether the UI is already running."""
+    """根据 cmdline 判断 PID 是否仍是 UI，避免 PID 复用误判。"""
     text = _pid_cmdline(pid)
     return "web/server.py" in text or "gpu-control" in text and " ui" in text
 
@@ -770,11 +773,11 @@ def _pid_looks_like_watchdog(pid: int) -> bool:
 
 
 def cmd_ui(args: argparse.Namespace) -> int:
-    """Start the local cluster web console on the Control node."""
+    """在 Control 节点启动本地集群 Web 控制台。"""
     ensure_runtime()
     server = PROJECT_DIR / "web" / "server.py"
     if not server.is_file():
-        die(f"UI server missing: {server}")
+        die(f"缺少 UI 服务脚本：{server}")
     control = (load_cluster().get("control") or {})
     host = args.host or control.get("ui_host") or "127.0.0.1"
     port = int(args.port or control.get("ui_port") or 8787)
@@ -815,11 +818,11 @@ def cmd_ui(args: argparse.Namespace) -> int:
 
 
 def cmd_probe(args: argparse.Namespace) -> int:
-    """Probe TCP connectivity among GPU nodes (distributed readiness check)."""
+    """探测 GPU 节点间 TCP 互通（分布式就绪检查）。"""
     ensure_runtime()
     peers = inventory_hosts()
     if len(peers) < 2:
-        die("Need at least 2 nodes in inventory to probe")
+        die("探测互通至少需要 inventory 中 2 个节点")
     code = ansible_playbook(
         "probe-network.yml",
         extra={
@@ -950,7 +953,7 @@ def kill_gpu_processes(
 
 
 def cmd_procs(args: argparse.Namespace) -> int:
-    """List or kill GPU compute processes on workers."""
+    """列出或结束 worker 上的 GPU 计算进程。"""
     action = args.procs_action
     quiet = bool(getattr(args, "quiet", False))
     limit = resolve_limit(getattr(args, "node", None), getattr(args, "nodes", None))
@@ -983,7 +986,7 @@ def cmd_procs(args: argparse.Namespace) -> int:
         if not node:
             die("procs kill 需要 --node")
         if node not in inventory_nodes():
-            die(f"Unknown node: {node}")
+            die(f"未知节点：{node}")
         pids = [int(x) for x in (args.pid or [])]
         if not pids and not args.all and not args.match:
             die("procs kill 需要 --pid / --all / --match")
@@ -1024,15 +1027,15 @@ def cmd_procs(args: argparse.Namespace) -> int:
             )
         return code
 
-    die(f"Unknown procs action: {action}")
+    die(f"未知 procs 动作：{action}")
     return 1
 
 
 def cmd_free(args: argparse.Namespace) -> int:
-    """Stop jobs, kill GPU procs (default), release leases, cordon, verify."""
+    """腾空节点：停 Job、杀 GPU 进程（默认）、释放 lease、隔离并校验。"""
     node = args.node
     if node not in inventory_nodes():
-        die(f"Unknown node: {node}. Known: {', '.join(inventory_nodes())}")
+        die(f"未知节点：{node}。已知：{', '.join(inventory_nodes())}")
 
     quiet = bool(args.quiet)
     jobs = [args.job] if args.job else [job["name"] for job in list_jobs()]
@@ -1148,9 +1151,9 @@ def cmd_node(args: argparse.Namespace) -> int:
 
     if args.node_action == "add":
         if not args.name or not args.host:
-            die("node add requires NAME and --host")
+            die("node add 需要 NAME 与 --host")
         if args.name in nodes:
-            die(f"Node already exists: {args.name}")
+            die(f"节点已存在：{args.name}")
         nodes[args.name] = {
             "ansible_host": args.host,
             "gpus_per_node": args.gpus or defaults.get("gpus_per_node", 4),
@@ -1162,9 +1165,9 @@ def cmd_node(args: argparse.Namespace) -> int:
 
     if args.node_action == "remove":
         if not args.name:
-            die("node remove requires NAME")
+            die("node remove 需要 NAME")
         if args.name not in nodes:
-            die(f"Unknown node: {args.name}")
+            die(f"未知节点：{args.name}")
         del nodes[args.name]
         cordoned.pop(args.name, None)
         save_node_state(state)
@@ -1174,9 +1177,9 @@ def cmd_node(args: argparse.Namespace) -> int:
 
     if args.node_action == "cordon":
         if not args.name:
-            die("node cordon requires NAME")
+            die("node cordon 需要 NAME")
         if args.name not in nodes:
-            die(f"Unknown node: {args.name}")
+            die(f"未知节点：{args.name}")
         cordoned[args.name] = {
             "reason": args.reason or "maintenance",
             "at": now_utc(),
@@ -1188,7 +1191,7 @@ def cmd_node(args: argparse.Namespace) -> int:
 
     if args.node_action == "uncordon":
         if not args.name:
-            die("node uncordon requires NAME")
+            die("node uncordon 需要 NAME")
         if args.name in cordoned:
             del cordoned[args.name]
             save_node_state(state)
@@ -1200,12 +1203,12 @@ def cmd_node(args: argparse.Namespace) -> int:
     if args.node_action == "render":
         return run_python("render_inventory.py", "--write-ssh-snippet").returncode
 
-    die(f"Unknown node action: {args.node_action}")
+    die(f"未知 node 动作：{args.node_action}")
     return 1
 
 
 def cmd_endpoints(args: argparse.Namespace) -> int:
-    """Render and show the inference endpoint catalog."""
+    """渲染并展示推理端点目录。"""
     code = run_python("render_endpoints.py", "--write").returncode
     if code != 0:
         return code
@@ -1234,7 +1237,7 @@ def cmd_gateway(args: argparse.Namespace) -> int:
 
 
 def cmd_health(args: argparse.Namespace) -> int:
-    """Probe inference endpoints (default: local curl via Ansible on each node)."""
+    """探测推理端点健康（默认经 Ansible 在各节点本地 curl）。"""
     run_python_capture("render_endpoints.py", "--write")
     cmd = [
         "--mode",
@@ -1293,7 +1296,7 @@ def cmd_docs(args: argparse.Namespace) -> int:
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
-    """Validate config / runtime readiness before publish or handoff."""
+    """发布或交接前校验配置与运行时就绪。"""
     extra = ["--json"] if args.json else []
     return run_python("validate_config.py", *extra).returncode
 
@@ -1379,7 +1382,7 @@ def cmd_models(args: argparse.Namespace) -> int:
 
 
 def cmd_metrics(_: argparse.Namespace) -> int:
-    """Collect host CPU/memory/load from all nodes."""
+    """采集全部节点的主机 CPU / 内存 / load。"""
     ensure_runtime()
     return run_python("collect_host_metrics.py").returncode
 
@@ -1449,7 +1452,7 @@ def cmd_queue(args: argparse.Namespace) -> int:
 
     if args.queue_action == "submit":
         if not args.job:
-            die("queue submit requires a job name")
+            die("queue submit 需要 Job 名")
         load_job(args.job)
         wl = {
             "id": f"wl-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
@@ -1474,7 +1477,7 @@ def cmd_queue(args: argparse.Namespace) -> int:
 
     if args.queue_action == "cancel":
         if not args.workload_id:
-            die("queue cancel requires --id")
+            die("queue cancel 需要 --id")
         found = False
         for wl in workloads:
             if wl["id"] == args.workload_id and wl["status"] in {"pending", "admitted"}:
@@ -1483,7 +1486,7 @@ def cmd_queue(args: argparse.Namespace) -> int:
                 wl["message"] = "cancelled by user"
                 found = True
         if not found:
-            die(f"No cancellable workload: {args.workload_id}")
+            die(f"无可取消的工作负载：{args.workload_id}")
         save_queue(data)
         print(f"Cancelled {args.workload_id}")
         return 0
@@ -1557,7 +1560,7 @@ def cmd_queue(args: argparse.Namespace) -> int:
               f"{sum(1 for wl in workloads if wl['status'] == 'pending')}")
         return 0
 
-    die(f"Unknown queue action: {args.queue_action}")
+    die(f"未知 queue 动作：{args.queue_action}")
     return 1
 
 
@@ -1579,7 +1582,7 @@ def cmd_lease(args: argparse.Namespace) -> int:
 
     if args.lease_action == "acquire":
         if not args.job or not args.nodes:
-            die("lease acquire requires --job and --nodes")
+            die("lease acquire 需要 --job 与 --nodes")
         node_list = [n.strip() for n in args.nodes.split(",") if n.strip()]
         lease = acquire_lease(
             args.job,
@@ -1593,7 +1596,7 @@ def cmd_lease(args: argparse.Namespace) -> int:
 
     if args.lease_action == "release":
         if not args.lease_id and not args.nodes:
-            die("lease release requires --id or --nodes")
+            die("lease release 需要 --id 或 --nodes")
         before = len(leases)
         if args.lease_id:
             leases[:] = [lease for lease in leases if lease["id"] != args.lease_id]
@@ -1606,12 +1609,12 @@ def cmd_lease(args: argparse.Namespace) -> int:
             print(f"Released {released} lease(s)")
         return 0
 
-    die(f"Unknown lease action: {args.lease_action}")
+    die(f"未知 lease 动作：{args.lease_action}")
     return 1
 
 
 def cmd_get(args: argparse.Namespace) -> int:
-    """kubectl-style resource listing."""
+    """类 kubectl 的资源列表。"""
     kind = args.resource
     if kind in {"nodes", "node"}:
         args.node_action = "list"
@@ -1630,20 +1633,20 @@ def cmd_get(args: argparse.Namespace) -> int:
         args.cached = True
         args.job = None
         return cmd_overview(args)
-    die(f"Unknown resource: {kind}. Try: nodes|jobs|leases|queue|endpoints|cluster")
+    die(f"未知资源：{kind}。可选：nodes|jobs|leases|queue|endpoints|cluster")
     return 1
 
 
 def cmd_describe(args: argparse.Namespace) -> int:
-    """kubectl-style resource detail."""
+    """类 kubectl 的资源详情。"""
     kind = args.resource
     name = args.name
     if kind in {"node", "nodes"}:
         if not name:
-            die("describe node requires NAME")
+            die("describe node 需要 NAME")
         registry = load_nodes_registry().get("nodes", {})
         if name not in registry:
-            die(f"Unknown node: {name}")
+            die(f"未知节点：{name}")
         resources = json.loads(RESOURCES_FILE.read_text(encoding="utf-8")) if RESOURCES_FILE.is_file() else {}
         leases = load_leases().get("leases", [])
         cordoned = load_node_state().get("cordoned", {})
@@ -1671,11 +1674,11 @@ def cmd_describe(args: argparse.Namespace) -> int:
         return 0
     if kind in {"job", "jobs"}:
         if not name:
-            die("describe job requires NAME")
+            die("describe job 需要 NAME")
         job = load_job(name)
         print(json.dumps(job, ensure_ascii=False, indent=2))
         return 0
-    die(f"Unknown resource: {kind}. Try: node|job")
+    die(f"未知资源：{kind}。可选：node|job")
     return 1
 
 

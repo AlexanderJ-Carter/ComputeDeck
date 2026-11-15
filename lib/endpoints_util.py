@@ -12,14 +12,19 @@ def resolve_node_ports(
     defaults: dict | None = None,
     api: dict | None = None,
 ) -> tuple[int, list[int]]:
-    """Return ``(base_port, ports)`` for one worker node.
+    """解析单节点推理端口区间。
 
-    Precedence for count:
+    端口数量优先级：
     ``node.ports_per_node`` → ``node.api.ports_per_node`` → ``node.gpus_per_node``
-    → ``defaults.gpus_per_node`` → ``api.ports_per_node`` → 1
+    → ``defaults.gpus_per_node`` → ``api.ports_per_node`` → 1。
 
-    Precedence for base:
-    ``node.base_port`` → ``node.api.base_port`` → ``api.base_port`` → 8000
+    起始端口优先级：
+    ``node.base_port`` → ``node.api.base_port`` → ``api.base_port`` → 8000。
+
+    :param meta: 节点元数据（``nodes.json`` 单节点）。
+    :param defaults: ``nodes.defaults``。
+    :param api: ``cluster.api``。
+    :returns: ``(base_port, ports)``。
     """
     meta = meta or {}
     defaults = defaults or {}
@@ -46,7 +51,12 @@ def resolve_node_ports(
 
 
 def build_endpoint_catalog(nodes_doc: dict, cluster: dict) -> dict:
-    """Build endpoints payload from nodes.json + cluster.json."""
+    """由 ``nodes.json`` 与 ``cluster.json`` 构建端点目录。
+
+    :param nodes_doc: 节点文档。
+    :param cluster: 集群文档。
+    :returns: 含 ``endpoints`` / ``by_node`` / ``urls`` 等字段的字典。
+    """
     api = cluster.get("api") or {}
     defaults = nodes_doc.get("defaults") or {}
     key_file = api.get("api_key_file") or ""

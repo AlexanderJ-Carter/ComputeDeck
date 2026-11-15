@@ -443,7 +443,10 @@ def cmd_status(_: argparse.Namespace) -> int:
 
 
 def _append_litellm_start(kind: str, gateway: dict, results: list[dict]) -> None:
-    """Start the AI Gateway when it is available, without making Edge depend on it."""
+    """在可用时启动 AI Gateway，不让 Edge 依赖它。
+
+    :param kind: ``litellm`` 时强制启动；其它 kind 仅在探测就绪时可选启动。
+    """
     if kind == "litellm":
         results.append(_start_litellm(gateway))
         return

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Model module: catalog, deps, path check, verify, pull, install-tools."""
+"""模型模块 CLI：目录、依赖、路径检查、校验、拉取、安装工具。"""
 
 from __future__ import annotations
 
@@ -372,7 +372,11 @@ def cmd_install_tools(args: argparse.Namespace) -> int:
 
 
 def build_token_exports(pull: dict) -> str:
-    """Build shell exports that read token files on the shared filesystem."""
+    """生成从共享盘 token 文件读取并 ``export`` 的 shell 片段。
+
+    :param pull: 模型拉取配置（含 token 文件路径约定）。
+    :returns: 可嵌入远程命令的 shell 文本。
+    """
     hf_path, ms_path = resolve_token_files(pull)
     parts = []
     if hf_path:

@@ -26,6 +26,12 @@ class NodeSSH:
 
 
 def load_node_ssh(name: str) -> NodeSSH:
+    """从 ``nodes.json`` 解析节点 SSH 连接信息。
+
+    :raises KeyError: 未知节点。
+    :raises ValueError: 缺少 ``ansible_host``。
+    :raises FileNotFoundError: SSH 私钥不存在。
+    """
     doc = json.loads(nodes_file().read_text(encoding="utf-8"))
     defaults = doc.get("defaults") or {}
     nodes = doc.get("nodes") or {}
@@ -56,18 +62,21 @@ class ShellSession:
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     def write(self, data: bytes) -> None:
+        """向远端 PTY 写入字节。"""
         with self.lock:
             if self.closed:
                 return
             self.channel.send(data)
 
     def resize(self, cols: int, rows: int) -> None:
+        """调整远端 PTY 行列。"""
         with self.lock:
             if self.closed:
                 return
             self.channel.resize_pty(width=max(20, cols), height=max(5, rows))
 
     def close(self) -> None:
+        """关闭 channel 与 SSH 客户端。"""
         with self.lock:
             if self.closed:
                 return
@@ -83,6 +92,7 @@ class ShellSession:
 
 
 def open_shell(node_name: str, *, cols: int = 120, rows: int = 32) -> ShellSession:
+    """建立到指定节点的交互式 SSH shell 会话。"""
     info = load_node_ssh(node_name)
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -109,7 +119,11 @@ def open_shell(node_name: str, *, cols: int = 120, rows: int = 32) -> ShellSessi
 
 
 def pump_channel(session: ShellSession, on_data, stop_event: threading.Event) -> None:
-    """Read PTY output until closed. on_data(bytes)."""
+    """循环读取 PTY 输出直至关闭。
+
+    :param on_data: 回调 ``on_data(bytes)``。
+    :param stop_event: 置位后停止泵送。
+    """
     while not stop_event.is_set() and not session.closed:
         if session.channel.recv_ready():
             chunk = session.channel.recv(4096)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Parse GPU snapshots into a consolidated resources.json."""
+"""解析 GPU 快照，汇总为 ``resources.json``。"""
 
 from __future__ import annotations
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render inventory.ini (and optional SSH config snippet) from nodes.json."""
+"""由 ``nodes.json`` 渲染 ``inventory.ini``（及可选 SSH 片段）。"""
 
 from __future__ import annotations
 

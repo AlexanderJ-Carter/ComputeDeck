@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collect structured per-node exec results written by playbooks/exec.yml."""
+"""汇总 ``playbooks/exec.yml`` 写入的各节点结构化 exec 结果。"""
 
 from __future__ import annotations
 

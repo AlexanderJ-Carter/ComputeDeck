@@ -83,9 +83,8 @@ from gateway_ops import status_payload as gateway_status_payload  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
-# Small TTL caches. The dashboard polls /api/overview every 12s; spawning
-# `gpu-control gateway status` for every poll made the page feel sluggish.
-# Cache entries are invalidated by writes and by any non-read-only CLI call.
+# 短 TTL 缓存：仪表盘约每 12s 轮询 /api/overview；每次都 spawn
+# ``gpu-control gateway status`` 会拖慢页面。写入或非只读 CLI 会失效缓存。
 # ---------------------------------------------------------------------------
 
 _GATEWAY_TTL = 12.0
@@ -105,7 +104,7 @@ _SAFE_HOST_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,252}$")
 
 
 class BadRequestError(Exception):
-    """Raised for user-supplied input that must be rejected with HTTP 400."""
+    """用户输入非法时抛出，由 Handler 转为 HTTP 400。"""
 
 
 def require_name(value, label: str = "name") -> str:
@@ -143,10 +142,11 @@ def invalidate_gateway_cache() -> None:
 
 
 def _gateway_status_fresh(*, allow_cli: bool = True) -> dict:
-    """Return gateway status, cached for a few seconds.
+    """返回网关状态（数秒 TTL 缓存）。
 
-    ``allow_cli=False`` (light dashboard polls) never spawns a subprocess; it
-    reuses the cache or falls back to the in-process payload.
+    :param allow_cli: 为 ``False`` 时（轻量仪表盘轮询）不 spawn 子进程，
+        只用缓存或进程内 payload。
+    :returns: 网关状态字典。
     """
     now = time.monotonic()
     with _GATEWAY_LOCK:
@@ -308,8 +308,7 @@ EXEC_PRESETS = {
 
 
 def _read_json(path: Path, default):
-    # Corrupt runtime JSON must not take the whole API down; state_util moves
-    # the bad file aside and returns a deep copy of the default.
+    # 损坏的运行时 JSON 不应拖垮整站；state_util 会挪开坏文件并返回 default 深拷贝。
     return state_read_json(path, default)
 
 
@@ -407,7 +406,11 @@ def collect_exec_results() -> list[dict]:
 
 
 def build_lb_plan(strategy: str = "least_latency") -> dict:
-    """Build client-side load-balancing plan from endpoint health."""
+    """按端点健康度生成客户端负载均衡方案。
+
+    :param strategy: ``least_latency`` / ``round_robin`` / ``by_node``。
+    :returns: 含 urls、ordered、snippets 等字段的计划字典。
+    """
     catalog = _read_json(ENDPOINTS_FILE, {"endpoints": [], "urls": []})
     health = _read_json(ENDPOINT_HEALTH_FILE, {})
     by_key = {}
@@ -470,7 +473,10 @@ def _host_port_from_url(url: str) -> tuple[str | None, int | None]:
 
 
 def _build_gateway_payload(upstreams: list[dict] | None = None) -> dict:
-    """Load or render gateway map/snippets for UI and /api/gateway."""
+    """加载或渲染网关拓扑 / 片段，供 UI 与 ``/api/gateway``。
+
+    :param upstreams: 若提供则覆盖默认上游列表后重新生成 snippets。
+    """
     payload = build_gateway_payload()
     if upstreams is None:
         return payload
@@ -527,7 +533,7 @@ def state_fingerprint() -> str:
 
 
 def watchdog_status() -> dict:
-    """Automatic restart status for the dashboard (no subprocess)."""
+    """仪表盘用的自动重启状态（不启动子进程）。"""
     cluster = _read_json(cluster_file(), {})
     cfg = cluster.get("watchdog") or {}
     jobs = list(cfg.get("jobs") or [])
@@ -560,7 +566,12 @@ def watchdog_status() -> dict:
 
 
 def build_overview(*, light: bool = False, force: bool = False) -> dict:
-    """Return the dashboard payload, reusing a short-lived cache when safe."""
+    """构建仪表盘总览；指纹未变且在 TTL 内时复用短缓存。
+
+    :param light: 轻量模式，跳过昂贵的 LB / 完整 probe 矩阵。
+    :param force: 强制重建，忽略缓存。
+    :returns: 总览 payload。
+    """
     key = "light" if light else "full"
     fingerprint = state_fingerprint()
     now = time.monotonic()
@@ -703,7 +714,7 @@ def _build_overview(*, light: bool = False) -> dict:
         },
     }
     if light:
-        # Auto-refresh path: skip expensive LB snippet build and large probe matrix.
+        # 自动刷新路径：跳过昂贵的 LB snippet 与完整 probe 矩阵。
         payload["probe"] = {
             "ok_count": probe.get("ok_count"),
             "fail_count": probe.get("fail_count"),
@@ -1358,7 +1369,10 @@ class Handler(BaseHTTPRequestHandler):
         self._send(302, b"", "text/plain; charset=utf-8", extra_headers=headers)
 
     def _auth_gate(self, path: str, query: str = "") -> bool:
-        """Return True if request may proceed; False if 401 already sent."""
+        """鉴权门控。
+
+        :returns: 可继续处理为 ``True``；已回 401 则为 ``False``。
+        """
         principal, err = authenticate_http(path=path, headers=self.headers, query=query)
         self.auth_principal = principal
         if err is None:
@@ -2177,7 +2191,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/endpoints/health/run":
-            # Fan-out probe does not need the Ansible action lock.
+            # 扇出健康探测不需要 Ansible 动作锁。
             result = run_cli(["health", "--json"], timeout=60)
             health = _read_json(ENDPOINT_HEALTH_FILE, {})
             self._json(
@@ -2539,7 +2553,7 @@ class Handler(BaseHTTPRequestHandler):
             if data.get("env") is not None and not isinstance(data["env"], dict):
                 self._json(400, {"error": "env 必须是对象"})
                 return
-            # Edits always land in config/local/jobs so built-in templates stay pristine.
+            # 编辑一律写入 config/local/jobs，避免污染内置模板。
             LOCAL_JOBS_DIR.mkdir(parents=True, exist_ok=True)
             target = (LOCAL_JOBS_DIR / f"{name}.json").resolve()
             if not target.is_relative_to(LOCAL_JOBS_DIR.resolve()):
@@ -2662,8 +2676,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    # Safe default: loopback only. cmd_ui passes cluster.control.ui_host when
-    # the operator explicitly wants LAN exposure.
+    # 默认仅回环；cmd_ui 在运维明确要暴露局域网时传入 cluster.control.ui_host。
     host = os.environ.get("GPU_CONTROL_UI_HOST", "127.0.0.1")
     port = int(os.environ.get("GPU_CONTROL_UI_PORT", "8787"))
     try:

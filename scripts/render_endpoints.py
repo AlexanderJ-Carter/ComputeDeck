@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render inference API endpoint catalog from nodes.json + cluster.json."""
+"""由 ``nodes.json`` + ``cluster.json`` 渲染推理 API 端点目录。"""
 
 from __future__ import annotations
 

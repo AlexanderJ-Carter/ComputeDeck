@@ -75,6 +75,7 @@ class AuthConfig:
 
     @property
     def enabled(self) -> bool:
+        """鉴权是否启用（非 none/off/disabled）。"""
         return self.mode not in {"", "none", "off", "disabled"}
 
 
@@ -89,6 +90,7 @@ def _default_path(name: str) -> Path:
 
 
 def load_auth_config(cluster: dict | None = None) -> AuthConfig:
+    """从 ``cluster.control.auth``（或环境变量）加载鉴权配置。"""
     if cluster is None:
         path = cluster_file()
         cluster = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
@@ -116,7 +118,12 @@ def load_auth_config(cluster: dict | None = None) -> AuthConfig:
 
 
 def save_auth_mode(mode: str) -> Path:
-    """Persist ``control.auth.mode`` into local cluster.json."""
+    """将 ``control.auth.mode`` 写入 local ``cluster.json``。
+
+    :param mode: ``none`` / ``password`` / ``oidc``。
+    :returns: 写入的配置文件路径。
+    :raises ValueError: mode 非法。
+    """
     mode = mode.strip().lower()
     if mode not in {"none", "password", "oidc"}:
         raise ValueError("mode must be none|password|oidc")
@@ -134,6 +141,10 @@ def save_auth_mode(mode: str) -> Path:
 
 
 def hash_password(password: str) -> str:
+    """用 scrypt 生成可存储的密码哈希串。
+
+    :raises ValueError: 密码为空或短于 8 字符。
+    """
     if not password or len(password) < 8:
         raise ValueError("password must be at least 8 characters")
     salt = secrets.token_bytes(16)
@@ -155,6 +166,7 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, encoded: str) -> bool:
+    """校验明文密码与 scrypt 哈希串。"""
     try:
         algo, n_s, r_s, p_s, salt_hex, digest_hex = encoded.strip().split("$", 5)
     except ValueError:
@@ -176,6 +188,7 @@ def verify_password(password: str, encoded: str) -> bool:
 
 
 def set_password(password: str, *, cfg: AuthConfig | None = None) -> Path:
+    """写入密码哈希文件（权限 ``0600``）。"""
     cfg = cfg or load_auth_config()
     encoded = hash_password(password)
     path = cfg.password_hash_file
@@ -186,11 +199,13 @@ def set_password(password: str, *, cfg: AuthConfig | None = None) -> Path:
 
 
 def password_configured(cfg: AuthConfig | None = None) -> bool:
+    """是否已配置非空密码哈希文件。"""
     cfg = cfg or load_auth_config()
     return cfg.password_hash_file.is_file() and bool(cfg.password_hash_file.read_text(encoding="utf-8").strip())
 
 
 def ensure_session_secret(cfg: AuthConfig | None = None) -> bytes:
+    """读取或自动创建 Session HMAC 密钥。"""
     cfg = cfg or load_auth_config()
     path = cfg.session_secret_file
     if path.is_file():
@@ -209,6 +224,7 @@ def issue_session(
     subject: str = "admin",
     cfg: AuthConfig | None = None,
 ) -> str:
+    """签发签名 Session Cookie 值（``body.sig``）。"""
     cfg = cfg or load_auth_config()
     secret = ensure_session_secret(cfg)
     now = int(time.time())
@@ -224,6 +240,7 @@ def issue_session(
 
 
 def verify_session(token: str, *, cfg: AuthConfig | None = None) -> AuthPrincipal | None:
+    """校验 Session；无效或过期返回 ``None``。"""
     cfg = cfg or load_auth_config()
     if not token or "." not in token:
         return None
@@ -245,7 +262,10 @@ def verify_session(token: str, *, cfg: AuthConfig | None = None) -> AuthPrincipa
 
 
 def issue_api_token(*, cfg: AuthConfig | None = None) -> tuple[str, Path]:
-    """Create a long-lived bearer token file (returned once in plaintext)."""
+    """创建长期 API Bearer Token 文件（明文仅返回一次）。
+
+    :returns: ``(token, 文件路径)``。
+    """
     cfg = cfg or load_auth_config()
     token = secrets.token_urlsafe(32)
     path = cfg.api_token_file
@@ -256,6 +276,7 @@ def issue_api_token(*, cfg: AuthConfig | None = None) -> tuple[str, Path]:
 
 
 def verify_api_token(token: str, *, cfg: AuthConfig | None = None) -> bool:
+    """常量时间比较 Bearer Token 与磁盘存储。"""
     cfg = cfg or load_auth_config()
     if not token or not cfg.api_token_file.is_file():
         return False
@@ -266,6 +287,7 @@ def verify_api_token(token: str, *, cfg: AuthConfig | None = None) -> bool:
 
 
 def parse_cookies(header: str | None) -> dict[str, str]:
+    """解析 ``Cookie`` 请求头为名称→值映射。"""
     if not header:
         return {}
     jar = SimpleCookie()
@@ -277,6 +299,7 @@ def parse_cookies(header: str | None) -> dict[str, str]:
 
 
 def session_cookie_header(token: str, *, ttl_hours: int, clear: bool = False) -> str:
+    """构造 ``Set-Cookie`` 头（HttpOnly / SameSite=Strict）。"""
     max_age = 0 if clear else max(60, int(ttl_hours * 3600))
     parts = [
         f"{COOKIE_NAME}={'' if clear else token}",
@@ -292,6 +315,7 @@ def session_cookie_header(token: str, *, ttl_hours: int, clear: bool = False) ->
 
 
 def extract_bearer(authorization: str | None) -> str | None:
+    """从 ``Authorization`` 头提取 Bearer 凭证。"""
     if not authorization:
         return None
     scheme, _, rest = authorization.partition(" ")
@@ -324,6 +348,7 @@ def oidc_config(cfg: AuthConfig | None = None, *, cluster: dict | None = None) -
 
 
 def password_login_allowed(cfg: AuthConfig | None = None) -> bool:
+    """当前模式是否允许密码登录（含 OIDC 回落）。"""
     cfg = cfg or load_auth_config()
     if cfg.mode == "password":
         return True
@@ -339,9 +364,12 @@ def authenticate_http(
     query: str = "",
     cfg: AuthConfig | None = None,
 ) -> tuple[AuthPrincipal | None, str | None]:
-    """Return (principal, error). error is None when allowed.
+    """校验 HTTP/WebSocket 请求身份。
 
-    When auth is disabled, returns a synthetic principal.
+    :param path: 请求路径。
+    :param headers: 类 mapping 的请求头。
+    :param query: 原始查询串（WebSocket 可用 ``access_token``）。
+    :returns: ``(principal, error)``；放行时 ``error`` 为 ``None``。鉴权关闭时返回合成主体。
     """
     cfg = cfg or load_auth_config()
     if not cfg.enabled:
@@ -374,6 +402,7 @@ def authenticate_http(
 
 
 def try_login(password: str, *, cfg: AuthConfig | None = None) -> AuthPrincipal | None:
+    """密码登录；失败返回 ``None``。"""
     cfg = cfg or load_auth_config()
     if not password_login_allowed(cfg):
         return None
@@ -386,6 +415,7 @@ def try_login(password: str, *, cfg: AuthConfig | None = None) -> AuthPrincipal 
 
 
 def auth_status_payload(*, cfg: AuthConfig | None = None, principal: AuthPrincipal | None = None) -> dict:
+    """构造 ``/api/auth/status`` 响应体。"""
     cfg = cfg or load_auth_config()
     from oidc_util import oidc_ready
 
@@ -425,7 +455,10 @@ def auth_status_payload(*, cfg: AuthConfig | None = None, principal: AuthPrincip
 
 
 def doctor_auth_notes(cluster: dict | None = None) -> tuple[list[str], list[str]]:
-    """Return (issues, notes) for validate_config / doctor."""
+    """为 ``doctor`` / ``validate_config`` 收集鉴权问题与提示。
+
+    :returns: ``(issues, notes)``。
+    """
     issues: list[str] = []
     notes: list[str] = []
     cfg = load_auth_config(cluster)
@@ -491,6 +524,7 @@ def _b64url_decode(text: str) -> bytes:
 
 
 def relative_secret(path: Path) -> str:
+    """尽量返回相对仓库根的密钥路径展示串。"""
     try:
         return str(path.relative_to(PROJECT_DIR))
     except ValueError:

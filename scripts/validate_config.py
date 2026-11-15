@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate cluster configuration for release readiness (doctor)."""
+"""校验集群配置是否可发布（``gpu-control doctor``）。"""
 
 from __future__ import annotations
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Watch registered jobs and restart them when status becomes unhealthy."""
+"""监视已注册 Job；状态异常时按阈值自动重启。"""
 
 from __future__ import annotations
 

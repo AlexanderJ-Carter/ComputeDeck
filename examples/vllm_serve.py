@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
-"""vLLM OpenAI-compatible service manager for gpu-control Jobs.
+"""vLLM OpenAI 兼容服务管理脚本（参考实现）。
 
-This is a small reference manager: it shows the contract a process Job needs
-(start / stop / restart / status / wait) and adds a real readiness check
-instead of treating "process is alive" as "service is ready".
+展示 process Job 契约（start/stop/restart/status/wait），并做真实就绪检查，
+而非仅判断「进程还活着」。
 
-Job template: ``config/examples/vllm-serve.example.json``.
+模板：``config/examples/vllm-serve.example.json``。
 
-Readiness:
-  * ``GPU_CONTROL_HEALTH_URL`` (optional) — HTTP GET must return 2xx.
-  * otherwise the TCP port parsed from ``--port`` (default 8000) must accept.
+就绪：``GPU_CONTROL_HEALTH_URL`` HTTP 2xx；否则探测 ``--port``（默认 8000）TCP。
 """
 
 from __future__ import annotations

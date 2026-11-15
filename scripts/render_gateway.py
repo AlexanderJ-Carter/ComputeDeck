@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
-"""Render gateway artifacts from the endpoint catalog.
+"""由端点目录渲染网关产物（nginx / LiteLLM 片段等）。
 
-gpu-control is the **control plane**: inventory, health, and config snippets.
-It does **not** proxy inference traffic.
+gpu-control 是**控制面**：库存、健康、配置片段；**不**代理推理流量。
 
-Recommended layering (borrowed from LiteLLM / edge-LB practice):
+推荐分层：
 
-1. Backends — per-GPU HTTP services (Job endpoints)
-2. Edge LB (optional) — nginx least_conn for raw HTTP
-3. AI Gateway (optional) — OpenAI-compatible proxy (LiteLLM etc.):
-   same ``model_name`` → load-balance / retries / cooldown
-4. Control plane — this tool (render + probe only)
+1. Backends — 每 GPU HTTP 服务（Job 端点）
+2. Edge LB（可选）— nginx least_conn
+3. AI Gateway（可选）— OpenAI 兼容代理（LiteLLM 等）
+4. Control — 本工具（仅渲染与探测）
 
-All service-specific paths and auth come from ``cluster.api`` / ``cluster.gateway``.
+业务路径与鉴权一律来自 ``cluster.api`` / ``cluster.gateway``。
 """
 
 from __future__ import annotations
@@ -308,7 +306,7 @@ def render_curl(upstreams: list[dict], pool: dict) -> str:
 
 
 def render_litellm_yaml(upstreams: list[dict], pool: dict) -> str:
-    """LiteLLM model_list fragment: same model_name → router load-balances."""
+    """渲染 LiteLLM ``model_list`` 片段（相同 ``model_name`` → Router 负载均衡）。"""
     model_name = pool.get("model_name") or "gpu-pool"
     litellm_model = pool.get("litellm_model") or f"openai/{model_name}"
     base_path = pool.get("openai_api_base_path") or "/v1"
@@ -465,7 +463,7 @@ def build_payload(*, listen: int | None = None) -> dict:
 
 
 def apply_upstreams(payload: dict, upstreams: list[dict], *, listen: int | None = None) -> dict:
-    """Replace upstreams and regenerate snippets (used by Web UI)."""
+    """替换上游并重新生成 snippets（供 Web UI 使用）。"""
     payload = {**payload, "upstreams": upstreams}
     payload["snippets"] = render_snippets(payload["topology"], upstreams, listen=listen)
     return payload

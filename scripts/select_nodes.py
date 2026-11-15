@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Select free GPU nodes from resources.json."""
+"""从 ``resources.json`` 选择空闲 GPU 节点。"""
 
 from __future__ import annotations
 

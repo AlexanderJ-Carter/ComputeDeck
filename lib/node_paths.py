@@ -16,6 +16,7 @@ _PATH_TOKEN = re.compile(r"\$\{paths\.([A-Za-z0-9_]+)\}")
 
 
 def load_nodes_data() -> dict:
+    """读取 ``nodes.json``；文件不存在时返回空骨架。"""
     path = nodes_file()
     if not path.is_file():
         return {"defaults": {}, "nodes": {}}
@@ -23,6 +24,7 @@ def load_nodes_data() -> dict:
 
 
 def default_paths(data: dict | None = None) -> dict[str, str]:
+    """返回已展开的集群默认 ``paths``。"""
     data = data if data is not None else load_nodes_data()
     defaults = data.get("defaults") or {}
     raw = defaults.get("paths") or {}
@@ -30,6 +32,11 @@ def default_paths(data: dict | None = None) -> dict[str, str]:
 
 
 def node_paths(name: str, data: dict | None = None) -> dict[str, str]:
+    """合并默认与节点覆盖后的路径表。
+
+    :param name: 节点名。
+    :param data: 可选已加载的 nodes 文档；省略则现场读取。
+    """
     data = data if data is not None else load_nodes_data()
     merged = dict(default_paths(data))
     nodes = data.get("nodes") or {}
@@ -43,6 +50,10 @@ def node_paths(name: str, data: dict | None = None) -> dict[str, str]:
 
 
 def substitute(template: str, paths: dict[str, str]) -> str:
+    """替换 ``${paths.key}`` 并展开 ``$VAR`` / ``~``。
+
+    :raises KeyError: 模板引用了未定义的 ``paths.*``。
+    """
     if not template:
         return template
 
@@ -56,19 +67,27 @@ def substitute(template: str, paths: dict[str, str]) -> str:
 
 
 def substitute_list(items: list[Any] | None, paths: dict[str, str]) -> list[str]:
+    """对列表逐项 ``substitute``；空输入返回 ``[]``。"""
     if not items:
         return []
     return [substitute(str(item), paths) for item in items]
 
 
 def substitute_mapping(mapping: dict | None, paths: dict[str, str]) -> dict[str, str]:
+    """对映射值逐项 ``substitute``；空输入返回 ``{}``。"""
     if not mapping:
         return {}
     return {str(k): substitute(str(v), paths) for k, v in mapping.items()}
 
 
 def resolve_job(job: dict, node: str, data: dict | None = None) -> dict:
-    """Return a shallow copy of job with paths / env / docker fields resolved for one node."""
+    """浅拷贝 Job，并按节点展开 paths / env / docker 字段。
+
+    :param job: 原始 Job 文档。
+    :param node: 目标节点名。
+    :param data: 可选 nodes 文档。
+    :returns: 解析后的 Job（含 ``_paths``、``_node``）。
+    """
     paths = node_paths(node, data)
     out = dict(job)
     for key in ("python", "script", "workdir", "model_path"):
@@ -99,6 +118,7 @@ def resolve_job(job: dict, node: str, data: dict | None = None) -> dict:
 
 
 def fingerprint_job(resolved: dict) -> tuple:
+    """对已解析 Job 生成可比对指纹（用于按配置分组节点）。"""
     docker = resolved.get("docker") or {}
     return (
         resolved.get("runtime") or "process",
@@ -117,6 +137,10 @@ def fingerprint_job(resolved: dict) -> tuple:
 
 
 def group_nodes_by_job(job: dict, nodes: list[str], data: dict | None = None) -> list[tuple[list[str], dict]]:
+    """按解析后指纹把节点分成同配置组。
+
+    :returns: ``[(节点列表, 解析后 Job), ...]``。
+    """
     data = data if data is not None else load_nodes_data()
     groups: dict[tuple, list[str]] = {}
     resolved_map: dict[tuple, dict] = {}
@@ -129,6 +153,7 @@ def group_nodes_by_job(job: dict, nodes: list[str], data: dict | None = None) ->
 
 
 def inventory_path_kv(paths: dict[str, str]) -> str:
+    """把 paths 编成 Ansible inventory 风格的 ``path_*=`` 片段。"""
     parts = []
     for key in sorted(paths):
         value = paths[key].replace(" ", "\\ ")

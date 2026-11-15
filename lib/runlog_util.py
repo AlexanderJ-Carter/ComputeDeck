@@ -30,7 +30,15 @@ def append_runlog(
     detail: dict[str, Any] | None = None,
     source: str = "control",
 ) -> dict[str, Any]:
-    """追加一条运行日志，必要时截断文件。"""
+    """追加一条运行日志，必要时截断文件。
+
+    :param kind: 类别，如 ``cli`` / ``oneclick`` / ``diagnose``。
+    :param ok: 是否成功；未知传 ``None``。
+    :param summary: 一行摘要。
+    :param detail: 可选结构化细节。
+    :param source: 来源标签，如 ``control`` / ``api``。
+    :returns: 写入的条目。
+    """
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     entry = {
         "ts": _now(),
@@ -54,6 +62,11 @@ def _trim_file() -> None:
 
 
 def list_runlog(*, limit: int = DEFAULT_LIMIT, kind: str | None = None) -> dict[str, Any]:
+    """读取运行日志（新→旧）。
+
+    :param limit: 返回条数上限（1–500）。
+    :param kind: 按类别过滤；``None`` 表示全部。
+    """
     limit = max(1, min(int(limit), 500))
     if not RUNLOG_FILE.is_file():
         return {"items": [], "path": str(RUNLOG_FILE), "total": 0}
@@ -86,12 +99,14 @@ def list_runlog(*, limit: int = DEFAULT_LIMIT, kind: str | None = None) -> dict[
 
 
 def clear_runlog() -> dict[str, Any]:
+    """删除运行日志文件。"""
     if RUNLOG_FILE.is_file():
         RUNLOG_FILE.unlink()
     return {"ok": True, "path": str(RUNLOG_FILE)}
 
 
 def record_cli(args: list[str], result: dict[str, Any], *, source: str = "api") -> None:
+    """把一次 CLI 调用结果记入运行日志。"""
     rc = int(result.get("rc") or 0)
     summary = " ".join(str(a) for a in args[:8])
     append_runlog(

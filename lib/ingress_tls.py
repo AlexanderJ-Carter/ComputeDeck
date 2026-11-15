@@ -17,7 +17,11 @@ from paths import expand_path
 
 
 def normalize_ingress(raw: dict | None, *, gateway: dict | None = None) -> dict[str, Any]:
-    """规范化 ingress 配置（含 TLS / 域名）。"""
+    """规范化 ingress 配置（含 TLS / 域名）。
+
+    :param raw: ``cluster.gateway.ingress`` 原始对象。
+    :param gateway: 可选 ``cluster.gateway``，用于默认监听端口。
+    """
     gateway = gateway or {}
     raw = raw if isinstance(raw, dict) else {}
     tls_raw = raw.get("tls") if isinstance(raw.get("tls"), dict) else {}
@@ -58,7 +62,11 @@ def normalize_ingress(raw: dict | None, *, gateway: dict | None = None) -> dict[
 
 
 def probe_tls(tls: dict[str, Any]) -> dict[str, Any]:
-    """探测证书文件是否就绪（不启动服务）。"""
+    """探测证书文件是否就绪（不启动服务）。
+
+    :param tls: 规范化后的 ``ingress.tls``。
+    :returns: 含 ``ready`` / ``state`` / ``reasons`` / ``not_after`` 等字段。
+    """
     enabled = bool(tls.get("enabled"))
     cert = Path(str(tls.get("cert_file") or ""))
     key = Path(str(tls.get("key_file") or ""))
@@ -113,7 +121,12 @@ def probe_tls(tls: dict[str, Any]) -> dict[str, Any]:
 
 
 def public_base_url(ingress: dict[str, Any], *, control_host: str = "", tls_ready: bool = False) -> str:
-    """推导对外 URL：优先配置；否则域名/主控 + http(s)。"""
+    """推导对外 URL：优先 ``public_base_url``；否则域名/主控 + http(s)。
+
+    :param ingress: 规范化后的 ingress。
+    :param control_host: 无域名时回落的主控主机。
+    :param tls_ready: TLS 就绪则用 ``https``。
+    """
     configured = str(ingress.get("public_base_url") or "").rstrip("/")
     if configured:
         return configured
@@ -127,7 +140,12 @@ def public_base_url(ingress: dict[str, Any], *, control_host: str = "", tls_read
 
 
 def build_ssl_context(tls: dict[str, Any]) -> ssl.SSLContext:
-    """为 Edge 构建服务端 SSLContext；证书未就绪时抛出。"""
+    """为 Edge 构建服务端 ``SSLContext``。
+
+    :param tls: 规范化后的 ``ingress.tls``。
+    :returns: 已加载证书链的上下文。
+    :raises FileNotFoundError: 证书未就绪。
+    """
     probe = probe_tls(tls)
     if not probe["ready"]:
         raise FileNotFoundError("; ".join(probe["reasons"]) or "TLS 未就绪")
@@ -149,7 +167,7 @@ def build_ssl_context(tls: dict[str, Any]) -> ssl.SSLContext:
 
 
 def _cert_not_after(cert_path: Path) -> str | None:
-    """返回证书过期时间（优先 openssl；无则跳过）。"""
+    """返回证书过期时间（ISO8601）；无 openssl 则返回 ``None``。"""
     import subprocess
 
     try:

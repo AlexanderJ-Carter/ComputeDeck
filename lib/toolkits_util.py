@@ -146,6 +146,7 @@ def load_toolkit_catalog() -> list[dict[str, Any]]:
 
 
 def load_bundles() -> list[dict[str, Any]]:
+    """加载工具栈 bundle；local 有覆盖则用之。"""
     path = _local_override_path()
     if path.is_file():
         raw = json.loads(path.read_text(encoding="utf-8"))
@@ -155,6 +156,7 @@ def load_bundles() -> list[dict[str, Any]]:
 
 
 def catalog_payload() -> dict[str, Any]:
+    """``/api/toolkits`` 完整目录载荷。"""
     return {
         "toolkits": load_toolkit_catalog(),
         "bundles": load_bundles(),
@@ -165,18 +167,26 @@ def catalog_payload() -> dict[str, Any]:
 
 
 def load_toolkit_state() -> dict[str, Any]:
+    """读取节点探测状态缓存。"""
     if not STATE_FILE.is_file():
         return {"nodes": {}, "generated_at": None}
     return json.loads(STATE_FILE.read_text(encoding="utf-8"))
 
 
 def save_toolkit_state(data: dict[str, Any]) -> Path:
+    """持久化工具栈探测状态。"""
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     atomic_write_json(STATE_FILE, data)
     return STATE_FILE
 
 
 def resolve_ids(ids: list[str] | None = None, bundle: str | None = None) -> list[dict[str, Any]]:
+    """按 id 列表和/或 bundle 解析工具栈条目。
+
+    :param ids: 显式 toolkit id；可与 bundle 合并。
+    :param bundle: bundle id；未知则抛错。
+    :raises ValueError: 未知 bundle 或 toolkit。
+    """
     catalog = {t["id"]: t for t in load_toolkit_catalog()}
     wanted: list[str] = []
     if bundle:

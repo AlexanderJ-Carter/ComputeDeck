@@ -2,12 +2,24 @@
 
 目标：中文、短、可扫读；给 Agent / 维护者看，不写空话。
 
+**项目标准**：Sphinx 冒号字段列表（reStructuredText field list），全文中文。禁止 Google 风格的 `Args:` / `Returns:` / `Raises:` 块。
+
 ## 原则
 
-1. **模块顶栏必有**：一句话说明职责 + 关键入口（CLI / HTTP / 文件）。
-2. **公开函数**：用简短中文 docstring；参数/返回仅在非显而易见时写。
-3. **不写**：复述代码的注释、过时的英文草稿、冗余 `try/except` 回落说明。
-4. **不要向后兼容注释**：删掉的 API 写在 `CHANGELOG`，不堆在代码里。
+1. **模块顶栏必有**：1–3 句中文，说明职责 + 相关入口（CLI / HTTP / 文件）。
+2. **公开函数**：中文摘要；参数 / 返回 / 异常仅在非显而易见时用 Sphinx 字段补充。
+3. **私有助手**（`_foo`）：一行中文或省略（平凡逻辑）。
+4. **不写**：复述代码的注释、过时的英文草稿、冗余 `try/except` 回落说明。
+5. **不要向后兼容注释**：删掉的 API 写在 `CHANGELOG`，不堆在代码里。
+
+## 允许的 Sphinx 字段（仅此形式）
+
+```text
+:param name: 中文说明
+:returns: 中文说明
+:rtype: type          # 仅在有助于理解时
+:raises Exc: 中文说明
+```
 
 ## 模块顶栏模板
 
@@ -20,27 +32,55 @@
 
 ## 函数模板
 
+仅摘要：
+
 ```python
 def resolve_job(job: dict, node: str, data: dict | None = None) -> dict:
     """按节点展开 Job 中的路径、env、docker 字段。"""
 ```
 
-多参数时可用 Args（仍用中文）：
+参数 / 返回非显而易见时用 Sphinx 字段：
 
 ```python
 def append_runlog(kind: str, *, ok: bool | None = None, summary: str = "") -> dict:
     """追加一条控制面运行日志。
 
+    :param kind: 类别，如 ``cli`` / ``oneclick`` / ``diagnose``。
+    :param ok: 是否成功；未知传 ``None``。
+    :param summary: 一行摘要。
+    :returns: 写入的条目。
+    """
+```
+
+带异常：
+
+```python
+def save_auth_mode(mode: str) -> Path:
+    """将 ``control.auth.mode`` 写入 local ``cluster.json``。
+
+    :param mode: ``none`` / ``password`` / ``oidc``。
+    :returns: 写入的配置文件路径。
+    :raises ValueError: mode 非法。
+    """
+```
+
+## 禁止
+
+```python
+# 禁止 Google 风格
+def bad(kind: str) -> dict:
+    """追加日志。
+
     Args:
-        kind: 类别，如 ``cli`` / ``oneclick`` / ``diagnose``。
-        ok: 是否成功；未知传 ``None``。
-        summary: 一行摘要。
+        kind: 类别。
+    Returns:
+        条目。
     """
 ```
 
 ## MCP 工具
 
-MCP `@mcp.tool()` 的 docstring **就是** Agent 看到的工具说明，必须中文、含关键约束（如鉴权、危险动作）。
+MCP `@mcp.tool()` 的 docstring **就是** Agent 看到的工具说明，必须中文、含关键约束（如鉴权、危险动作）。字段风格与上文一致。
 
 ## 文档站
 
