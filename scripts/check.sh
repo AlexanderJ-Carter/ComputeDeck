@@ -6,7 +6,7 @@ PY="${PYTHON:-$ROOT/.venv/bin/python}"
 cd "$ROOT"
 
 echo "== py_compile =="
-"$PY" -m py_compile web/server.py bin/gpu-control lib/*.py scripts/*.py examples/*.py
+"$PY" -m py_compile web/server.py bin/gpu-control lib/*.py scripts/*.py examples/*.py mcp_server/*.py
 
 echo "== unit tests =="
 "$PY" -m unittest discover -s tests -v

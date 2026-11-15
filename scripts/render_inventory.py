@@ -63,7 +63,14 @@ def main() -> int:
         if (meta or {}).get("role") == "control":
             continue
         host = meta.get("ansible_host", "")
-        gpus = meta.get("gpus_per_node", defaults.get("gpus_per_node", 4))
+        if meta.get("gpus_per_node") not in (None, ""):
+            gpus = int(meta["gpus_per_node"])
+        elif defaults.get("gpus_per_node") not in (None, ""):
+            gpus = int(defaults["gpus_per_node"])
+        else:
+            raise SystemExit(
+                f"节点 {name} 未配置 gpus_per_node，且 defaults.gpus_per_node 缺失"
+            )
         role = meta.get("role") or defaults.get("role") or "serving"
         base_port, ports = resolve_node_ports(meta or {}, defaults=defaults, api=api)
         path_kv = inventory_path_kv(node_paths(name, data))

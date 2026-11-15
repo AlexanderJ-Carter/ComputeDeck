@@ -31,6 +31,7 @@ description: >-
 
 ## 约束
 
-- 内网信任、无 token；勿建议暴露公网
+- 默认面向内网；生产必须开鉴权（password / OIDC + API Token），勿裸奔公网
 - 不向后兼容乱加 fallback；配置以 `config/local` 为准
+- 禁止静默发明 `gpus_per_node=4`；缺配置应报错或读 `scheduling.unit_gpus` / 实采
 - 详细接口：`docs/ai-接入.md`、手册 `docs/手册.md`

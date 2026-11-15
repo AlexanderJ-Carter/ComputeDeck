@@ -101,6 +101,50 @@ def select_nodes_cli_args(gpus: int) -> list[str]:
     return args
 
 
+def resolve_unit_gpus(explicit: int | None) -> int:
+    """解析调度所需 GPU 总数：显式参数优先，否则 ``cluster.scheduling.unit_gpus``。
+
+    :param explicit: CLI ``--gpus``；未传为 ``None``。
+    :returns: 正整数 GPU 总数。
+    :raises SystemExit: 两者皆缺或非法。
+    """
+    if explicit is not None:
+        if int(explicit) < 1:
+            die("--gpus 必须为正整数")
+        return int(explicit)
+    raw = (load_cluster().get("scheduling") or {}).get("unit_gpus")
+    if raw is None or raw == "":
+        die("需要 --gpus，或在 cluster.scheduling.unit_gpus 中配置")
+    value = int(raw)
+    if value < 1:
+        die("cluster.scheduling.unit_gpus 必须为正整数")
+    return value
+
+
+def resolve_node_gpu_count(
+    name: str,
+    meta: dict | None = None,
+    *,
+    defaults: dict | None = None,
+    live: dict | None = None,
+) -> int | None:
+    """解析单节点 GPU 数：节点配置 → defaults → 实采；不发明数字。
+
+    :returns: GPU 数；皆无则 ``None``。
+    """
+    meta = meta or {}
+    defaults = defaults or {}
+    if meta.get("gpus_per_node") is not None and meta.get("gpus_per_node") != "":
+        return int(meta["gpus_per_node"])
+    if defaults.get("gpus_per_node") is not None and defaults.get("gpus_per_node") != "":
+        return int(defaults["gpus_per_node"])
+    if live:
+        count = live.get("gpu_count") or len(live.get("gpus") or [])
+        if count:
+            return int(count)
+    return None
+
+
 def list_jobs() -> list[dict]:
     jobs = []
     for path in list_job_files():
@@ -567,7 +611,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
     code = refresh_resources(quiet=quiet)
     if code != 0:
         return code
-    select_args = select_nodes_cli_args(args.gpus)
+    select_args = select_nodes_cli_args(resolve_unit_gpus(args.gpus))
     # human-readable: drop --json
     human = [a for a in select_args if a != "--json"]
     return run_python("select_nodes.py", *human).returncode
@@ -640,7 +684,7 @@ def cmd_overview(args: argparse.Namespace) -> int:
 def deploy_job(
     job_name: str,
     *,
-    gpus: int = 4,
+    gpus: int,
     nodes: str | None = None,
     restart: bool = False,
     no_wait: bool = False,
@@ -720,7 +764,7 @@ def deploy_job(
 def cmd_deploy(args: argparse.Namespace) -> int:
     code, _selected = deploy_job(
         args.job,
-        gpus=args.gpus,
+        gpus=resolve_unit_gpus(args.gpus) if not args.nodes else (args.gpus or 0),
         nodes=args.nodes,
         restart=args.restart,
         no_wait=args.no_wait,
@@ -813,7 +857,7 @@ def cmd_ui(args: argparse.Namespace) -> int:
         return 0
 
     print(f"Starting UI at {url}")
-    print("Open via Codelab port forward / SSH tunnel if needed.")
+    print(f"远程访问：ssh -L {port}:127.0.0.1:{port} <control>")
     return subprocess.call(cmd, cwd=PROJECT_DIR, env=env)
 
 
@@ -1142,9 +1186,11 @@ def cmd_node(args: argparse.Namespace) -> int:
         for name, meta in sorted(nodes.items()):
             status = "cordoned" if name in cordoned else "schedulable"
             labels = ",".join(meta.get("labels") or []) or "-"
+            gpus = resolve_node_gpu_count(name, meta, defaults=defaults)
+            gpus_s = str(gpus) if gpus is not None else "?"
             print(
                 f"{name:<14} {meta.get('ansible_host', '-'):<16} "
-                f"{meta.get('gpus_per_node', defaults.get('gpus_per_node', 4)):>4}  "
+                f"{gpus_s:>4}  "
                 f"{status:<10} {labels}"
             )
         return 0
@@ -1154,9 +1200,12 @@ def cmd_node(args: argparse.Namespace) -> int:
             die("node add 需要 NAME 与 --host")
         if args.name in nodes:
             die(f"节点已存在：{args.name}")
+        gpus = args.gpus if args.gpus is not None else defaults.get("gpus_per_node")
+        if gpus is None:
+            die("node add 需要 --gpus，或在 defaults.gpus_per_node 中配置")
         nodes[args.name] = {
             "ansible_host": args.host,
-            "gpus_per_node": args.gpus or defaults.get("gpus_per_node", 4),
+            "gpus_per_node": int(gpus),
             "labels": [x.strip() for x in (args.labels or "").split(",") if x.strip()],
         }
         save_nodes_registry(registry)
@@ -1457,7 +1506,7 @@ def cmd_queue(args: argparse.Namespace) -> int:
         wl = {
             "id": f"wl-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
             "job": args.job,
-            "gpus": args.gpus,
+            "gpus": resolve_unit_gpus(args.gpus),
             "nodes": args.nodes,
             "status": "pending",
             "selected_nodes": [],
@@ -1584,10 +1633,23 @@ def cmd_lease(args: argparse.Namespace) -> int:
         if not args.job or not args.nodes:
             die("lease acquire 需要 --job 与 --nodes")
         node_list = [n.strip() for n in args.nodes.split(",") if n.strip()]
+        if args.gpus is not None:
+            lease_gpus = int(args.gpus)
+        else:
+            registry = load_nodes_registry()
+            defaults = registry.get("defaults") or {}
+            nodes_meta = registry.get("nodes") or {}
+            total = 0
+            for n in node_list:
+                count = resolve_node_gpu_count(n, nodes_meta.get(n) or {}, defaults=defaults)
+                if count is None:
+                    die(f"lease acquire：节点 {n} 未配置 gpus_per_node，请传 --gpus")
+                total += count
+            lease_gpus = total
         lease = acquire_lease(
             args.job,
             node_list,
-            gpus=args.gpus or len(node_list) * 4,
+            gpus=lease_gpus,
             note=args.note or "",
             owner=args.owner,
         )
@@ -1655,7 +1717,8 @@ def cmd_describe(args: argparse.Namespace) -> int:
         lease = next((l for l in leases if name in l.get("nodes", [])), None)
         print(f"Name:        {name}")
         print(f"Host:        {meta.get('ansible_host')}")
-        print(f"GPUs:        {meta.get('gpus_per_node', 4)}")
+        gpus = resolve_node_gpu_count(name, meta, defaults=load_nodes_registry().get("defaults") or {}, live=node)
+        print(f"GPUs:        {gpus if gpus is not None else '?'}")
         print(f"Labels:      {','.join(meta.get('labels') or []) or '-'}")
         print(f"Role:        {meta.get('role') or '-'}")
         print(f"Note:        {meta.get('note') or '-'}")
@@ -1761,7 +1824,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_deploy = sub.add_parser("deploy", help="选节点 → 启动 → 等待 → 登记占用（一键）")
     p_deploy.add_argument("job")
-    p_deploy.add_argument("--gpus", type=int, default=4, help="所需 GPU 总数（任意正整数）")
+    p_deploy.add_argument(
+        "--gpus",
+        type=int,
+        default=None,
+        help="所需 GPU 总数；省略则用 cluster.scheduling.unit_gpus（指定 --nodes 时可省略）",
+    )
     p_deploy.add_argument("--nodes", help="指定节点；不填则自动挑选空闲节点")
     p_deploy.add_argument("--restart", action="store_true", help="部署前先 stop")
     p_deploy.add_argument("--no-wait", action="store_true")
@@ -1798,7 +1866,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_gpu.set_defaults(func=cmd_gpu)
 
     p_plan = sub.add_parser("plan", help="刷新资源并挑选空闲节点")
-    p_plan.add_argument("--gpus", type=int, default=8, help="所需 GPU 总数")
+    p_plan.add_argument(
+        "--gpus",
+        type=int,
+        default=None,
+        help="所需 GPU 总数；省略则用 cluster.scheduling.unit_gpus",
+    )
     p_plan.add_argument("--quiet", action="store_true")
     p_plan.set_defaults(func=cmd_plan)
 
@@ -1828,7 +1901,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_queue = sub.add_parser("queue", help="简易工作负载队列（pending→ready）")
     p_queue.add_argument("queue_action", choices=["list", "submit", "cancel", "schedule"])
     p_queue.add_argument("job", nargs="?", help="submit 时的任务名")
-    p_queue.add_argument("--gpus", type=int, default=4, help="所需 GPU 总数")
+    p_queue.add_argument(
+        "--gpus",
+        type=int,
+        default=None,
+        help="所需 GPU 总数；省略则用 cluster.scheduling.unit_gpus",
+    )
     p_queue.add_argument("--nodes", help="指定节点；不填则调度时自动挑选")
     p_queue.add_argument("--id", dest="workload_id", help="cancel 用")
     p_queue.add_argument("--note", default="")

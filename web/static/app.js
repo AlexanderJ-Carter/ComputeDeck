@@ -647,7 +647,7 @@ function renderGatewayTopo(lb, endpointsCatalog) {
   const ai = layers.ai_gateway || {};
   const nginx = local.nginx || {};
   const proxy = local.openai_compat_proxy || local.litellm_gateway || {};
-  const extra = local.extra_http || local.legacy_vllm || {};
+  const extra = local.extra_http || {};
   const bits = [
     nodeBits.length ? `按节点 ${nodeBits.join(" · ")}` : `默认端口 ${(pool.port_range || []).join("-") || "-"}`,
   ];

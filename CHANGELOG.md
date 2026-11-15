@@ -24,6 +24,8 @@
 - `state_util` 去掉 Windows flock 回落，明确仅 POSIX
 - 新增 GitHub Actions CI、`docs/develop/ci.md`、`docs/develop/layout.md`
 - 提交习惯改为 Conventional Commits；版本用 tag `vX.Y.Z` 标记
+- 去掉 Codelab 文案；禁止静默 `gpus=4`（改读配置 / 实采 / `scheduling.unit_gpus`）
+- 删除 `legacy_vllm` 别名；训练日志预设对齐 `/tmp/gpu-control-jobs`；`check.sh` 覆盖 `mcp_server`
 
 ## [0.21.0] - 2026-11-14
 

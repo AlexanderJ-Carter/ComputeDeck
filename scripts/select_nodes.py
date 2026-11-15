@@ -36,15 +36,24 @@ def _nodes_meta() -> dict:
 
 
 def gpus_per_node(name: str, node: dict) -> int:
+    """解析节点应有 GPU 数：配置优先，否则用实采；不发明默认值。
+
+    :raises SystemExit: 配置与实采皆无。
+    """
     meta = _nodes_meta()
     if meta:
         cfg = meta.get("nodes", {}).get(name, {})
-        if "gpus_per_node" in cfg:
+        if "gpus_per_node" in cfg and cfg.get("gpus_per_node") not in (None, ""):
             return int(cfg["gpus_per_node"])
         defaults = meta.get("defaults", {})
-        if "gpus_per_node" in defaults:
+        if "gpus_per_node" in defaults and defaults.get("gpus_per_node") not in (None, ""):
             return int(defaults["gpus_per_node"])
-    return int(node.get("gpu_count") or len(node.get("gpus") or []) or 4)
+    count = node.get("gpu_count") or len(node.get("gpus") or [])
+    if count:
+        return int(count)
+    raise SystemExit(
+        f"节点 {name} 未配置 gpus_per_node，且 resources 中无实采 GPU 数据"
+    )
 
 
 def node_labels(name: str) -> set[str]:

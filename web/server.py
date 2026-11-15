@@ -260,8 +260,8 @@ EXEC_PRESETS = {
     "train-log": {
         "label": "最近训练日志尾",
         "command": (
-            "ls -t /tmp/gpu-control-train/*/job.log 2>/dev/null | head -1 | "
-            "xargs -r tail -n 40 || echo 'no train log under /tmp/gpu-control-train'"
+            "ls -t /tmp/gpu-control-jobs/*/job.log 2>/dev/null | head -1 | "
+            "xargs -r tail -n 40 || echo 'no job log under /tmp/gpu-control-jobs'"
         ),
     },
     "ports": {
@@ -633,7 +633,12 @@ def _build_overview(*, light: bool = False) -> dict:
             "note": meta.get("note"),
             "free": free,
             "used": used,
-            "total": node.get("gpu_count", len(gpus)) or meta.get("gpus_per_node", 4),
+            "total": (
+                node.get("gpu_count")
+                or len(gpus)
+                or meta.get("gpus_per_node")
+                or 0
+            ),
             "gpus": gpus,
             "lease": lease,
             "cordoned": name in cordoned,
@@ -1204,10 +1209,22 @@ def run_oneclick(action: str, body: dict | None = None) -> dict:
         job = (body.get("job") or default_job_name() or "").strip()
         if not job:
             return {"ok": False, "error": "未指定 job，且没有已注册任务", "steps": []}
-        gpus = int(body.get("gpus") or 4)
         if body.get("nodes"):
             args = ["deploy", job, "--nodes", str(body["nodes"])]
+            if body.get("gpus") not in (None, ""):
+                args.extend(["--gpus", str(int(body["gpus"]))])
         else:
+            if body.get("gpus") in (None, ""):
+                unit = ((_read_json(cluster_file(), {}).get("scheduling") or {}).get("unit_gpus"))
+                if unit in (None, ""):
+                    return {
+                        "ok": False,
+                        "error": "部署需要 gpus，或配置 cluster.scheduling.unit_gpus",
+                        "steps": [],
+                    }
+                gpus = int(unit)
+            else:
+                gpus = int(body["gpus"])
             args = ["deploy", job, "--gpus", str(gpus)]
         step("一键部署", lambda: run_cli(args, timeout=900))
     elif action == "full-sync":
