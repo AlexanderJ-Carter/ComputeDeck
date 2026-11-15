@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="400" viewBox="0 0 960 400" role="img">
+  <title>Distributed env injection</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f8fafc"/><stop offset="100%" stop-color="#ecfdf5"/>
+    </linearGradient>
+    <filter id="shadow" x="-6%" y="-6%" width="112%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.1"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#0d9488"/>
+    </marker>
+  </defs>
+  <rect width="960" height="400" rx="16" fill="url(#bg)"/>
+  <text x="32" y="40" font-family="system-ui,-apple-system,sans-serif" font-size="18" font-weight="700" fill="#0f172a">Distributed env injection</text>
+  <text x="32" y="62" font-family="system-ui,-apple-system,sans-serif" font-size="12" fill="#64748b">job.distributed=true → playbooks/manage-job.yml</text>
+  <g filter="url(#shadow)"><rect x="40" y="110" width="220" height="200" rx="14" fill="#0d9488"/></g>
+  <text x="150" y="150" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="14" font-weight="700" fill="#fff">Control</text>
+  <text x="150" y="178" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="12" fill="#ccfbf1">pick nodes · order</text>
+  <text x="150" y="202" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="12" fill="#ccfbf1">write hostfile</text>
+  <text x="150" y="226" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="12" fill="#ccfbf1">Ansible deploy</text>
+  <text x="150" y="262" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#99f6e4">deploy / jobs</text>
+  <g filter="url(#shadow)"><rect x="320" y="110" width="280" height="200" rx="14" fill="#fff" stroke="#99f6e4"/></g>
+  <text x="460" y="142" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="13" font-weight="700" fill="#115e59">Injected on each node</text>
+  <text x="340" y="172" font-family="ui-monospace,Menlo,monospace" font-size="12" fill="#334155">NNODES · NODE_RANK</text>
+  <text x="340" y="196" font-family="ui-monospace,Menlo,monospace" font-size="12" fill="#334155">MASTER_ADDR · MASTER_PORT</text>
+  <text x="340" y="220" font-family="ui-monospace,Menlo,monospace" font-size="12" fill="#334155">NPROC_PER_NODE</text>
+  <text x="340" y="244" font-family="ui-monospace,Menlo,monospace" font-size="12" fill="#334155">HOSTFILE · FORCE_TORCHRUN</text>
+  <text x="340" y="276" font-family="system-ui,-apple-system,sans-serif" font-size="11" fill="#64748b">MASTER_ADDR = first node</text>
+  <g filter="url(#shadow)"><rect x="660" y="96" width="260" height="70" rx="12" fill="#fff7ed" stroke="#fdba74"/></g>
+  <text x="790" y="126" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="13" font-weight="700" fill="#9a3412">gpu-1 · rank 0</text>
+  <text x="790" y="148" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#c2410c">MASTER · slots=N</text>
+  <g filter="url(#shadow)"><rect x="660" y="180" width="260" height="70" rx="12" fill="#fff7ed" stroke="#fdba74"/></g>
+  <text x="790" y="210" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="13" font-weight="700" fill="#9a3412">gpu-2 · rank 1</text>
+  <text x="790" y="232" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#c2410c">worker · slots=N</text>
+  <g filter="url(#shadow)"><rect x="660" y="264" width="260" height="70" rx="12" fill="#fff7ed" stroke="#fdba74"/></g>
+  <text x="790" y="294" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="13" font-weight="700" fill="#9a3412">gpu-N · rank N-1</text>
+  <text x="790" y="316" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#c2410c">worker · slots=N</text>
+  <path d="M260 210 H312" stroke="#0d9488" stroke-width="2.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M600 146 H652" stroke="#0d9488" stroke-width="2.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M600 210 H652" stroke="#0d9488" stroke-width="2.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M600 294 H652" stroke="#0d9488" stroke-width="2.5" fill="none" marker-end="url(#arrow)"/>
+</svg>
