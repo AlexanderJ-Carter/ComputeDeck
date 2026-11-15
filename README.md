@@ -16,7 +16,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python" />
   <img src="https://img.shields.io/badge/Ansible-自动化-EE0000?style=flat-square&logo=ansible&logoColor=white" alt="Ansible" />
-  <img src="https://img.shields.io/badge/MCP-15%20tools-111827?style=flat-square" alt="MCP" />
+  <img src="https://img.shields.io/badge/MCP-Agent-111827?style=flat-square" alt="MCP" />
   <img src="https://img.shields.io/badge/docs-MkDocs-526CFE?style=flat-square&logo=materialformkdocs&logoColor=white" alt="Docs" />
 </p>
 
@@ -38,19 +38,6 @@
 
 **ComputeDeck**（命令行：`gpu-control`）把发现、租约、部署 Job、健康检查、统一入口和日志收成一套控制面。一台 Control 主机跑 Web UI、CLI 和 MCP，用 Ansible/SSH 编排 worker。
 
-## 性能（带对标）
-
-本机 2026-11-15 · macOS arm64 · Python 3.11 · loopback，未接 GPU worker。完整表见 [docs/性能实测.md](docs/性能实测.md)。
-
-| 指标 | 测得 | 对标 | 怎么读 |
-|------|------|------|--------|
-| UI 就绪 | **~77 ms** | 空 `python -c pass` ≈ 17 ms；一眨眼 ≈ 100–400 ms | 约 4–5 个空 Python 进程，通常快过一次眨眼 |
-| `check.sh` | **0.50 s** | 常见 CI 门禁数十秒起 | 改完本机秒级回归 |
-| `/api/health` | p50 **0.61 ms** | 同机最小 HTTP ≈ 0.27 ms | 约 2.3× 裸 handler，仍远低于 1 ms |
-| 看板轮询 `overview?light=1` | p50 **0.68 ms** | 全量 overview 0.96 ms / 17 KB | 体量约全量 **43%**，延迟低约 **30%** |
-| 20 并发 light | 整批 **~41 ms** | — | 本机约 **~500 次/秒** 轮询量级 |
-| OpenAPI / MCP / 模板 | **73** 操作 · **15** `gc_*` · **11** 模板 | 纯脚本机房通常 0 契约、0 MCP | Agent 与脚本共用同一能力面 |
-
 ## 能力
 
 | 能力 | 说明 |
@@ -59,7 +46,7 @@
 | Job 插件 | JSON 描述启停；训练 / 推理 / Ray / Docker 从模板安装 |
 | 路径异构 | `defaults.paths`、节点覆盖、`${paths.*}` |
 | 统一入口 | 内置 Edge LB（重试、冷却、least-conn），可挂 nginx / LiteLLM |
-| Agent | OpenAPI、`/api/docs`、MCP `gc_*` |
+| Agent | 内置 OpenAPI 与 15 个 `gc_*` MCP 工具，和 CLI 同一能力面 |
 | 可靠性 | 状态原子写与 flock、watchdog、diagnose |
 
 场景写在 `config/local/`，换集群主要改配置。浏览器、CLI、MCP 共用能力目录；xterm 内置，内网也能开终端。
@@ -104,7 +91,7 @@ gpu-control gateway ensure
 curl -s http://127.0.0.1:8787/api
 ```
 
-文档：[手册](docs/手册.md) · [分布式](docs/分布式与推理.md) · [高可用](docs/高可用与负载均衡.md) · [AI/MCP](docs/ai-接入.md) · [性能实测](docs/性能实测.md)
+文档：[手册](docs/手册.md) · [分布式](docs/分布式与推理.md) · [高可用](docs/高可用与负载均衡.md) · [AI/MCP](docs/ai-接入.md)
 
 ## 环境与校验
 
