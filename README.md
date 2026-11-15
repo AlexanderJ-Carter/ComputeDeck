@@ -30,7 +30,7 @@
   ·
   <a href="https://github.com/AlexanderJ-Carter/ComputeDeck">GitHub</a>
   ·
-  <a href="https://alexanderj-carter.github.io/ComputeDeck/">宣传展板</a>
+  <a href="https://compute.alexander.xin/">宣传展板</a>
   ·
   <a href="docs/index.md">文档</a>
   ·
