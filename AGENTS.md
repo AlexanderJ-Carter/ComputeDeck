@@ -25,3 +25,9 @@
 - Token：`gpu-control auth issue-token` → `GPU_CONTROL_API_TOKEN`
 - MCP 走 UI：设 `GPU_CONTROL_API_BASE`；未设则本机 CLI
 - 401 先查 `gc_auth_status` / `GET /api/auth/status`
+
+## 多 Agent / 助手
+
+- MCP 入口同一：`bin/gpu-control-mcp`（Cursor / Claude Code / Codex / 其它 stdio 客户端）
+- 示例：`config/examples/mcp.*.json`；风险与教学：`GET /api/assistant/policy`
+- 设计：`docs/superpowers/specs/2026-11-15-assistant-and-console-ux-design.md`

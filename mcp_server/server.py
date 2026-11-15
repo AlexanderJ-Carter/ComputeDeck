@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "lib"))
 
 from api_catalog import catalog_payload  # noqa: E402
+from assistant_policy import TEACHING_SUMMARY  # noqa: E402
 from paths import CLI, PROJECT_DIR, VENV_PYTHON  # noqa: E402
 
 try:
@@ -35,14 +36,9 @@ except ImportError as exc:  # pragma: no cover
 
 mcp = MCPServer(
     name="gpu-control",
-    instructions=(
-        "ComputeDeck（CLI/MCP：gpu-control）是可迁移的多节点 GPU 控制面。"
-        "先 gc_api_catalog；不要假设特定 Job 名，以 gc_get_jobs / config 为准。"
-        "调度用 gc_queue / gc_lease；排障用 gc_diagnose；入口用 gc_gateway；"
-        "隔离/render 用 gc_node；异主租约部署用 gc_deploy(force=true)。"
-        "HTTP 模式下若返回 401，检查 GPU_CONTROL_API_TOKEN。"
-        "改配置后建议 gc_node(action='render') 与 gc_doctor()。"
-    ),
+    instructions=TEACHING_SUMMARY
+    + " 适用于 Cursor / Claude Code / Codex 等任意 stdio MCP 客户端。"
+    + " 风险分级见 GET /api/assistant/policy（HTTP）或先 gc_api_catalog。",
 )
 
 

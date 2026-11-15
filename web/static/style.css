@@ -2027,6 +2027,64 @@ summary:focus-visible,
   gap: 8px;
 }
 
+.exec-suggest-row {
+  align-items: stretch;
+}
+
+.exec-suggest-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.exec-suggest-wrap input {
+  width: 100%;
+}
+
+.exec-suggest-list {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-solid);
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--ink) 16%, transparent);
+}
+
+.exec-suggest-list li {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.exec-suggest-list li:hover,
+.exec-suggest-list li.is-active {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.exec-suggest-list strong {
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.exec-suggest-list code {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .console-unread {
   border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line));
   cursor: pointer;

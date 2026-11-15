@@ -54,6 +54,7 @@ from jobs_util import (  # noqa: E402
     load_job_summaries,
 )
 from api_catalog import catalog_payload, openapi_payload  # noqa: E402
+from assistant_policy import policy_payload  # noqa: E402
 from toolkits_util import catalog_payload as toolkits_catalog_payload  # noqa: E402
 from toolkits_util import load_toolkit_state  # noqa: E402
 from auth_util import (  # noqa: E402
@@ -306,6 +307,59 @@ EXEC_PRESETS = {
         ),
     },
 }
+
+# 远程命令补全额外词条（非按钮预设）
+EXEC_SUGGEST_EXTRA: list[dict[str, str]] = [
+    {"command": "nvidia-smi -q", "label": "nvidia-smi 详单"},
+    {"command": "nvidia-smi topo -m", "label": "GPU 拓扑"},
+    {"command": "ps -ef | grep -E 'vllm|sglang|torch' | grep -v grep", "label": "筛推理进程"},
+    {"command": "journalctl -n 80 --no-pager", "label": "最近系统日志"},
+    {"command": "df -h", "label": "全部磁盘"},
+    {"command": "free -h", "label": "内存"},
+    {"command": "ip -br a", "label": "网卡简表"},
+]
+
+
+def suggest_exec_commands(query: str = "", limit: int = 20) -> list[dict[str, str]]:
+    """远程命令智能补全候选（预设 + 额外 + 已安装 Job 名提示）。"""
+    q = (query or "").strip().lower()
+    items: list[dict[str, str]] = []
+    for key, meta in EXEC_PRESETS.items():
+        items.append(
+            {
+                "command": meta["command"],
+                "label": meta["label"],
+                "source": f"preset:{key}",
+            }
+        )
+    items.extend({**row, "source": "extra"} for row in EXEC_SUGGEST_EXTRA)
+    for path in list_job_files():
+        name = path.stem
+        items.append(
+            {
+                "command": f"pgrep -af {shlex.quote(name)} | head -30 || true",
+                "label": f"Job 进程 · {name}",
+                "source": "job",
+            }
+        )
+    if q:
+        items = [
+            row
+            for row in items
+            if q in row["command"].lower() or q in row["label"].lower() or q in row["source"].lower()
+        ]
+    # 去重 command，保序
+    seen: set[str] = set()
+    out: list[dict[str, str]] = []
+    for row in items:
+        cmd = row["command"]
+        if cmd in seen:
+            continue
+        seen.add(cmd)
+        out.append(row)
+        if len(out) >= max(1, min(limit, 50)):
+            break
+    return out
 
 
 def _read_json(path: Path, default):
@@ -1700,6 +1754,20 @@ class Handler(BaseHTTPRequestHandler):
                 "text/html; charset=utf-8",
                 cache_control="no-store",
             )
+            return
+
+        if path == "/api/assistant/policy":
+            self._json(200, policy_payload())
+            return
+
+        if path == "/api/exec/suggest":
+            qs = parse_qs(parsed.query)
+            q = (qs.get("q") or [""])[0]
+            try:
+                limit = int((qs.get("limit") or ["20"])[0])
+            except ValueError:
+                limit = 20
+            self._json(200, {"query": q, "items": suggest_exec_commands(q, limit=limit)})
             return
 
         if path == "/api/doctor":

@@ -86,7 +86,9 @@ open http://127.0.0.1:8787/api/docs
 
 ---
 
-## 3. MCP（Cursor）
+## 3. MCP（任意 Agent）
+
+同一 stdio 入口：`bin/gpu-control-mcp`。适用于 **Cursor / Claude Code / Codex** 以及其他支持 MCP 的客户端，不绑死某一 IDE。
 
 主控安装：
 
@@ -96,7 +98,14 @@ uv pip install -r requirements-mcp.txt
 chmod +x bin/gpu-control-mcp
 ```
 
-Cursor MCP 配置（示例见 `config/examples/mcp.cursor.json`）：
+| 客户端 | 示例配置 |
+|--------|----------|
+| Cursor | `config/examples/mcp.cursor.json` |
+| Claude Code | `config/examples/mcp.claude-code.json` |
+| Codex | `config/examples/mcp.codex.json` |
+| 通用 | `config/examples/mcp.generic.json` |
+
+Cursor 示例：
 
 ```json
 {
@@ -117,6 +126,9 @@ Cursor MCP 配置（示例见 `config/examples/mcp.cursor.json`）：
 | `GPU_CONTROL_API_BASE` | 设置后工具优先打 HTTP（UI 需在跑） |
 | `GPU_CONTROL_API_TOKEN` | Bearer；鉴权启用时必填，否则 401 |
 | （均未设） | 工具直接调本地 CLI，不依赖 UI |
+
+教学与风险：MCP `instructions` 与 `GET /api/assistant/policy` 同源（`lib/assistant_policy.py`）。  
+设计说明：`docs/superpowers/specs/2026-11-15-assistant-and-console-ux-design.md`。
 
 一等工具（20）：`gc_api_catalog` · `gc_auth_status` · `gc_doctor` · `gc_overview` · `gc_get_jobs` · `gc_job_action` · `gc_get_config` · `gc_put_config` · `gc_models` · `gc_toolkits` · `gc_procs` · `gc_free_node` · `gc_deploy` · `gc_queue` · `gc_lease` · `gc_diagnose` · `gc_gateway` · `gc_node` · `gc_exec` · `gc_cli`。
 

@@ -13,6 +13,7 @@
 
 ### Added
 
+- 智能助手设计与 P0/P1：`docs/superpowers/specs/2026-11-15-assistant-and-console-ux-design.md`；`lib/assistant_policy.py`；MCP 示例覆盖 Cursor / Claude Code / Codex / 通用；`GET /api/assistant/policy`；远程命令 `GET /api/exec/suggest` + UI 补全
 - MCP 一等工具：`gc_queue` · `gc_lease` · `gc_diagnose` · `gc_gateway` · `gc_node`；`gc_deploy(force/…)` · `gc_models(pull)`；catalog↔MCP 同步测试
 - 发版：`scripts/release_notes.py` + tag `v*` 自动 GitHub Release；推送 GHCR 控制面镜像（暂不上传 PyPI）
 - 容器：`Dockerfile` · `docker-compose.yml` · `deploy/ssh/`；CI 构建冒烟

@@ -2518,6 +2518,147 @@ async function runExec(payload) {
   }
 }
 
+const EXEC_HISTORY_KEY = "gc_exec_history_v1";
+let execSuggestItems = [];
+let execSuggestIndex = -1;
+let execSuggestTimer = 0;
+
+function loadExecHistory() {
+  try {
+    const raw = localStorage.getItem(EXEC_HISTORY_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberExecCommand(command) {
+  const cmd = (command || "").trim();
+  if (!cmd) return;
+  const next = [cmd, ...loadExecHistory().filter((x) => x !== cmd)].slice(0, 20);
+  try {
+    localStorage.setItem(EXEC_HISTORY_KEY, JSON.stringify(next));
+  } catch {
+    /* ignore quota */
+  }
+}
+
+function hideExecSuggest() {
+  const list = $("exec-suggest-list");
+  if (!list) return;
+  list.hidden = true;
+  list.innerHTML = "";
+  execSuggestItems = [];
+  execSuggestIndex = -1;
+}
+
+function renderExecSuggest(items) {
+  const list = $("exec-suggest-list");
+  if (!list) return;
+  execSuggestItems = items || [];
+  execSuggestIndex = execSuggestItems.length ? 0 : -1;
+  if (!execSuggestItems.length) {
+    hideExecSuggest();
+    return;
+  }
+  list.innerHTML = execSuggestItems
+    .map(
+      (row, i) =>
+        `<li role="option" data-idx="${i}" class="${i === 0 ? "is-active" : ""}">` +
+        `<strong>${escapeHtml(row.label || row.command)}</strong>` +
+        `<code>${escapeHtml(row.command)}</code></li>`
+    )
+    .join("");
+  list.hidden = false;
+  list.querySelectorAll("li").forEach((li) => {
+    li.addEventListener("mousedown", (ev) => {
+      ev.preventDefault();
+      applyExecSuggest(Number(li.dataset.idx));
+    });
+  });
+}
+
+function applyExecSuggest(idx) {
+  const row = execSuggestItems[idx];
+  const input = $("exec-custom");
+  if (!row || !input) return;
+  input.value = row.command;
+  hideExecSuggest();
+  input.focus();
+}
+
+async function refreshExecSuggest(query) {
+  const q = (query || "").trim();
+  const history = loadExecHistory()
+    .filter((cmd) => !q || cmd.toLowerCase().includes(q.toLowerCase()))
+    .slice(0, 6)
+    .map((command) => ({ command, label: "最近使用", source: "history" }));
+  let remote = [];
+  try {
+    const qs = new URLSearchParams({ q, limit: "16" });
+    const data = await api(`/api/exec/suggest?${qs}`);
+    remote = data.items || [];
+  } catch {
+    remote = [];
+  }
+  const seen = new Set();
+  const merged = [];
+  for (const row of [...history, ...remote]) {
+    if (!row?.command || seen.has(row.command)) continue;
+    seen.add(row.command);
+    merged.push(row);
+    if (merged.length >= 12) break;
+  }
+  renderExecSuggest(merged);
+}
+
+function bindExecSuggest() {
+  const input = $("exec-custom");
+  if (!input) return;
+  input.addEventListener("input", () => {
+    window.clearTimeout(execSuggestTimer);
+    execSuggestTimer = window.setTimeout(() => refreshExecSuggest(input.value), 120);
+  });
+  input.addEventListener("focus", () => refreshExecSuggest(input.value));
+  input.addEventListener("blur", () => {
+    window.setTimeout(hideExecSuggest, 120);
+  });
+  input.addEventListener("keydown", (ev) => {
+    const list = $("exec-suggest-list");
+    const open = list && !list.hidden && execSuggestItems.length;
+    if (ev.key === "ArrowDown" && open) {
+      ev.preventDefault();
+      execSuggestIndex = (execSuggestIndex + 1) % execSuggestItems.length;
+      list.querySelectorAll("li").forEach((li, i) => li.classList.toggle("is-active", i === execSuggestIndex));
+      return;
+    }
+    if (ev.key === "ArrowUp" && open) {
+      ev.preventDefault();
+      execSuggestIndex = (execSuggestIndex - 1 + execSuggestItems.length) % execSuggestItems.length;
+      list.querySelectorAll("li").forEach((li, i) => li.classList.toggle("is-active", i === execSuggestIndex));
+      return;
+    }
+    if (ev.key === "Tab" && open && execSuggestIndex >= 0) {
+      ev.preventDefault();
+      applyExecSuggest(execSuggestIndex);
+      return;
+    }
+    if (ev.key === "Escape") {
+      hideExecSuggest();
+      return;
+    }
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      if (open && execSuggestIndex >= 0 && ev.shiftKey) {
+        applyExecSuggest(execSuggestIndex);
+        return;
+      }
+      $("btn-exec-custom")?.click();
+    }
+  });
+}
+
 async function runPython() {
   const target = selectedFrom("py-target");
   const body = {
@@ -3362,14 +3503,11 @@ async function boot() {
   document.getElementById("btn-exec-custom").addEventListener("click", () => {
     const command = document.getElementById("exec-custom").value.trim();
     if (!command) return log("命令为空");
+    hideExecSuggest();
+    rememberExecCommand(command);
     runExec({ command });
   });
-  document.getElementById("exec-custom").addEventListener("keydown", (ev) => {
-    if (ev.key === "Enter") {
-      ev.preventDefault();
-      document.getElementById("btn-exec-custom").click();
-    }
-  });
+  bindExecSuggest();
   document.getElementById("btn-run-py").addEventListener("click", runPython);
   document.querySelectorAll("[data-job-action]").forEach((btn) => {
     btn.addEventListener("click", () => runJobAction(btn.dataset.jobAction));

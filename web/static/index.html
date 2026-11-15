@@ -562,8 +562,11 @@ gpu-control jobs install vllm-serve --name vllm</pre>
             </div>
             <label class="field"><span>目标</span><select id="exec-target"></select></label>
             <div class="preset-grid" id="exec-presets"></div>
-            <div class="row">
-              <input id="exec-custom" type="text" placeholder="nvidia-smi -L" />
+            <div class="row exec-suggest-row">
+              <div class="exec-suggest-wrap">
+                <input id="exec-custom" type="text" placeholder="nvidia-smi -L（输入可补全）" autocomplete="off" aria-autocomplete="list" aria-controls="exec-suggest-list" />
+                <ul id="exec-suggest-list" class="exec-suggest-list" role="listbox" hidden></ul>
+              </div>
               <button id="btn-exec-custom" class="primary" data-action="1">执行</button>
             </div>
             <p class="meta" id="notes-line"></p>

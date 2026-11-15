@@ -390,7 +390,14 @@ def http_endpoints() -> list[dict[str, Any]]:
             "group": "ops",
             "body": "node_name",
         },
+        {"method": "GET", "path": "/api/exec/suggest", "summary": "远程命令补全建议", "group": "ops"},
         {"method": "POST", "path": "/api/exec", "summary": "远程命令", "group": "ops", "body": "exec"},
+        {
+            "method": "GET",
+            "path": "/api/assistant/policy",
+            "summary": "助手/MCP 工具风险与教学摘要",
+            "group": "meta",
+        },
         {"method": "POST", "path": "/api/run-python", "summary": "远程跑 Python", "group": "ops"},
         {
             "method": "POST",
@@ -565,15 +572,27 @@ def catalog_payload() -> dict[str, Any]:
             "transport": "stdio",
             "tools": mcp_tools_summary(),
             "cursor_example": "config/examples/mcp.cursor.json",
+            "examples": {
+                "cursor": "config/examples/mcp.cursor.json",
+                "claude_code": "config/examples/mcp.claude-code.json",
+                "codex": "config/examples/mcp.codex.json",
+                "generic": "config/examples/mcp.generic.json",
+            },
             "env": auth["mcp_env"],
+        },
+        "assistant": {
+            "policy": "/api/assistant/policy",
+            "design": "docs/superpowers/specs/2026-11-15-assistant-and-console-ux-design.md",
         },
         "ai_notes": [
             "产品名 ComputeDeck；CLI/MCP/service 仍为 gpu-control。",
+            "MCP 适用于 Cursor / Claude Code / Codex 等任意 stdio Agent；示例见 mcp.examples。",
             "鉴权启用后，HTTP 客户端必须带 Bearer；MCP 设 GPU_CONTROL_API_TOKEN。",
             "改配置优先 POST /api/config/{cluster,nodes,job/NAME}，再 gc_node(render) / doctor。",
             "启停负载用 Job 插件；不要假设只有某一业务 Job。",
             "腾空占卡用 /api/free 或 /api/procs/kill；纯隔离用 gc_node(cordon)。",
             "调度：gc_queue / gc_lease；排障：gc_diagnose；入口：gc_gateway。",
+            "工具风险分级见 GET /api/assistant/policy。",
             "完整说明见 docs/ai-接入.md、AGENTS.md 与 /api/docs。",
         ],
     }

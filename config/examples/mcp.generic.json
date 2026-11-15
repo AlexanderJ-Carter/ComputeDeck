@@ -1,0 +1,16 @@
+{
+  "name": "gpu-control",
+  "transport": "stdio",
+  "command": "/ABS/PATH/TO/ComputeDeck/bin/gpu-control-mcp",
+  "args": [],
+  "env": {
+    "GPU_CONTROL_API_BASE": "http://127.0.0.1:8787",
+    "GPU_CONTROL_API_TOKEN": ""
+  },
+  "_gpu_control_notes": [
+    "通用 stdio MCP 描述：复制到任意支持 Model Context Protocol 的 Agent",
+    "产品名 ComputeDeck；入口始终是 bin/gpu-control-mcp",
+    "不设 GPU_CONTROL_API_BASE 时走主控本机 CLI",
+    "完整工具列表：启动后 gc_api_catalog，或 GET /api"
+  ]
+}
