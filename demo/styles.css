@@ -1365,12 +1365,18 @@ h3 {
   flex-wrap: wrap;
 }
 
+.ai-stage {
+  display: grid;
+  gap: 0.9rem;
+  width: 100%;
+  margin-top: 1rem;
+}
+
 .ai-demo {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.85rem;
   width: 100%;
-  margin-top: 1rem;
 }
 
 .ai-card {
@@ -1383,6 +1389,116 @@ h3 {
   border-radius: 16px;
   background: color-mix(in srgb, #fff 70%, transparent);
   box-shadow: 0 12px 28px color-mix(in srgb, var(--ink) 8%, transparent);
+  transition: transform 0.35s var(--ease), box-shadow 0.35s var(--ease);
+}
+
+.ai-card.glow {
+  box-shadow:
+    0 14px 32px color-mix(in srgb, var(--teal) 18%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--teal) 28%, var(--line));
+}
+
+.ai-card.glow-soft {
+  box-shadow:
+    0 12px 28px color-mix(in srgb, var(--amber) 12%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--amber) 22%, var(--line));
+}
+
+.ai-trends {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.ai-trends article {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0.7rem 0.85rem;
+  background: color-mix(in srgb, #0f766e 6%, #fff);
+}
+
+.ai-trends header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.35rem;
+  font-size: var(--fs-xs);
+}
+
+.ai-trends header span {
+  color: var(--teal-deep);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-spark {
+  width: 100%;
+  height: 48px;
+  display: block;
+}
+
+.ai-spark .line {
+  fill: none;
+  stroke: var(--teal);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 240;
+  stroke-dashoffset: 240;
+  animation: ai-draw 1.6s var(--ease) forwards;
+}
+
+.ai-spark .line.alt {
+  stroke: var(--amber);
+}
+
+.ai-spark .area {
+  fill: color-mix(in srgb, var(--teal) 18%, transparent);
+  stroke: none;
+}
+
+.ai-spark .area.alt {
+  fill: color-mix(in srgb, var(--amber) 16%, transparent);
+}
+
+.ai-pulse-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.28rem;
+  height: 36px;
+  margin: 0.2rem 0 0.35rem;
+}
+
+.ai-pulse-row i {
+  flex: 1;
+  display: block;
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(180deg, var(--teal-bright), var(--teal-deep));
+  animation: ai-bar 1.2s ease-in-out infinite;
+  transform-origin: bottom;
+}
+
+.ai-pulse-row i:nth-child(2) { animation-delay: 0.08s; height: 60%; }
+.ai-pulse-row i:nth-child(3) { animation-delay: 0.16s; }
+.ai-pulse-row i:nth-child(4) { animation-delay: 0.24s; height: 80%; }
+.ai-pulse-row i:nth-child(5) { animation-delay: 0.32s; }
+.ai-pulse-row i:nth-child(6) { animation-delay: 0.4s; height: 45%; }
+.ai-pulse-row i:nth-child(7) { animation-delay: 0.48s; }
+.ai-pulse-row i:nth-child(8) { animation-delay: 0.56s; height: 70%; }
+
+.ai-trends p {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--ink-soft);
+}
+
+@keyframes ai-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes ai-bar {
+  0%, 100% { transform: scaleY(0.45); opacity: 0.75; }
+  50% { transform: scaleY(1); opacity: 1; }
 }
 
 .ai-card header {
@@ -1545,7 +1661,8 @@ h3 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .ai-demo {
+  .ai-demo,
+  .ai-trends {
     grid-template-columns: 1fr;
   }
 

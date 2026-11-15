@@ -52,7 +52,15 @@ const termState = {
   node: null,
 };
 
-const stateSetup = { data: null, jobBase: null, jobBaseName: null, jobLoadSeq: 0 };
+const stateSetup = {
+  data: null,
+  jobBase: null,
+  jobBaseName: null,
+  jobLoadSeq: 0,
+  nodesDraft: null,
+  nodesFilter: "",
+  nodesDensity: "auto", // auto | cards | compact
+};
 
 const $ = (id) => document.getElementById(id);
 
@@ -2196,6 +2204,9 @@ function renderDashboard(data) {
   renderDashGateway(data.ingress || state.ingress);
   if (data.ingress) state.ingress = data.ingress;
   if (data.notices) renderNotices(data.notices);
+  if (data.metrics_tail) renderTrends(data.metrics_tail);
+  const syncAt = $("notices-sync-at");
+  if (syncAt && data.generated_at) syncAt.textContent = `规则告警 · ${data.generated_at}`;
 
   const tk = data.toolkits || {};
   const chips = $("dash-toolkit-chips");
@@ -2954,75 +2965,231 @@ function parseEnvText(text) {
   return out;
 }
 
-function renderNodesCards(doc) {
+function ensureNodesDraft(doc) {
+  const base = doc || (stateSetup.data && stateSetup.data.nodes) || { defaults: {}, nodes: {} };
+  stateSetup.nodesDraft = {
+    ...base,
+    defaults: { ...(base.defaults || {}) },
+    nodes: { ...(base.nodes || {}) },
+  };
+  return stateSetup.nodesDraft;
+}
+
+function nodesDraftCount() {
+  return Object.keys((stateSetup.nodesDraft && stateSetup.nodesDraft.nodes) || {}).length;
+}
+
+function resolvedNodesDensity() {
+  const mode = stateSetup.nodesDensity || "auto";
+  if (mode === "cards" || mode === "compact") return mode;
+  return nodesDraftCount() >= 6 ? "compact" : "cards";
+}
+
+function nodeMatchesFilter(name, meta, q) {
+  if (!q) return true;
+  const hay = [
+    name,
+    meta.ansible_host || "",
+    (meta.labels || []).join(","),
+    meta.note || "",
+  ]
+    .join(" ")
+    .toLowerCase();
+  return hay.includes(q);
+}
+
+function readCardFields(card) {
+  const name = (card.querySelector('[data-nc="name"]')?.value || "").trim();
+  const host = (card.querySelector('[data-nc="host"]')?.value || "").trim();
+  const gpusRaw = (card.querySelector('[data-nc="gpus"]')?.value || "").trim();
+  const labels = (card.querySelector('[data-nc="labels"]')?.value || "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  const note = (card.querySelector('[data-nc="note"]')?.value || "").trim();
+  return { name, host, gpusRaw, labels, note };
+}
+
+function commitCardToDraft(card) {
+  const draft = ensureNodesDraft(stateSetup.nodesDraft);
+  const oldKey = card.dataset.nodeCard;
+  const { name, host, gpusRaw, labels, note } = readCardFields(card);
+  if (!oldKey) return;
+  if (!name) return;
+  const prev = draft.nodes[oldKey] || draft.nodes[name] || {};
+  const node = { ...prev };
+  if (host) node.ansible_host = host;
+  if (!node.role) node.role = draft.defaults.role || "serving";
+  if (gpusRaw && /^\d+$/.test(gpusRaw)) node.gpus_per_node = Number(gpusRaw);
+  else if (!gpusRaw && "gpus_per_node" in node) delete node.gpus_per_node;
+  if (labels.length) node.labels = labels;
+  else if ("labels" in node) delete node.labels;
+  if (note) node.note = note;
+  else if ("note" in node) delete node.note;
+  if (name !== oldKey) {
+    if (draft.nodes[name] && name !== oldKey) {
+      toastBad(`节点名 ${name} 已存在`);
+      card.querySelector('[data-nc="name"]').value = oldKey;
+      return;
+    }
+    delete draft.nodes[oldKey];
+    card.dataset.nodeCard = name;
+  }
+  draft.nodes[name] = node;
+  syncNodesEditorFromDraft();
+  updateNodesChrome();
+}
+
+function syncNodesEditorFromDraft() {
+  const editor = $("nodes-editor");
+  if (!editor || !stateSetup.nodesDraft) return;
+  editor.value = nodesDocToEditor(stateSetup.nodesDraft);
+}
+
+function updateNodesChrome() {
+  const total = nodesDraftCount();
+  const countEl = $("nodes-count");
+  if (countEl) countEl.textContent = `${total} 台`;
+  const q = (stateSetup.nodesFilter || "").trim().toLowerCase();
+  const meta = $("nodes-filter-meta");
+  if (meta) {
+    if (!q) {
+      meta.hidden = true;
+      meta.textContent = "";
+    } else {
+      const shown = Object.entries((stateSetup.nodesDraft && stateSetup.nodesDraft.nodes) || {}).filter(([n, m]) =>
+        nodeMatchesFilter(n, m || {}, q)
+      ).length;
+      meta.hidden = false;
+      meta.textContent = `筛选中：显示 ${shown} / 共 ${total}（未显示的节点保存时仍会保留）`;
+    }
+  }
   const root = $("nodes-cards");
-  if (!root) return;
-  const nodes = (doc && doc.nodes) || {};
-  const names = Object.keys(nodes);
-  root.innerHTML =
-    names
-      .map((name) => {
-        const meta = nodes[name] || {};
-        return `<div class="node-card" data-node-card="${escapeHtml(name)}">
+  if (root) root.dataset.density = resolvedNodesDensity();
+}
+
+function renderNodesCards(doc) {
+  if (doc) ensureNodesDraft(doc);
+  else if (!stateSetup.nodesDraft) ensureNodesDraft();
+  const draft = stateSetup.nodesDraft;
+  const root = $("nodes-cards");
+  if (!root || !draft) return;
+  const density = resolvedNodesDensity();
+  root.dataset.density = density;
+  const q = (stateSetup.nodesFilter || "").trim().toLowerCase();
+  const entries = Object.entries(draft.nodes || {}).filter(([name, meta]) =>
+    nodeMatchesFilter(name, meta || {}, q)
+  );
+  if (!Object.keys(draft.nodes || {}).length) {
+    root.innerHTML =
+      '<div class="nodes-empty"><strong>还没有 GPU 节点</strong><p>点「加节点」，或展开下方文本行批量粘贴。</p></div>';
+    updateNodesChrome();
+    return;
+  }
+  if (!entries.length) {
+    root.innerHTML = '<div class="nodes-empty"><strong>无匹配节点</strong><p>清空筛选条件看看全部列表。</p></div>';
+    updateNodesChrome();
+    return;
+  }
+  const compact = density === "compact";
+  root.innerHTML = entries
+    .map(([name, meta]) => {
+      const labels = (meta.labels || []).join(",");
+      if (compact) {
+        return `<div class="node-card is-compact" data-node-card="${escapeHtml(name)}">
           <div class="field-row">
             <label class="field"><span>名称</span><input data-nc="name" value="${escapeHtml(name)}" /></label>
             <label class="field"><span>地址</span><input data-nc="host" value="${escapeHtml(meta.ansible_host || "")}" /></label>
             <label class="field"><span>GPU</span><input data-nc="gpus" type="number" value="${escapeHtml(meta.gpus_per_node ?? "")}" /></label>
+            <label class="field"><span>标签</span><input data-nc="labels" value="${escapeHtml(labels)}" /></label>
+            <div class="node-card-actions">
+              <button type="button" class="ghost tiny" data-toggle-node-extra data-keep-enabled="1">备注</button>
+              <button type="button" class="ghost tiny" data-remove-node-card="${escapeHtml(name)}" data-keep-enabled="1">删</button>
+            </div>
           </div>
-          <label class="field"><span>标签（逗号）</span><input data-nc="labels" value="${escapeHtml((meta.labels || []).join(","))}" /></label>
-          <label class="field"><span>备注</span><input data-nc="note" value="${escapeHtml(meta.note || "")}" /></label>
-          <div class="node-card-actions">
-            <button type="button" class="ghost tiny" data-remove-node-card="${escapeHtml(name)}" data-keep-enabled="1">删除</button>
-          </div>
+          <label class="field node-extra" hidden><span>备注</span><input data-nc="note" value="${escapeHtml(meta.note || "")}" /></label>
         </div>`;
-      })
-      .join("") || '<p class="meta">暂无节点，点「加节点」或用高级文本行。</p>';
-  root.querySelectorAll("[data-remove-node-card]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const card = btn.closest("[data-node-card]");
-      if (card) card.remove();
-      syncNodesEditorFromCards();
+      }
+      return `<div class="node-card" data-node-card="${escapeHtml(name)}">
+        <div class="field-row">
+          <label class="field"><span>名称</span><input data-nc="name" value="${escapeHtml(name)}" /></label>
+          <label class="field"><span>地址</span><input data-nc="host" value="${escapeHtml(meta.ansible_host || "")}" /></label>
+          <label class="field"><span>GPU</span><input data-nc="gpus" type="number" value="${escapeHtml(meta.gpus_per_node ?? "")}" /></label>
+        </div>
+        <label class="field"><span>标签（逗号）</span><input data-nc="labels" value="${escapeHtml(labels)}" /></label>
+        <label class="field"><span>备注</span><input data-nc="note" value="${escapeHtml(meta.note || "")}" /></label>
+        <div class="node-card-actions">
+          <button type="button" class="ghost tiny" data-remove-node-card="${escapeHtml(name)}" data-keep-enabled="1">删除</button>
+        </div>
+      </div>`;
+    })
+    .join("");
+  root.querySelectorAll("[data-node-card]").forEach((card) => {
+    card.querySelectorAll("input").forEach((input) => {
+      input.addEventListener("change", () => commitCardToDraft(card));
+      input.addEventListener("blur", () => commitCardToDraft(card));
     });
   });
+  root.querySelectorAll("[data-remove-node-card]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.removeNodeCard;
+      const draftNow = ensureNodesDraft(stateSetup.nodesDraft);
+      delete draftNow.nodes[key];
+      renderNodesCards();
+      syncNodesEditorFromDraft();
+    });
+  });
+  root.querySelectorAll("[data-toggle-node-extra]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const card = btn.closest("[data-node-card]");
+      const extra = card?.querySelector(".node-extra");
+      if (!extra) return;
+      extra.hidden = !extra.hidden;
+    });
+  });
+  updateNodesChrome();
+  syncNodesEditorFromDraft();
 }
 
 function cardsToNodesDoc(baseDoc) {
-  const base = baseDoc || { defaults: {}, nodes: {} };
-  const baseNodes = base.nodes || {};
-  const doc = { ...base, defaults: { ...(base.defaults || {}) }, nodes: {} };
-  document.querySelectorAll("#nodes-cards [data-node-card]").forEach((card) => {
-    const name = (card.querySelector('[data-nc="name"]')?.value || "").trim();
-    const host = (card.querySelector('[data-nc="host"]')?.value || "").trim();
-    if (!name || !host) return;
-    const gpusRaw = (card.querySelector('[data-nc="gpus"]')?.value || "").trim();
-    const labels = (card.querySelector('[data-nc="labels"]')?.value || "")
-      .split(",")
-      .map((x) => x.trim())
-      .filter(Boolean);
-    const note = (card.querySelector('[data-nc="note"]')?.value || "").trim();
-    const prev = baseNodes[name] || baseNodes[card.dataset.nodeCard] || {};
-    const node = { ...prev, ansible_host: host };
-    if (!node.role) node.role = doc.defaults.role || "serving";
-    if (gpusRaw && /^\d+$/.test(gpusRaw)) node.gpus_per_node = Number(gpusRaw);
-    if (labels.length) node.labels = labels;
-    if (note) node.note = note;
-    else if ("note" in node) delete node.note;
-    doc.nodes[name] = node;
-  });
-  return doc;
-}
-
-function syncNodesEditorFromCards() {
-  const editor = $("nodes-editor");
-  if (!editor) return;
-  const doc = cardsToNodesDoc((stateSetup.data && stateSetup.data.nodes) || { defaults: {}, nodes: {} });
-  editor.value = nodesDocToEditor(doc);
+  // 兼容旧调用：以草稿为准（含被筛选隐藏的节点）
+  const draft = ensureNodesDraft(stateSetup.nodesDraft || baseDoc);
+  document.querySelectorAll("#nodes-cards [data-node-card]").forEach((card) => commitCardToDraft(card));
+  return {
+    ...draft,
+    defaults: { ...(draft.defaults || {}) },
+    nodes: { ...(draft.nodes || {}) },
+  };
 }
 
 function syncNodesCardsFromEditor() {
   const base = (stateSetup.data && stateSetup.data.nodes) || { defaults: {}, nodes: {} };
   const doc = editorToNodes($("nodes-editor")?.value || "", base);
-  renderNodesCards(doc);
+  ensureNodesDraft(doc);
+  renderNodesCards();
+}
+
+function addNodeCard() {
+  const draft = ensureNodesDraft(stateSetup.nodesDraft);
+  let i = 1;
+  let name = `gpu-${i}`;
+  while (draft.nodes[name]) {
+    i += 1;
+    name = `gpu-${i}`;
+  }
+  draft.nodes[name] = {
+    ansible_host: "",
+    gpus_per_node: Number((draft.defaults && draft.defaults.gpus_per_node) || 4),
+    labels: draft.defaults && draft.defaults.role ? [String(draft.defaults.role)] : ["serving"],
+    role: (draft.defaults && draft.defaults.role) || "serving",
+  };
+  stateSetup.nodesFilter = "";
+  if ($("nodes-filter")) $("nodes-filter").value = "";
+  renderNodesCards();
+  const card = [...document.querySelectorAll("#nodes-cards [data-node-card]")].find(
+    (el) => el.dataset.nodeCard === name
+  );
+  card?.querySelector('[data-nc="host"]')?.focus();
 }
 
 /* Load the full Job JSON (not the summary) so saving can merge instead of
@@ -3090,7 +3257,10 @@ function fillSetupForm(data) {
   const tlsCa = document.getElementById("cluster-tls-ca");
   if (tlsCa) tlsCa.value = tls.ca_file || "";
   document.getElementById("nodes-editor").value = nodesDocToEditor(data.nodes || {});
-  renderNodesCards(data.nodes || {});
+  ensureNodesDraft(data.nodes || { defaults: {}, nodes: {} });
+  if ($("nodes-filter")) $("nodes-filter").value = stateSetup.nodesFilter || "";
+  if ($("nodes-density")) $("nodes-density").value = stateSetup.nodesDensity || "auto";
+  renderNodesCards();
 
   const wd = cluster.watchdog || {};
   const wdEn = $("wd-enabled");
@@ -3368,8 +3538,13 @@ async function saveAuthConfig() {
 
 async function saveNodesEditor() {
   const base = (stateSetup.data && stateSetup.data.nodes) || { defaults: {}, nodes: {} };
-  // 卡片优先；若卡片为空则回落文本行
+  // 先提交可见卡片到草稿；草稿含被筛选隐藏的节点
   let data = cardsToNodesDoc(base);
+  const incomplete = Object.entries(data.nodes || {}).filter(([, meta]) => !(meta && meta.ansible_host));
+  if (incomplete.length) {
+    toastBad(`还有 ${incomplete.length} 台未填地址：${incomplete.map(([n]) => n).slice(0, 5).join(", ")}`);
+    return;
+  }
   if (!Object.keys(data.nodes).length) {
     data = editorToNodes($("nodes-editor").value, base);
   } else {
@@ -3667,32 +3842,18 @@ async function boot() {
   document.getElementById("btn-save-job").addEventListener("click", saveJob);
   document.getElementById("btn-save-watchdog")?.addEventListener("click", saveWatchdog);
   document.getElementById("btn-save-auth")?.addEventListener("click", saveAuthConfig);
-  document.getElementById("btn-add-node-card")?.addEventListener("click", () => {
-    const root = $("nodes-cards");
-    if (!root) return;
-    const id = `new-${Date.now()}`;
-    const wrap = document.createElement("div");
-    wrap.innerHTML = `<div class="node-card" data-node-card="${id}">
-      <div class="field-row">
-        <label class="field"><span>名称</span><input data-nc="name" placeholder="gpu-n" /></label>
-        <label class="field"><span>地址</span><input data-nc="host" placeholder="10.0.0.x" /></label>
-        <label class="field"><span>GPU</span><input data-nc="gpus" type="number" value="4" /></label>
-      </div>
-      <label class="field"><span>标签（逗号）</span><input data-nc="labels" placeholder="serving" /></label>
-      <label class="field"><span>备注</span><input data-nc="note" /></label>
-      <div class="node-card-actions">
-        <button type="button" class="ghost tiny" data-remove-node-card="${id}" data-keep-enabled="1">删除</button>
-      </div>
-    </div>`;
-    const card = wrap.firstElementChild;
-    root.appendChild(card);
-    card.querySelector("[data-remove-node-card]")?.addEventListener("click", () => {
-      card.remove();
-      syncNodesEditorFromCards();
-    });
-  });
+  document.getElementById("btn-add-node-card")?.addEventListener("click", () => addNodeCard());
   document.getElementById("job-runtime")?.addEventListener("change", syncJobRuntimeFields);
   document.getElementById("nodes-editor")?.addEventListener("change", syncNodesCardsFromEditor);
+  document.getElementById("nodes-filter")?.addEventListener("input", (ev) => {
+    stateSetup.nodesFilter = ev.target.value || "";
+    renderNodesCards();
+  });
+  document.getElementById("nodes-density")?.addEventListener("change", (ev) => {
+    stateSetup.nodesDensity = ev.target.value || "auto";
+    document.querySelectorAll("#nodes-cards [data-node-card]").forEach((card) => commitCardToDraft(card));
+    renderNodesCards();
+  });
   on("btn-notices", "click", () => setNoticesPopOpen(!!$("notices-pop")?.hidden));
   on("btn-notices-close", "click", () => setNoticesPopOpen(false));
   on("btn-notices-read-all", "click", () => markAllNoticesRead());
@@ -4109,6 +4270,7 @@ async function boot() {
 
   bindAssistant();
   bindNotices();
+  restoreAiAnalyze();
 
   if (state.auth && state.auth.enabled && !state.auth.authenticated) {
     writeConsoleText("控制台已锁定，请先登录。", { meta: "等待登录", empty: true });
@@ -4141,6 +4303,82 @@ const noticesState = {
   items: [],
   unread: 0,
 };
+
+function sparklinePath(values, width, height, pad = 4) {
+  const nums = values.map((v) => (v == null || Number.isNaN(Number(v)) ? null : Number(v)));
+  const solid = nums.filter((v) => v != null);
+  if (solid.length < 2) return { line: "", area: "" };
+  const min = Math.min(...solid);
+  const max = Math.max(...solid);
+  const span = max - min || 1;
+  const n = nums.length;
+  const pts = [];
+  nums.forEach((v, i) => {
+    if (v == null) return;
+    const x = pad + (i / Math.max(1, n - 1)) * (width - pad * 2);
+    const y = height - pad - ((v - min) / span) * (height - pad * 2);
+    pts.push([x, y]);
+  });
+  if (pts.length < 2) return { line: "", area: "" };
+  const line = pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
+  const area = `${line} L${pts[pts.length - 1][0].toFixed(1)},${height - pad} L${pts[0][0].toFixed(1)},${height - pad} Z`;
+  return { line, area };
+}
+
+function paintSpark(svgId, values, { altValues = null } = {}) {
+  const svg = $(svgId);
+  if (!svg) return;
+  const w = 320;
+  const h = 72;
+  const main = sparklinePath(values, w, h);
+  let html = "";
+  if (main.area) html += `<path class="area" d="${main.area}"></path>`;
+  if (main.line) html += `<path class="line" d="${main.line}"></path>`;
+  if (altValues) {
+    const alt = sparklinePath(altValues, w, h);
+    if (alt.line) html += `<path class="line alt" d="${alt.line}"></path>`;
+  }
+  svg.innerHTML = html || `<text x="12" y="40" fill="currentColor" font-size="12">采样不足，刷新总览稍后可见</text>`;
+}
+
+function fmtPct(v) {
+  if (v == null || Number.isNaN(Number(v))) return "-";
+  return `${Number(v).toFixed(Number(v) % 1 ? 1 : 0)}%`;
+}
+
+function renderTrends(payload) {
+  const points = (payload && payload.points) || [];
+  const note = $("dash-trends-note");
+  if (note) note.textContent = payload?.note || "控制面采样（非业务 QPS）";
+  const last = points[points.length - 1] || {};
+  const set = (id, text) => {
+    const el = $(id);
+    if (el) el.textContent = text;
+  };
+  set("trend-api", fmtPct(last.api_ok_pct));
+  set("trend-gpu", fmtPct(last.gpu_util_pct));
+  set("trend-cpu", fmtPct(last.cpu_avg_pct));
+  set("trend-edge", last.edge_upstreams != null ? String(last.edge_upstreams) : "-");
+  set("trend-checks", last.api_total != null ? String(last.api_total) : "-");
+  set("trend-score", last.quality_score != null ? String(Math.round(last.quality_score)) : "-");
+  paintSpark(
+    "chart-api",
+    points.map((p) => p.api_ok_pct)
+  );
+  paintSpark(
+    "chart-gpu",
+    points.map((p) => p.gpu_util_pct)
+  );
+  paintSpark(
+    "chart-cpu",
+    points.map((p) => p.cpu_avg_pct)
+  );
+  paintSpark(
+    "chart-mix",
+    points.map((p) => p.quality_score),
+    { altValues: points.map((p) => p.api_total) }
+  );
+}
 
 function noticeItemHtml(row) {
   const unread = row.read ? "" : " unread";
@@ -4235,28 +4473,50 @@ async function markAllNoticesRead() {
   await markNotices(undefined, { read: true });
 }
 
+function restoreAiAnalyze() {
+  try {
+    const raw = localStorage.getItem("gpu-control-ai-analyze");
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    const box = $("ai-analyze-box");
+    const at = $("ai-analyze-at");
+    if (box && saved.reply) box.textContent = saved.reply;
+    if (at && saved.at) at.textContent = saved.at;
+  } catch (_) {
+    /* ignore */
+  }
+}
+
 async function runAiAnalyze() {
   const box = $("ai-analyze-box");
+  const at = $("ai-analyze-at");
   const btn = $("btn-ai-analyze");
   if (btn) btn.disabled = true;
-  if (box) {
-    box.hidden = false;
-    box.textContent = "正在同步检测并请求 AI 解读…";
-  }
+  if (box) box.textContent = "正在深度同步（diagnose）并请求 AI 解读…";
+  if (at) at.textContent = "进行中…";
   try {
     const data = await api("/api/assistant/analyze", {
       method: "POST",
       body: "{}",
       timeoutMs: 120000,
     });
-    if (box) box.textContent = data.reply || data.error || "（无解读）";
+    const reply = data.reply || data.error || "（无解读）";
+    const stamp = new Date().toLocaleString();
+    if (box) box.textContent = reply;
+    if (at) at.textContent = stamp;
+    localStorage.setItem(
+      "gpu-control-ai-analyze",
+      JSON.stringify({ reply, at: stamp, ok: !!data.ok })
+    );
     if (data.open_settings) {
       setAssistantOpen(true);
       setAssistantSettingsOpen(true);
     }
     await syncNotices();
+    if (data.ok) toastOk("AI 解读完成");
   } catch (err) {
     if (box) box.textContent = `解读失败：${err.message || err}`;
+    if (at) at.textContent = "失败";
     toastBad(`AI 解读失败：${err.message || err}`);
   } finally {
     if (btn) btn.disabled = false;

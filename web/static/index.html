@@ -80,11 +80,13 @@
           <button id="btn-doctor" class="ghost" data-keep-enabled="1" data-action="1">自检</button>
           <button id="btn-api-health" class="ghost" data-keep-enabled="1" data-action="1">探测 API</button>
           <button id="btn-refresh" class="primary" data-keep-enabled="1" data-action="1">刷新 GPU</button>
-          <button type="button" id="btn-notices" class="ghost notices-bell" data-keep-enabled="1" aria-expanded="false" aria-controls="notices-pop" title="公告">
+          <button type="button" id="btn-notices" class="ghost notices-bell" data-keep-enabled="1" aria-expanded="false"
+            aria-controls="notices-pop" title="公告">
             公告<span id="notices-badge" class="notices-badge" hidden>0</span>
           </button>
           <span id="busy-indicator" class="chip chip--info" hidden>执行中…</span>
-          <button type="button" id="console-unread" class="chip warn console-unread" hidden data-keep-enabled="1">有新输出</button>
+          <button type="button" id="console-unread" class="chip warn console-unread" hidden
+            data-keep-enabled="1">有新输出</button>
           <span id="auth-session-chip" class="chip chip--neutral" hidden data-keep-enabled="1"></span>
           <button id="btn-logout" class="ghost tiny" data-keep-enabled="1" hidden>退出</button>
         </div>
@@ -93,18 +95,26 @@
       <section class="view active dash" data-view-panel="actions">
         <section class="panel dash-notices" aria-labelledby="dash-notices-title">
           <header class="panel-h">
-            <h2 id="dash-notices-title">监管公告</h2>
+            <h2 id="dash-notices-title">AI 监管</h2>
             <div class="btn-row">
-              <button type="button" id="btn-notices-sync" class="ghost tiny" data-keep-enabled="1">同步检测</button>
+              <span class="meta" id="notices-sync-at">随总览自动刷新规则告警</span>
+              <button type="button" id="btn-notices-sync" class="ghost tiny" data-keep-enabled="1">深度同步</button>
               <button type="button" id="btn-ai-analyze" class="primary tiny" data-keep-enabled="1">AI 解读</button>
             </div>
           </header>
           <div id="notices-list" class="notices-list"></div>
-          <pre id="ai-analyze-box" class="snippet notices-ai" hidden></pre>
+          <div class="notices-ai-wrap">
+            <header class="notices-ai-h">
+              <strong>AI 解读</strong>
+              <span class="meta" id="ai-analyze-at"></span>
+            </header>
+            <pre id="ai-analyze-box" class="snippet notices-ai">点「AI 解读」结合公告与 diagnose 给出只读建议。未配置上游时会引导去助手设置。</pre>
+          </div>
         </section>
         <div class="dash-top">
           <section class="panel dash-health" aria-labelledby="dash-health-title">
-            <div class="health-ring" id="quality-ring" style="--score:0" data-tone="idle" role="img" aria-label="集群健康评分">
+            <div class="health-ring" id="quality-ring" style="--score:0" data-tone="idle" role="img"
+              aria-label="集群健康评分">
               <svg viewBox="0 0 120 120" aria-hidden="true">
                 <circle class="ring-track" cx="60" cy="60" r="52"></circle>
                 <circle class="ring-arc" id="quality-arc" cx="60" cy="60" r="52" pathLength="100"></circle>
@@ -141,7 +151,8 @@
               </div>
               <span class="chip" id="dash-gpu-free">空闲 -</span>
             </div>
-            <div class="meter meter-lg dash-bar" role="progressbar" aria-label="GPU 占用率" aria-valuemin="0" aria-valuemax="100">
+            <div class="meter meter-lg dash-bar" role="progressbar" aria-label="GPU 占用率" aria-valuemin="0"
+              aria-valuemax="100">
               <i class="dash-bar-used" id="dash-bar-used" style="width:0%"></i>
             </div>
             <div class="dash-node-strip" id="dash-node-strip"></div>
@@ -155,6 +166,39 @@
             <div class="status-list" id="dash-board"></div>
           </section>
         </div>
+
+        <section class="panel dash-trends" aria-labelledby="dash-trends-title">
+          <header class="panel-h">
+            <h2 id="dash-trends-title">连通与负载趋势</h2>
+            <span class="meta" id="dash-trends-note">控制面采样（非业务 QPS）</span>
+          </header>
+          <div class="trend-kpis" id="trend-kpis">
+            <div><span>API 连通</span><strong id="trend-api">-</strong></div>
+            <div><span>GPU 占用</span><strong id="trend-gpu">-</strong></div>
+            <div><span>CPU 均载</span><strong id="trend-cpu">-</strong></div>
+            <div><span>入口上游</span><strong id="trend-edge">-</strong></div>
+            <div><span>探测总数</span><strong id="trend-checks">-</strong></div>
+            <div><span>健康分</span><strong id="trend-score">-</strong></div>
+          </div>
+          <div class="trend-charts" id="trend-charts">
+            <figure class="trend-chart">
+              <figcaption>API 连通率 %</figcaption>
+              <svg id="chart-api" viewBox="0 0 320 72" preserveAspectRatio="none" aria-hidden="true"></svg>
+            </figure>
+            <figure class="trend-chart">
+              <figcaption>GPU 占用 %</figcaption>
+              <svg id="chart-gpu" viewBox="0 0 320 72" preserveAspectRatio="none" aria-hidden="true"></svg>
+            </figure>
+            <figure class="trend-chart">
+              <figcaption>节点 CPU %</figcaption>
+              <svg id="chart-cpu" viewBox="0 0 320 72" preserveAspectRatio="none" aria-hidden="true"></svg>
+            </figure>
+            <figure class="trend-chart">
+              <figcaption>健康分 / 探测数</figcaption>
+              <svg id="chart-mix" viewBox="0 0 320 72" preserveAspectRatio="none" aria-hidden="true"></svg>
+            </figure>
+          </div>
+        </section>
 
         <section class="panel dash-actions" aria-label="快捷操作">
           <div class="toolbar dash-ops">
@@ -407,12 +451,15 @@ gpu-control jobs install vllm-serve --name vllm</pre>
               <summary>从模板安装（推理 / 训练 / Ray / Docker）</summary>
               <p class="meta">内置仅 shell-job；推荐包一键装齐常用模板到 config/local/jobs/</p>
               <div class="btn-row" style="margin-top:8px">
-                <button id="btn-install-recommended-jobs" class="primary tiny" data-keep-enabled="1" data-action="1">安装推荐包</button>
+                <button id="btn-install-recommended-jobs" class="primary tiny" data-keep-enabled="1"
+                  data-action="1">安装推荐包</button>
               </div>
               <div class="compact-fields" style="margin-top:8px">
                 <label class="field"><span>模板</span><select id="job-template" data-keep-enabled="1"></select></label>
-                <label class="field"><span>安装为名</span><input id="job-template-name" placeholder="可选，默认模板名" data-keep-enabled="1" /></label>
-                <button id="btn-install-job-template" class="primary tiny" data-keep-enabled="1" data-action="1">安装</button>
+                <label class="field"><span>安装为名</span><input id="job-template-name" placeholder="可选，默认模板名"
+                    data-keep-enabled="1" /></label>
+                <button id="btn-install-job-template" class="primary tiny" data-keep-enabled="1"
+                  data-action="1">安装</button>
               </div>
               <span class="meta" id="job-templates-meta"></span>
               <div id="job-templates-list" class="list" style="margin-top:8px"></div>
@@ -443,7 +490,8 @@ gpu-control jobs install vllm-serve --name vllm</pre>
             <div class="panel-h">
               <h2 title="填写 HF / ModelScope 仓库 id，选节点后拉取；可勾选登记到本地目录">下载新模型</h2>
             </div>
-            <label class="field"><span>仓库 ID</span><input id="pull-repo" placeholder="org/model-name" data-keep-enabled="1" /></label>
+            <label class="field"><span>仓库 ID</span><input id="pull-repo" placeholder="org/model-name"
+                data-keep-enabled="1" /></label>
             <div class="compact-fields">
               <label class="field">
                 <span>来源</span>
@@ -453,9 +501,12 @@ gpu-control jobs install vllm-serve --name vllm</pre>
                   <option value="modelscope">ModelScope</option>
                 </select>
               </label>
-              <label class="field"><span>本地 ID</span><input id="pull-id" placeholder="可选，默认 org-name" data-keep-enabled="1" /></label>
+              <label class="field"><span>本地 ID</span><input id="pull-id" placeholder="可选，默认 org-name"
+                  data-keep-enabled="1" /></label>
             </div>
-            <label class="field"><span>目标节点</span><select id="model-node"><option value="">全部节点</option></select></label>
+            <label class="field"><span>目标节点</span><select id="model-node">
+                <option value="">全部节点</option>
+              </select></label>
             <label class="check-row" for="pull-register">
               <input type="checkbox" id="pull-register" checked data-keep-enabled="1" />
               <span>拉取后登记到模型目录</span>
@@ -466,8 +517,10 @@ gpu-control jobs install vllm-serve --name vllm</pre>
             </div>
             <details class="fold">
               <summary>Token / Key <span id="secrets-meta" class="meta">未配置</span></summary>
-              <label class="field"><span>Hugging Face Token</span><input id="secret-hf" type="password" placeholder="hf_…" autocomplete="off" data-keep-enabled="1" /></label>
-              <label class="field"><span>ModelScope Token</span><input id="secret-ms" type="password" placeholder="ms_…" autocomplete="off" data-keep-enabled="1" /></label>
+              <label class="field"><span>Hugging Face Token</span><input id="secret-hf" type="password"
+                  placeholder="hf_…" autocomplete="off" data-keep-enabled="1" /></label>
+              <label class="field"><span>ModelScope Token</span><input id="secret-ms" type="password" placeholder="ms_…"
+                  autocomplete="off" data-keep-enabled="1" /></label>
               <div class="btn-row">
                 <button id="btn-save-secrets" class="primary tiny" data-keep-enabled="1">保存 Token</button>
                 <button id="btn-clear-secrets" class="ghost tiny" data-keep-enabled="1">清除</button>
@@ -578,7 +631,8 @@ gpu-control jobs install vllm-serve --name vllm</pre>
             <div class="preset-grid" id="exec-presets"></div>
             <div class="row exec-suggest-row">
               <div class="exec-suggest-wrap">
-                <input id="exec-custom" type="text" placeholder="nvidia-smi -L（输入可补全）" autocomplete="off" aria-autocomplete="list" aria-controls="exec-suggest-list" />
+                <input id="exec-custom" type="text" placeholder="nvidia-smi -L（输入可补全）" autocomplete="off"
+                  aria-autocomplete="list" aria-controls="exec-suggest-list" />
                 <ul id="exec-suggest-list" class="exec-suggest-list" role="listbox" hidden></ul>
               </div>
               <button id="btn-exec-custom" class="primary" data-action="1">执行</button>
@@ -590,8 +644,7 @@ gpu-control jobs install vllm-serve --name vllm</pre>
               <h2>运行 Python</h2>
             </div>
             <label class="field"><span>目标</span><select id="py-target"></select></label>
-            <label class="field"><span>解释器</span><input id="py-bin"
-                value="" placeholder="/usr/bin/python3" /></label>
+            <label class="field"><span>解释器</span><input id="py-bin" value="" placeholder="/usr/bin/python3" /></label>
             <label class="field"><span>脚本</span><input id="py-script" placeholder="/path/script.py" /></label>
             <label class="field"><span>参数</span><input id="py-args" placeholder="--flag" /></label>
             <label class="field"><span>代码 (-c)</span><input id="py-code" placeholder="print(1)" /></label>
@@ -683,14 +736,18 @@ gpu-control ui --background</pre>
               <details class="fold">
                 <summary>统一入口 · 域名 / HTTPS（可选）</summary>
                 <label class="field"><span>域名</span><input id="cluster-domain" placeholder="api.example.com" /></label>
-                <label class="field"><span>对外 URL</span><input id="cluster-public-url" placeholder="https://api.example.com" /></label>
+                <label class="field"><span>对外 URL</span><input id="cluster-public-url"
+                    placeholder="https://api.example.com" /></label>
                 <label class="field switch-field">
                   <span>启用 HTTPS</span>
                   <input type="checkbox" id="cluster-tls-enabled" data-keep-enabled="1" />
                 </label>
-                <label class="field"><span>证书 cert</span><input id="cluster-tls-cert" placeholder="config/local/secrets/ingress.crt" /></label>
-                <label class="field"><span>私钥 key</span><input id="cluster-tls-key" placeholder="config/local/secrets/ingress.key" /></label>
-                <label class="field"><span>CA（可选）</span><input id="cluster-tls-ca" placeholder="config/local/secrets/ca.crt" /></label>
+                <label class="field"><span>证书 cert</span><input id="cluster-tls-cert"
+                    placeholder="config/local/secrets/ingress.crt" /></label>
+                <label class="field"><span>私钥 key</span><input id="cluster-tls-key"
+                    placeholder="config/local/secrets/ingress.key" /></label>
+                <label class="field"><span>CA（可选）</span><input id="cluster-tls-ca"
+                    placeholder="config/local/secrets/ca.crt" /></label>
               </details>
             </div>
           </div>
@@ -700,14 +757,25 @@ gpu-control ui --background</pre>
               <div class="panel-h">
                 <h2>3. 节点清单</h2>
                 <div class="btn-row">
+                  <span class="meta" id="nodes-count">0 台</span>
                   <button type="button" id="btn-add-node-card" class="ghost tiny" data-keep-enabled="1">加节点</button>
                   <button id="btn-save-nodes-json" class="primary tiny" data-keep-enabled="1">保存并生成</button>
                 </div>
               </div>
-              <div id="nodes-cards" class="nodes-cards"></div>
+              <div class="nodes-toolbar">
+                <input id="nodes-filter" type="search" placeholder="筛选名称 / 地址 / 标签" autocomplete="off"
+                  data-keep-enabled="1" />
+                <select id="nodes-density" data-keep-enabled="1" title="列表密度">
+                  <option value="auto">自适应</option>
+                  <option value="cards">卡片</option>
+                  <option value="compact">紧凑行</option>
+                </select>
+              </div>
+              <p class="meta" id="nodes-filter-meta" hidden></p>
+              <div id="nodes-cards" class="nodes-cards" data-density="auto"></div>
               <details class="fold">
-                <summary>高级：文本行编辑</summary>
-                <p class="muted">每行：<code>名称 地址 [GPU数] [标签] [# 备注]</code></p>
+                <summary>高级：文本行批量编辑</summary>
+                <p class="muted">适合大批导入；每行：<code>名称 地址 [GPU数] [标签] [# 备注]</code></p>
                 <textarea id="nodes-editor" spellcheck="false"></textarea>
               </details>
             </div>
@@ -747,10 +815,12 @@ gpu-control ui --background</pre>
                 <label class="field"><span>脚本路径</span><input id="job-script" /></label>
               </div>
               <div id="job-docker-fields" hidden>
-                <label class="field"><span>Docker 镜像</span><input id="job-docker-image" placeholder="registry/image:tag" /></label>
+                <label class="field"><span>Docker 镜像</span><input id="job-docker-image"
+                    placeholder="registry/image:tag" /></label>
               </div>
               <label class="field"><span>额外参数（空格分隔）</span><input id="job-extra" placeholder="--flag value" /></label>
-              <label class="field"><span>环境变量（KEY=VAL 每行）</span><textarea id="job-env" rows="3" spellcheck="false" placeholder="CUDA_VISIBLE_DEVICES=0"></textarea></label>
+              <label class="field"><span>环境变量（KEY=VAL 每行）</span><textarea id="job-env" rows="3" spellcheck="false"
+                  placeholder="CUDA_VISIBLE_DEVICES=0"></textarea></label>
             </div>
           </div>
 
@@ -764,7 +834,8 @@ gpu-control ui --background</pre>
                 <span>启用自动巡检重启</span>
                 <input type="checkbox" id="wd-enabled" data-keep-enabled="1" />
               </label>
-              <label class="field"><span>监控 Job（逗号分隔，空=默认 Job）</span><input id="wd-jobs" placeholder="shell-job" /></label>
+              <label class="field"><span>监控 Job（逗号分隔，空=默认 Job）</span><input id="wd-jobs"
+                  placeholder="shell-job" /></label>
               <div class="field-row">
                 <label class="field"><span>间隔秒</span><input id="wd-interval" type="number" /></label>
                 <label class="field"><span>最大重启</span><input id="wd-max-restarts" type="number" /></label>
@@ -858,7 +929,8 @@ gpu-control ui --background</pre>
     </header>
     <div id="notices-pop-list" class="notices-list"></div>
   </div>
-  <button type="button" id="assistant-fab" class="assistant-fab" data-keep-enabled="1" aria-expanded="false" aria-controls="assistant-panel" title="小助手">助手</button>
+  <button type="button" id="assistant-fab" class="assistant-fab" data-keep-enabled="1" aria-expanded="false"
+    aria-controls="assistant-panel" title="小助手">助手</button>
   <section id="assistant-panel" class="assistant-panel" hidden aria-label="控制面小助手">
     <header class="assistant-h">
       <div>
@@ -880,11 +952,13 @@ gpu-control ui --background</pre>
       </label>
       <label class="assistant-field">
         <span>Base URL</span>
-        <input id="assistant-base-url" type="url" placeholder="http://内网网关:端口/v1" autocomplete="off" data-keep-enabled="1" />
+        <input id="assistant-base-url" type="url" placeholder="http://内网网关:端口/v1" autocomplete="off"
+          data-keep-enabled="1" />
       </label>
       <label class="assistant-field">
         <span>API Key</span>
-        <input id="assistant-api-key" type="password" placeholder="按需填写；已配置可留空" autocomplete="off" data-keep-enabled="1" />
+        <input id="assistant-api-key" type="password" placeholder="按需填写；已配置可留空" autocomplete="off"
+          data-keep-enabled="1" />
       </label>
       <label class="assistant-field">
         <span>模型</span>
@@ -892,7 +966,8 @@ gpu-control ui --background</pre>
           <select id="assistant-model-select" data-keep-enabled="1">
             <option value="">— 先拉取或手填 —</option>
           </select>
-          <input id="assistant-model" type="text" list="assistant-model-list" placeholder="如 gpt-4o-mini" autocomplete="off" data-keep-enabled="1" />
+          <input id="assistant-model" type="text" list="assistant-model-list" placeholder="如 gpt-4o-mini"
+            autocomplete="off" data-keep-enabled="1" />
           <datalist id="assistant-model-list"></datalist>
         </div>
       </label>
@@ -913,7 +988,8 @@ gpu-control ui --background</pre>
       <div id="assistant-thread" class="assistant-thread" role="log" aria-live="polite"></div>
       <div id="assistant-pending" class="assistant-pending" hidden></div>
       <form id="assistant-form" class="assistant-form">
-        <input id="assistant-input" type="text" placeholder="问状态、用法，或让我建议操作…" autocomplete="off" data-keep-enabled="1" />
+        <input id="assistant-input" type="text" placeholder="问状态、用法，或让我建议操作…" autocomplete="off"
+          data-keep-enabled="1" />
         <button type="submit" class="primary" id="assistant-send" data-keep-enabled="1">发送</button>
       </form>
     </div>
@@ -935,7 +1011,8 @@ gpu-control ui --background</pre>
         <button type="submit" class="primary" id="auth-submit" data-keep-enabled="1">进入控制台</button>
       </div>
       <p class="meta bad" id="auth-error" hidden></p>
-      <p class="meta">API / MCP 可用 <code>Authorization: Bearer &lt;token&gt;</code>（<code>gpu-control auth issue-token</code>）</p>
+      <p class="meta">API / MCP 可用
+        <code>Authorization: Bearer &lt;token&gt;</code>（<code>gpu-control auth issue-token</code>）</p>
     </form>
   </div>
   <script src="/static/vendor/xterm/xterm-6.1.0.min.js"></script>

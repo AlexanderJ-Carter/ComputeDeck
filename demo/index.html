@@ -281,46 +281,73 @@ GPU 3  76%  PID  9921  ???</pre>
         <h2 class="reveal d1">看板里就能问、补全、盯异常</h2>
         <p class="body narrow reveal d2">助手对话解读集群；远程命令智能补全；规则告警进公告栏，一键 AI
           解读。Cursor / Claude Code 仍走同一 <code>bin/gpu-control-mcp</code>。</p>
-        <div class="ai-demo reveal d3" aria-hidden="true">
-          <article class="ai-card">
-            <header>
-              <strong>控制面助手</strong>
-              <span>对话 · 只读工具</span>
-            </header>
-            <div class="ai-thread">
-              <p class="ai-msg user">现在集群状态怎么样？</p>
-              <p class="ai-msg bot" id="ai-bot-line">健康分 78 · 闲 12 卡 · 入口 least-conn 正常。建议先开
-                watchdog，再看 gpu-3 的 API 探测失败。</p>
-            </div>
-            <footer class="ai-chips">
-              <span>查看总览</span><span>跑自检</span><span>去配置上游</span>
-            </footer>
-          </article>
-          <article class="ai-card">
-            <header>
-              <strong>命令补全</strong>
-              <span>exec suggest</span>
-            </header>
-            <div class="ai-suggest">
-              <div class="ai-suggest-input"><code>gpu-control fre<span class="caret">|</span></code></div>
-              <ul id="ai-suggest-list">
-                <li class="on"><code>free --node gpu-2</code><em>腾空节点</em></li>
-                <li><code>free --node gpu-2 --cordon</code><em>腾空并隔离</em></li>
-                <li><code>procs list --node gpu-2</code><em>看占用进程</em></li>
+        <div class="ai-stage reveal d3" aria-hidden="true">
+          <div class="ai-demo">
+            <article class="ai-card glow">
+              <header>
+                <strong>控制面助手</strong>
+                <span>对话 · 只读工具</span>
+              </header>
+              <div class="ai-thread">
+                <p class="ai-msg user">现在集群状态怎么样？</p>
+                <p class="ai-msg bot" id="ai-bot-line">健康分 78 · 闲 12 卡 · 入口 least-conn 正常。建议先开
+                  watchdog，再看 gpu-3 的 API 探测失败。</p>
+              </div>
+              <footer class="ai-chips">
+                <span>查看总览</span><span>跑自检</span><span>去配置上游</span>
+              </footer>
+            </article>
+            <article class="ai-card">
+              <header>
+                <strong>命令补全</strong>
+                <span>exec suggest</span>
+              </header>
+              <div class="ai-suggest">
+                <div class="ai-suggest-input"><code>gpu-control fre<span class="caret">|</span></code></div>
+                <ul id="ai-suggest-list">
+                  <li class="on"><code>free --node gpu-2</code><em>腾空节点</em></li>
+                  <li><code>free --node gpu-2 --cordon</code><em>腾空并隔离</em></li>
+                  <li><code>procs list --node gpu-2</code><em>看占用进程</em></li>
+                </ul>
+              </div>
+            </article>
+            <article class="ai-card glow-soft">
+              <header>
+                <strong>监管公告</strong>
+                <span>规则 + AI 解读</span>
+              </header>
+              <ul class="ai-notices">
+                <li data-sev="warn"><b>Watchdog 未在运行</b><span>巡检进程未检测到</span></li>
+                <li data-sev="error"><b>健康评分偏低</b><span>SSH / API 需关注</span></li>
+                <li class="ai-insight" id="ai-insight-line">AI：优先恢复 watchdog，再探测失败端点。</li>
               </ul>
-            </div>
-          </article>
-          <article class="ai-card">
-            <header>
-              <strong>监管公告</strong>
-              <span>规则 + AI 解读</span>
-            </header>
-            <ul class="ai-notices">
-              <li data-sev="warn"><b>Watchdog 未在运行</b><span>巡检进程未检测到</span></li>
-              <li data-sev="error"><b>健康评分偏低</b><span>SSH / API 需关注</span></li>
-              <li class="ai-insight" id="ai-insight-line">AI：优先恢复 watchdog，再探测失败端点。</li>
-            </ul>
-          </article>
+            </article>
+          </div>
+          <div class="ai-trends">
+            <article>
+              <header><strong>API 连通</strong><span>98%</span></header>
+              <svg class="ai-spark" viewBox="0 0 200 48" preserveAspectRatio="none">
+                <path class="area"
+                  d="M0,36 L20,30 L40,32 L60,22 L80,18 L100,20 L120,14 L140,16 L160,10 L180,12 L200,8 L200,48 L0,48 Z" />
+                <path class="line" d="M0,36 L20,30 L40,32 L60,22 L80,18 L100,20 L120,14 L140,16 L160,10 L180,12 L200,8" />
+              </svg>
+            </article>
+            <article>
+              <header><strong>GPU 占用</strong><span>62%</span></header>
+              <svg class="ai-spark" viewBox="0 0 200 48" preserveAspectRatio="none">
+                <path class="area alt"
+                  d="M0,28 L25,24 L50,30 L75,20 L100,18 L125,22 L150,16 L175,14 L200,12 L200,48 L0,48 Z" />
+                <path class="line alt" d="M0,28 L25,24 L50,30 L75,20 L100,18 L125,22 L150,16 L175,14 L200,12" />
+              </svg>
+            </article>
+            <article>
+              <header><strong>AI 监管</strong><span>live</span></header>
+              <div class="ai-pulse-row">
+                <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+              </div>
+              <p>规则告警进公告 · 一键解读</p>
+            </article>
+          </div>
         </div>
         <div class="term ai-term reveal d4" aria-hidden="true">
           <div class="term-bar"><i></i><i></i><i></i><span>mcp · gc_*</span></div>

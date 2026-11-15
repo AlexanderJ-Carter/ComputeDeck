@@ -94,6 +94,7 @@ open http://127.0.0.1:8787/api/docs
 - `POST /api/assistant/config` · `GET|POST /api/assistant/models` — UI 设置上游与拉取模型列表
 - `POST /api/assistant/analyze` — 只读解读 overview + notices + diagnose
 - `GET /api/notices` · `POST /api/notices/mark` — 监管公告（规则告警；可 `?sync=1`）
+- `GET /api/metrics/history` — 看板趋势采样（API/GPU/CPU/健康分）
 - `GET /api/exec/suggest` — 远程命令补全
 
 完整列表以 `GET /api` 或 `/api/docs` 为准。

@@ -74,6 +74,7 @@ from notices_util import (  # noqa: E402
     overview_to_notices,
     upsert_notices,
 )
+from metrics_history import list_history, record_overview_sample  # noqa: E402
 from toolkits_util import catalog_payload as toolkits_catalog_payload  # noqa: E402
 from toolkits_util import load_toolkit_state  # noqa: E402
 from auth_util import (  # noqa: E402
@@ -668,6 +669,13 @@ def build_overview(*, light: bool = False, force: bool = False) -> dict:
 
     payload = _build_overview(light=light)
     payload["cached"] = False
+    # 轻量规则告警 + 指标采样（节流）；diagnose 仍由 /api/notices?sync=1 触发
+    rows = overview_to_notices(payload)
+    if rows:
+        upsert_notices(rows)
+    record_overview_sample(payload)
+    payload["notices"] = list_notices(limit=20)
+    payload["metrics_tail"] = list_history(limit=36)
     with _OVERVIEW_LOCK:
         _OVERVIEW_CACHE[key] = {
             "at": time.monotonic(),
@@ -1979,6 +1987,15 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/metrics":
             self._json(200, _read_json(HOST_METRICS_FILE, {"results": [], "nodes": {}}))
+            return
+
+        if path == "/api/metrics/history":
+            qs = parse_qs(parsed.query)
+            try:
+                limit = int((qs.get("limit") or ["60"])[0])
+            except ValueError:
+                limit = 60
+            self._json(200, list_history(limit=limit))
             return
 
         if path == "/api/endpoints/lb":

@@ -342,6 +342,12 @@ def http_endpoints() -> list[dict[str, Any]]:
         {"method": "GET", "path": "/api/probe", "summary": "节点互通矩阵缓存", "group": "read"},
         {"method": "GET", "path": "/api/quality", "summary": "SSH/质量评分", "group": "read"},
         {"method": "GET", "path": "/api/metrics", "summary": "主机 CPU/内存指标", "group": "read"},
+        {
+            "method": "GET",
+            "path": "/api/metrics/history",
+            "summary": "控制面采样曲线 ?limit=",
+            "group": "read",
+        },
         {"method": "GET", "path": "/api/endpoints/health", "summary": "推理 API 健康缓存", "group": "read"},
         {"method": "GET", "path": "/api/endpoints/lb", "summary": "负载计划 ?strategy=", "group": "read"},
         {"method": "GET", "path": "/api/gateway", "summary": "网关片段/拓扑", "group": "read"},
