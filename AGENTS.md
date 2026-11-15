@@ -43,7 +43,7 @@
 - 风险分级：`GET /api/assistant/policy`（与 MCP `instructions` 同源）
 - UI 小助手：`GET /api/assistant/status` · `POST /api/assistant/config` · `GET|POST /api/assistant/models` · `POST /api/assistant/analyze` · `POST /api/assistant/chat`（`cluster.control.assistant`）
 - 监管公告：`GET /api/notices` · `POST /api/notices/mark`（规则写入，AI 只读解读）
-- 趋势采样：`GET /api/metrics/history`（控制面探测/资源曲线，非业务 QPS）
+- 趋势采样：`GET /api/metrics/history`（约 1 小时短窗；算力/显存= nvidia-smi，槽位= occupied 占比；非业务 QPS）
 
 ## 交付形态（给 Agent）
 

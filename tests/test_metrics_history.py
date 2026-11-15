@@ -1,4 +1,4 @@
-"""metrics_history 采样与环形缓冲。"""
+"""metrics_history 采样与短窗缓冲。"""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ import metrics_history  # noqa: E402
 
 
 class TestMetricsHistory(unittest.TestCase):
-    def test_sample_and_list(self) -> None:
+    def test_sample_distinguishes_alloc_and_sm(self) -> None:
         overview = {
             "summary": {
                 "gpus_used": 4,
@@ -24,13 +24,45 @@ class TestMetricsHistory(unittest.TestCase):
                 "api_ok": 8,
                 "api_fail": 2,
                 "api_total": 10,
-                "probe_ok": 3,
-                "probe_fail": 1,
                 "leases": 1,
                 "queue_pending": 0,
             },
-            "quality": {"score": 77},
-            "nodes": [{"cpu_percent": 20}, {"cpu_percent": 40}],
+            "nodes": [
+                {
+                    "cpu_percent": 20,
+                    "gpus": [
+                        {
+                            "utilization_percent": 10,
+                            "memory_used_mib": 1024,
+                            "memory_total_mib": 4096,
+                            "status": "occupied",
+                        },
+                        {
+                            "utilization_percent": 90,
+                            "memory_used_mib": 3072,
+                            "memory_total_mib": 4096,
+                            "status": "occupied",
+                        },
+                    ],
+                },
+                {
+                    "cpu_percent": 40,
+                    "gpus": [
+                        {
+                            "utilization_percent": 0,
+                            "memory_used_mib": 0,
+                            "memory_total_mib": 4096,
+                            "status": "free",
+                        },
+                        {
+                            "utilization_percent": 0,
+                            "memory_used_mib": 0,
+                            "memory_total_mib": 4096,
+                            "status": "free",
+                        },
+                    ],
+                },
+            ],
             "ingress": {"edge": {"pool": {"available": 6, "upstream_count": 8}}},
         }
         with tempfile.TemporaryDirectory() as td:
@@ -41,11 +73,34 @@ class TestMetricsHistory(unittest.TestCase):
                     metrics_history.record_overview_sample(overview, force=True)
                     out = metrics_history.list_history(limit=10)
         self.assertGreaterEqual(out["count"], 1)
+        self.assertEqual(out["retain_sec"], 3600)
         last = out["points"][-1]
         self.assertEqual(last["api_ok_pct"], 80.0)
-        self.assertEqual(last["gpu_util_pct"], 50.0)
+        self.assertEqual(last["gpu_alloc_pct"], 50.0)
+        self.assertEqual(last["gpu_sm_util_pct"], 25.0)
+        self.assertEqual(last["gpu_mem_util_pct"], 25.0)
         self.assertEqual(last["cpu_avg_pct"], 30.0)
         self.assertEqual(last["edge_upstreams"], 6)
+        self.assertNotIn("gpu_util_pct", last)
+
+    def test_prune_old_points(self) -> None:
+        overview = {
+            "summary": {"gpus_used": 1, "gpus_free": 1, "gpus_total": 2, "api_ok": 1, "api_total": 1},
+            "nodes": [],
+        }
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "metrics_history.json"
+            with patch.object(metrics_history, "HISTORY_FILE", path):
+                with patch.object(metrics_history, "_MIN_INTERVAL_SEC", 0):
+                    with patch.object(metrics_history, "_RETAIN_SEC", 30):
+                        now = 1_700_000_000
+                        with patch.object(metrics_history.time, "time", return_value=now - 120):
+                            metrics_history.record_overview_sample(overview, force=True)
+                        with patch.object(metrics_history.time, "time", return_value=now):
+                            metrics_history.record_overview_sample(overview, force=True)
+                            out = metrics_history.list_history(limit=50)
+        self.assertEqual(out["count"], 1)
+        self.assertEqual(out["points"][0]["epoch"], 1_700_000_000)
 
 
 if __name__ == "__main__":

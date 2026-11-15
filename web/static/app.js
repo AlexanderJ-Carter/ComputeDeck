@@ -4407,26 +4407,47 @@ function fmtPct(v) {
 function renderTrends(payload) {
   const points = (payload && payload.points) || [];
   const note = $("dash-trends-note");
-  if (note) note.textContent = payload?.note || "控制面采样（非业务 QPS）";
+  if (note) {
+    const retainMin = Math.round(Number(payload?.retain_sec || 3600) / 60);
+    note.textContent =
+      payload?.note || `最近约 ${retainMin} 分钟 · 控制面快照（非业务 QPS）`;
+  }
   const last = points[points.length - 1] || {};
   const set = (id, text) => {
     const el = $(id);
     if (el) el.textContent = text;
   };
   set("trend-api", fmtPct(last.api_ok_pct));
-  set("trend-gpu", fmtPct(last.gpu_util_pct));
+  set("trend-gpu-sm", fmtPct(last.gpu_sm_util_pct));
+  set("trend-gpu-mem", fmtPct(last.gpu_mem_util_pct));
+  set("trend-gpu-alloc", fmtPct(last.gpu_alloc_pct));
   set("trend-cpu", fmtPct(last.cpu_avg_pct));
   set("trend-edge", last.edge_upstreams != null ? String(last.edge_upstreams) : "-");
-  set("trend-checks", last.api_total != null ? String(last.api_total) : "-");
-  set("trend-score", last.quality_score != null ? String(Math.round(last.quality_score)) : "-");
   const pctDomain = { min: 0, max: 100 };
-  paintSpark("chart-api", points.map((p) => p.api_ok_pct), { domain: pctDomain });
-  paintSpark("chart-gpu", points.map((p) => p.gpu_util_pct), { domain: pctDomain });
-  paintSpark("chart-cpu", points.map((p) => p.cpu_avg_pct), { domain: pctDomain });
-  paintSpark("chart-mix", points.map((p) => p.quality_score), {
-    domain: pctDomain,
-    altValues: points.map((p) => p.api_total),
-  });
+  paintSpark(
+    "chart-api",
+    points.map((p) => p.api_ok_pct),
+    { domain: pctDomain }
+  );
+  paintSpark(
+    "chart-gpu-sm",
+    points.map((p) => p.gpu_sm_util_pct),
+    { domain: pctDomain }
+  );
+  paintSpark(
+    "chart-gpu-mem",
+    points.map((p) => p.gpu_mem_util_pct),
+    { domain: pctDomain }
+  );
+  paintSpark(
+    "chart-gpu-mix",
+    points.map((p) => p.gpu_alloc_pct),
+    {
+      domain: pctDomain,
+      altValues: points.map((p) => p.gpu_sm_util_pct),
+      altDomain: pctDomain,
+    }
+  );
 }
 
 function noticeItemHtml(row) {

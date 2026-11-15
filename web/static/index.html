@@ -147,11 +147,11 @@
             <div class="gpu-summary">
               <div class="gpu-numbers">
                 <strong id="dash-gpu-used">-</strong>
-                <span class="meta">/ <b id="dash-gpu-total">-</b> 占用</span>
+                <span class="meta">/ <b id="dash-gpu-total">-</b> 槽位占用</span>
               </div>
               <span class="chip" id="dash-gpu-free">空闲 -</span>
             </div>
-            <div class="meter meter-lg dash-bar" role="progressbar" aria-label="GPU 占用率" aria-valuemin="0"
+            <div class="meter meter-lg dash-bar" role="progressbar" aria-label="GPU 槽位占用率" aria-valuemin="0"
               aria-valuemax="100">
               <i class="dash-bar-used" id="dash-bar-used" style="width:0%"></i>
             </div>
@@ -174,11 +174,11 @@
           </header>
           <div class="trend-kpis" id="trend-kpis">
             <div><span>API 连通</span><strong id="trend-api">-</strong></div>
-            <div><span>GPU 占用</span><strong id="trend-gpu">-</strong></div>
+            <div><span>GPU 算力</span><strong id="trend-gpu-sm">-</strong></div>
+            <div><span>GPU 显存</span><strong id="trend-gpu-mem">-</strong></div>
+            <div><span>槽位占用</span><strong id="trend-gpu-alloc">-</strong></div>
             <div><span>CPU 均载</span><strong id="trend-cpu">-</strong></div>
             <div><span>入口上游</span><strong id="trend-edge">-</strong></div>
-            <div><span>探测总数</span><strong id="trend-checks">-</strong></div>
-            <div><span>健康分</span><strong id="trend-score">-</strong></div>
           </div>
           <div class="trend-charts" id="trend-charts">
             <figure class="trend-chart">
@@ -186,16 +186,16 @@
               <svg id="chart-api" viewBox="0 0 320 72" preserveAspectRatio="none" aria-hidden="true"></svg>
             </figure>
             <figure class="trend-chart">
-              <figcaption>GPU 占用 %</figcaption>
-              <svg id="chart-gpu" viewBox="0 0 320 72" preserveAspectRatio="none" aria-hidden="true"></svg>
+              <figcaption>GPU 算力利用率 %</figcaption>
+              <svg id="chart-gpu-sm" viewBox="0 0 320 72" preserveAspectRatio="none" aria-hidden="true"></svg>
             </figure>
             <figure class="trend-chart">
-              <figcaption>节点 CPU %</figcaption>
-              <svg id="chart-cpu" viewBox="0 0 320 72" preserveAspectRatio="none" aria-hidden="true"></svg>
+              <figcaption>GPU 显存利用率 %</figcaption>
+              <svg id="chart-gpu-mem" viewBox="0 0 320 72" preserveAspectRatio="none" aria-hidden="true"></svg>
             </figure>
             <figure class="trend-chart">
-              <figcaption>健康分 / 探测数</figcaption>
-              <svg id="chart-mix" viewBox="0 0 320 72" preserveAspectRatio="none" aria-hidden="true"></svg>
+              <figcaption>槽位占用 %（实线）· 算力 %（虚线）</figcaption>
+              <svg id="chart-gpu-mix" viewBox="0 0 320 72" preserveAspectRatio="none" aria-hidden="true"></svg>
             </figure>
           </div>
         </section>
