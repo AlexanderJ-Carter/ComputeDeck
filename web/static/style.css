@@ -505,6 +505,67 @@ button.wide {
   font-size: 11px;
 }
 
+.ingress-duo {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0 16px;
+}
+
+.ingress-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 14px 12px;
+  background: var(--panel-2);
+}
+
+.ingress-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.ingress-card h3 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: -0.02em;
+}
+
+.ingress-card .field {
+  margin-top: 8px;
+}
+
+.ingress-card .btn-row {
+  margin-top: 10px;
+}
+
+.ingress-card a.ghost.tiny,
+.ingress-card a.primary.tiny {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.ingress-card a.primary.tiny {
+  background: var(--accent);
+  border-color: transparent;
+  color: #04140e;
+  font-weight: 650;
+}
+
+@media (max-width: 900px) {
+  .ingress-duo {
+    grid-template-columns: 1fr;
+  }
+}
+
 .mosaic-hint {
   margin: -4px 0 12px;
 }

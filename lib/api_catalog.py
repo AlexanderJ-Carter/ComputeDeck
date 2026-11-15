@@ -153,6 +153,19 @@ _BODY: dict[str, dict[str, Any]] = {
             "kind": {"type": "string", "enum": ["edge", "litellm", "all"], "default": "edge"},
         },
     },
+    "litellm_master_key": {
+        "type": "object",
+        "properties": {
+            "master_key": {"type": "string", "description": "自定义 Master Key；与 generate/clear 三选一"},
+            "generate": {"type": "boolean", "description": "生成并保存新 Key"},
+            "clear": {"type": "boolean", "description": "清除已保存 Key"},
+            "restart": {
+                "type": "boolean",
+                "default": True,
+                "description": "写入后是否重启 LiteLLM",
+            },
+        },
+    },
     "install_template": {
         "type": "object",
         "properties": {
@@ -352,6 +365,12 @@ def http_endpoints() -> list[dict[str, Any]]:
         {"method": "GET", "path": "/api/endpoints/lb", "summary": "负载计划 ?strategy=", "group": "read"},
         {"method": "GET", "path": "/api/gateway", "summary": "网关片段/拓扑", "group": "read"},
         {"method": "GET", "path": "/api/gateway/status", "summary": "Control 统一入口状态", "group": "read"},
+        {
+            "method": "GET",
+            "path": "/api/gateway/litellm/master-key",
+            "summary": "LiteLLM Master Key 是否已配置（不回显明文）",
+            "group": "read",
+        },
         {"method": "GET", "path": "/api/setup", "summary": "配置向导状态", "group": "config"},
         {"method": "GET", "path": "/api/setup/guide", "summary": "上手步骤", "group": "config"},
         {"method": "GET", "path": "/api/config/cluster", "summary": "读取 cluster.json", "group": "config"},
@@ -569,6 +588,13 @@ def http_endpoints() -> list[dict[str, Any]]:
             "summary": "启动 edge/LiteLLM 入口",
             "group": "ops",
             "body": "gateway_kind",
+        },
+        {
+            "method": "POST",
+            "path": "/api/gateway/litellm/master-key",
+            "summary": "设置/生成/清除 LiteLLM Master Key（可重启代理）",
+            "group": "ops",
+            "body": "litellm_master_key",
         },
         {
             "method": "POST",

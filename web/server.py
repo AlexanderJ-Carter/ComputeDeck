@@ -104,7 +104,14 @@ from render_gateway import (  # noqa: E402
     build_payload as build_gateway_payload,
     write_artifacts as write_gateway_artifacts,
 )
-from gateway_ops import status_payload as gateway_status_payload  # noqa: E402
+from gateway_ops import (  # noqa: E402
+    clear_litellm_master_key,
+    generate_litellm_master_key,
+    litellm_master_key_status,
+    restart_litellm,
+    status_payload as gateway_status_payload,
+    write_litellm_master_key,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -2012,6 +2019,10 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, _gateway_status_fresh())
             return
 
+        if path == "/api/gateway/litellm/master-key":
+            self._json(200, {"ok": True, **litellm_master_key_status()})
+            return
+
         if path == "/api/setup/guide":
             self._json(200, {"guide": SETUP_GUIDE})
             return
@@ -2624,6 +2635,49 @@ class Handler(BaseHTTPRequestHandler):
             except json.JSONDecodeError:
                 payload = {"ok": False, "result": result}
             self._json(200 if result["rc"] == 0 else 500, {**payload, "result": result})
+            return
+
+        if path == "/api/gateway/litellm/master-key":
+            clear = bool(body.get("clear"))
+            generate = bool(body.get("generate"))
+            restart = body.get("restart")
+            if restart is None:
+                restart = True
+            restart = bool(restart)
+            master_key = str(body.get("master_key") or body.get("key") or "").strip()
+            revealed = None
+            with _action_lock:
+                if clear:
+                    clear_litellm_master_key()
+                elif generate:
+                    revealed = generate_litellm_master_key()
+                    write_litellm_master_key(revealed)
+                elif master_key:
+                    write_litellm_master_key(master_key)
+                else:
+                    self._json(
+                        400,
+                        {
+                            "error": "请提供 master_key，或 generate=true / clear=true",
+                            **litellm_master_key_status(),
+                        },
+                    )
+                    return
+                restart_result = restart_litellm() if restart else None
+            # 让 gateway status 缓存立刻反映新密钥状态
+            with _GATEWAY_LOCK:
+                _GATEWAY_CACHE["at"] = 0.0
+                _GATEWAY_CACHE["payload"] = None
+            payload = {
+                "ok": True,
+                **litellm_master_key_status(),
+                "restart": restart_result,
+                "status": _gateway_status_fresh(),
+            }
+            if revealed:
+                payload["master_key"] = revealed
+                payload["note"] = "请立即复制 Master Key；之后接口不再回显明文"
+            self._json(200, payload)
             return
 
         if path == "/api/procs":

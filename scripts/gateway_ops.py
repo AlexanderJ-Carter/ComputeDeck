@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import secrets
 import shutil
 import signal
 import subprocess
@@ -20,7 +21,7 @@ import time
 from pathlib import Path
 
 import _bootstrap  # noqa: F401
-from paths import PROJECT_DIR, SCRIPTS_DIR, STATE_DIR, VENV_PYTHON, cluster_file, expand_path
+from paths import LOCAL_DIR, PROJECT_DIR, SCRIPTS_DIR, STATE_DIR, VENV_PYTHON, cluster_file, expand_path
 from render_gateway import build_payload, write_artifacts
 
 import sys
@@ -35,6 +36,53 @@ LITELLM_PID = STATE_DIR / "ingress-litellm.pid"
 LITELLM_LOG = STATE_DIR / "ingress-litellm.log"
 LITELLM_RUNTIME = STATE_DIR / "gateway" / "litellm-runtime.yaml"
 OUT_DIR = STATE_DIR / "gateway"
+LITELLM_MASTER_KEY_FILE = LOCAL_DIR / "secrets" / "litellm_master_key"
+
+
+def litellm_master_key_path() -> Path:
+    return LITELLM_MASTER_KEY_FILE
+
+
+def read_litellm_master_key() -> str | None:
+    path = LITELLM_MASTER_KEY_FILE
+    if not path.is_file():
+        return None
+    key = path.read_text(encoding="utf-8").strip()
+    return key or None
+
+
+def write_litellm_master_key(key: str) -> Path:
+    text = str(key or "").strip()
+    if not text:
+        raise ValueError("master_key 不能为空")
+    path = LITELLM_MASTER_KEY_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text + "\n", encoding="utf-8")
+    path.chmod(0o600)
+    return path
+
+
+def clear_litellm_master_key() -> bool:
+    path = LITELLM_MASTER_KEY_FILE
+    if path.is_file():
+        path.unlink()
+        return True
+    return False
+
+
+def generate_litellm_master_key() -> str:
+    return "sk-cd-" + secrets.token_urlsafe(24)
+
+
+def litellm_master_key_status() -> dict:
+    configured = bool(read_litellm_master_key())
+    return {
+        "configured": configured,
+        "path": str(LITELLM_MASTER_KEY_FILE),
+        "login_hint": "Admin UI：用户名随意（如 admin），密码填 Master Key"
+        if configured
+        else "未配置 Master Key，Admin UI 无法登录",
+    }
 
 
 def _load_cluster() -> dict:
@@ -273,9 +321,13 @@ def _companions(
     rows.append(nginx_row)
 
     dir_bit = litellm_probe.get("dir") or ""
+    master_ok = bool(read_litellm_master_key())
     if litellm_pid:
         ll_state, ll_label, ll_ok, sev = "running", "运行中", True, "ok"
         detail = f"LiteLLM :{litellm_port}" + (f" · {dir_bit}" if dir_bit else "")
+        if not master_ok:
+            detail += " · 未配 Master Key（Admin UI 不可登录）"
+            sev = "warn"
     elif litellm_probe.get("ready"):
         ll_state = "ready"
         ll_label = "就绪未启" if ll_wanted else "就绪"
@@ -409,6 +461,7 @@ def status_payload() -> dict:
             "pid": litellm_pid,
             "port": litellm_port,
             "url": litellm_public or f"http://127.0.0.1:{litellm_port}",
+            "ui_url": f"{(litellm_public or f'http://127.0.0.1:{litellm_port}').rstrip('/')}/ui",
             "dir": ll_probe.get("dir"),
             "ready": ll_probe.get("ready"),
             "mode": ll_probe.get("mode"),
@@ -418,6 +471,7 @@ def status_payload() -> dict:
             "runtime_config": str(LITELLM_RUNTIME),
             "log": str(LITELLM_LOG),
             "role": "optional",
+            **litellm_master_key_status(),
         },
         "nginx": {
             "binary": bool(nginx_bin),
@@ -570,11 +624,15 @@ def _start_edge(ingress: dict) -> dict:
 def _write_litellm_runtime(gateway: dict) -> Path:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     model_list = (OUT_DIR / "litellm-model-list.yaml").read_text(encoding="utf-8")
-    # Strip comments-only header remains; file already has model_list + router_settings.
     port = int(gateway.get("openai_proxy_port") or gateway.get("litellm_port") or 4000)
-    # LiteLLM reads model_list from config; general_settings optional.
     body = model_list.rstrip() + "\n\n# runtime listen hint (start flags also set port)\n"
     body += f"# proxy_port: {port}\n"
+    # Admin UI / 虚拟密钥依赖 master_key；由控制面 secrets 注入环境变量。
+    if read_litellm_master_key():
+        body += (
+            "\ngeneral_settings:\n"
+            "  master_key: os.environ/LITELLM_MASTER_KEY\n"
+        )
     LITELLM_RUNTIME.write_text(body, encoding="utf-8")
     return LITELLM_RUNTIME
 
@@ -582,7 +640,13 @@ def _write_litellm_runtime(gateway: dict) -> Path:
 def _start_litellm(gateway: dict) -> dict:
     existing = _read_pid(LITELLM_PID)
     if existing:
-        return {"ok": True, "name": "litellm", "already": True, "pid": existing}
+        return {
+            "ok": True,
+            "name": "litellm",
+            "already": True,
+            "pid": existing,
+            "master_key_configured": bool(read_litellm_master_key()),
+        }
 
     # Ensure fragments exist.
     if not (OUT_DIR / "litellm-model-list.yaml").is_file():
@@ -597,6 +661,9 @@ def _start_litellm(gateway: dict) -> dict:
 
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
+    master_key = read_litellm_master_key()
+    if master_key:
+        env["LITELLM_MASTER_KEY"] = master_key
     if litellm_bin:
         cmd = [litellm_bin, "--config", str(runtime), "--port", str(port), "--host", "0.0.0.0"]
         cwd = PROJECT_DIR
@@ -638,9 +705,20 @@ def _start_litellm(gateway: dict) -> dict:
         "port": port,
         "config": str(runtime),
         "log": str(LITELLM_LOG),
+        "master_key_configured": bool(master_key),
         "error": None if alive else "process exited — see ingress-litellm.log",
+        "hint": None
+        if master_key
+        else "未配置 Master Key：控制面「API 端点」可生成；Admin UI 需 Master Key 才能登录",
     }
 
+
+def restart_litellm(gateway: dict | None = None) -> dict:
+    """停掉再拉起 LiteLLM，使新 Master Key 生效。"""
+    gateway = gateway if gateway is not None else _gateway_cfg()
+    stopped = _stop_pidfile(LITELLM_PID, "litellm")
+    started = _start_litellm(gateway)
+    return {"ok": bool(started.get("ok")), "stopped": stopped, "started": started}
 
 def cmd_start(args: argparse.Namespace) -> int:
     gateway = _gateway_cfg()

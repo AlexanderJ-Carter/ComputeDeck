@@ -14,9 +14,11 @@
 ### Added
 
 - Edge `:18080` 根路径兜底页：浏览器打开不再反代出上游 401 JSON；说明这是内置 Edge（不是 nginx）
+- 控制面可生成/保存 LiteLLM Master Key（`config/local/secrets/litellm_master_key`），保存后重启代理供 Admin UI 登录
 
 ### Changed
 
+- 「API 端点」收成「统一入口」一页：Edge（集群反代）与 LiteLLM（OpenAI 层）并排说明，减少重复入口概念
 - 看板趋势指标语义：拆成 **GPU 算力 / 显存（nvidia-smi 实测）** 与 **槽位占用（occupied 占比）**；只保留最近约 1 小时短窗，不再堆长期历史
 
 ---

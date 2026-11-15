@@ -24,7 +24,7 @@ const VIEW_TITLE = {
   workloads: "任务",
   models: "模型",
   toolkits: "工具栈",
-  endpoints: "API 端点",
+  endpoints: "统一入口",
   ops: "命令",
   terminal: "终端",
   guide: "指南",
@@ -977,23 +977,130 @@ function renderIngressMeta(status) {
   const edge = status.edge || {};
   const ll = status.litellm || {};
   const pool = (edge.status && edge.status.pool) || {};
-  const settings = (edge.status && edge.status.settings) || {};
   el.textContent = [
-    `对外入口 ${status.public_base_url || "-"}`,
     `主入口 ${status.preferred || "edge"}`,
-    `edge ${edge.running ? "运行中" : "应启动"}${edge.pid ? " pid=" + edge.pid : ""}`,
-    settings.strategy ? `LB ${settings.strategy}` : null,
+    edge.running ? "Edge 运行中" : "Edge 未运行",
     pool.upstream_count != null ? `上游 ${pool.available ?? "?"}/${pool.upstream_count}` : null,
-    `litellm ${ll.running ? "运行中" : ll.ready ? "可选·就绪" : "可选·未配"}`,
-    `nginx ${status.nginx && status.nginx.binary
-      ? "已装"
-      : status.nginx && status.nginx.needed
-        ? "未装"
-        : "不必装"
-    }`,
+    ll.running ? "LiteLLM 运行中" : ll.ready ? "LiteLLM 就绪未启" : "LiteLLM 可选",
+    ll.configured ? "Master Key 已配" : "Master Key 未配",
   ]
     .filter(Boolean)
     .join(" · ");
+  renderIngressDuo(status);
+}
+
+function setChip(el, text, tone) {
+  if (!el) return;
+  el.textContent = text;
+  el.className = "chip" + (tone ? ` ${tone}` : "");
+}
+
+function renderIngressDuo(status) {
+  const edge = status?.edge || {};
+  const ll = status?.litellm || {};
+  const pool = (edge.status && edge.status.pool) || {};
+  const settings = (edge.status && edge.status.settings) || {};
+  const publicUrl = status?.public_base_url || edge.url || "";
+  const edgeListen = edge.listen || "-";
+  const edgeOpen = publicUrl || "http://127.0.0.1:18080/";
+  const edgeHealth = edge.healthz || `${String(edgeOpen).replace(/\/$/, "")}/_gpu_control/health`;
+
+  setChip(
+    document.getElementById("edge-card-state"),
+    edge.running ? "运行中" : "未运行",
+    edge.running ? "ok" : "warn"
+  );
+  const listenEl = document.getElementById("edge-card-listen");
+  if (listenEl) listenEl.textContent = edgeListen;
+  const urlEl = document.getElementById("edge-card-url");
+  if (urlEl) {
+    urlEl.textContent = publicUrl || "-";
+    urlEl.href = publicUrl || "#";
+  }
+  const poolEl = document.getElementById("edge-card-pool");
+  if (poolEl) {
+    poolEl.textContent =
+      pool.upstream_count != null ? `${pool.available ?? "?"}/${pool.upstream_count} 可用` : "-";
+  }
+  const stratEl = document.getElementById("edge-card-strategy");
+  if (stratEl) stratEl.textContent = settings.strategy || "-";
+  const openEl = document.getElementById("edge-card-open");
+  if (openEl) openEl.href = edgeOpen;
+  const healthEl = document.getElementById("edge-card-health");
+  if (healthEl) healthEl.href = edgeHealth;
+
+  setChip(
+    document.getElementById("litellm-card-state"),
+    ll.running ? "运行中" : ll.ready ? "就绪" : "未配",
+    ll.running ? "ok" : ll.ready ? "warn" : ""
+  );
+  const llUrl = document.getElementById("litellm-card-url");
+  if (llUrl) {
+    llUrl.textContent = ll.url || "-";
+    llUrl.href = ll.url || "#";
+  }
+  const meta = document.getElementById("litellm-key-meta");
+  if (meta) {
+    meta.textContent = ll.configured
+      ? `已配置${ll.login_hint ? " · 密码=Master Key" : ""}`
+      : "未配置（Admin UI 无法登录）";
+  }
+  const link = document.getElementById("litellm-ui-link");
+  if (link) {
+    link.href =
+      ll.ui_url ||
+      (ll.url ? `${String(ll.url).replace(/\/$/, "")}/ui/` : "http://127.0.0.1:4000/ui/");
+  }
+}
+
+async function saveLitellmMasterKey({ generate = false, clear = false } = {}) {
+  const input = document.getElementById("litellm-master-key");
+  const reveal = document.getElementById("litellm-key-reveal");
+  const body = { restart: true };
+  if (clear) body.clear = true;
+  else if (generate) body.generate = true;
+  else {
+    const key = (input?.value || "").trim();
+    if (!key) {
+      toast("请填写 Master Key，或点「生成并保存」", { tone: "warn" });
+      return;
+    }
+    body.master_key = key;
+  }
+  setBusy(true);
+  try {
+    const data = await api("/api/gateway/litellm/master-key", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    if (data.status) {
+      renderIngressMeta(data.status);
+      renderDashGateway(data.status);
+    }
+    if (reveal) {
+      if (data.master_key) {
+        reveal.hidden = false;
+        reveal.innerHTML = `请立即复制 Master Key：<code>${escapeHtml(data.master_key)}</code>`;
+        if (input) {
+          input.type = "text";
+          input.value = data.master_key;
+        }
+      } else if (clear) {
+        reveal.hidden = false;
+        reveal.textContent = "已清除 Master Key；LiteLLM 已按配置重启。";
+        if (input) input.value = "";
+      } else {
+        reveal.hidden = true;
+        reveal.textContent = "";
+        if (input) input.value = "";
+      }
+    }
+    toast(clear ? "已清除 Master Key" : generate ? "已生成并保存 Master Key" : "Master Key 已保存");
+  } catch (err) {
+    toast(String(err.message || err));
+  } finally {
+    setBusy(false);
+  }
 }
 
 async function refreshIngressStatus() {
@@ -1002,7 +1109,6 @@ async function refreshIngressStatus() {
   renderDashGateway(data);
   return data;
 }
-
 async function startIngress() {
   setBusy(true);
   try {
@@ -3853,6 +3959,35 @@ async function boot() {
       toast("入口状态已刷新");
     } catch (err) {
       toast(String(err.message || err));
+    }
+  });
+  document.getElementById("btn-litellm-key-generate")?.addEventListener("click", () =>
+    saveLitellmMasterKey({ generate: true })
+  );
+  document.getElementById("btn-litellm-key-save")?.addEventListener("click", () => saveLitellmMasterKey());
+  document.getElementById("btn-litellm-key-clear")?.addEventListener("click", async () => {
+    const ok = await confirmDialog({
+      title: "清除 LiteLLM Master Key",
+      message: "清除后 Admin UI 将无法登录，并会重启 LiteLLM。",
+      confirmText: "清除",
+      tone: "danger",
+    });
+    if (ok) saveLitellmMasterKey({ clear: true });
+  });
+  document.getElementById("btn-litellm-restart")?.addEventListener("click", async () => {
+    setBusy(true);
+    try {
+      await api("/api/gateway/stop", { method: "POST", body: JSON.stringify({ kind: "litellm" }) });
+      const data = await api("/api/gateway/start", {
+        method: "POST",
+        body: JSON.stringify({ kind: "litellm" }),
+      });
+      toast(data.ok ? "LiteLLM 已重启" : "LiteLLM 重启失败");
+      await refreshIngressStatus();
+    } catch (err) {
+      toast(String(err.message || err));
+    } finally {
+      setBusy(false);
     }
   });
   document.getElementById("btn-save-ssh").addEventListener("click", saveSsh);

@@ -44,7 +44,7 @@
         <div class="nav-group">
           <span class="nav-label">集群</span>
           <button class="nav-item" data-view="nodes">节点</button>
-          <button class="nav-item" data-view="endpoints">API 端点</button>
+          <button class="nav-item" data-view="endpoints">统一入口</button>
           <button class="nav-item" data-view="ops">命令</button>
           <button class="nav-item" data-view="terminal">终端</button>
         </div>
@@ -210,7 +210,7 @@
           </div>
           <div class="dash-deploy">
             <button class="primary" data-view-jump="workloads" data-keep-enabled="1">去任务页部署</button>
-            <button class="ghost" data-view-jump="endpoints" data-keep-enabled="1">统一入口 / 端点</button>
+            <button class="ghost" data-view-jump="endpoints" data-keep-enabled="1">入口页</button>
             <button class="ghost" data-view-jump="config" data-keep-enabled="1">配置向导</button>
           </div>
           <p class="meta dash-action-hint" id="dash-action-hint">看板只做总览；启停 Job、队列与网关操作请到对应页面。</p>
@@ -248,8 +248,8 @@
           <div class="dash-grid dash-grid-3 dash-more-grid">
             <div class="panel">
               <div class="panel-h">
-                <h2>统一入口</h2>
-                <button class="ghost tiny" data-view-jump="endpoints" data-keep-enabled="1">端点页操作</button>
+                <h2>入口摘要</h2>
+                <button class="ghost tiny" data-view-jump="endpoints" data-keep-enabled="1">打开入口页</button>
               </div>
               <div id="dash-gateway" class="dash-gateway"></div>
               <p class="meta" id="dash-ingress-url">-</p>
@@ -560,43 +560,93 @@ gpu-control jobs install vllm-serve --name vllm</pre>
       <section class="view" data-view-panel="endpoints">
         <div class="panel">
           <div class="panel-h">
-            <h2>API 端点</h2>
+            <h2>统一入口</h2>
             <div class="btn-row">
-              <button id="btn-api-health-2" class="primary tiny" data-action="1">探测 API</button>
-              <button id="btn-ingress-start" class="primary tiny" data-keep-enabled="1" data-action="1">启动统一入口</button>
-              <button id="btn-ingress-stop" class="ghost tiny" data-keep-enabled="1" data-action="1">停止入口</button>
-              <button id="btn-copy-urls" class="ghost tiny">复制 URL</button>
+              <button id="btn-api-health-2" class="primary tiny" data-action="1">探测上游</button>
+              <button id="btn-ingress-start" class="primary tiny" data-keep-enabled="1" data-action="1">启动 Edge</button>
+              <button id="btn-ingress-stop" class="ghost tiny" data-keep-enabled="1" data-action="1">停止 Edge</button>
+              <button id="btn-ingress-status" class="ghost tiny" data-keep-enabled="1" data-action="1">刷新状态</button>
+              <button id="btn-copy-urls" class="ghost tiny">复制上游 URL</button>
             </div>
           </div>
+          <p class="meta" id="ingress-meta">加载中…</p>
+          <p class="meta">两层入口，别混用：<strong>Edge</strong> 把流量打到各节点推理端口；<strong>LiteLLM</strong> 是可选的
+            OpenAI 兼容层（带 Admin UI）。nginx 在 Edge 模式下不必装。</p>
+
+          <div class="ingress-duo" id="ingress-duo">
+            <article class="ingress-card" id="edge-card">
+              <header>
+                <h3>Edge · 集群反代</h3>
+                <span class="chip" id="edge-card-state">-</span>
+              </header>
+              <p class="meta">内置反向代理（不是 nginx 默认页）。浏览器打开根路径是落地页；业务请走
+                <code>/v1/...</code>。</p>
+              <div class="kv"><b>监听</b> <span id="edge-card-listen">-</span></div>
+              <div class="kv"><b>对外</b> <a id="edge-card-url" href="#" target="_blank" rel="noopener">-</a></div>
+              <div class="kv"><b>上游</b> <span id="edge-card-pool">-</span></div>
+              <div class="kv"><b>策略</b> <span id="edge-card-strategy">-</span></div>
+              <div class="btn-row">
+                <a id="edge-card-open" class="primary tiny" href="http://127.0.0.1:18080/" target="_blank"
+                  rel="noopener" data-keep-enabled="1">打开落地页</a>
+                <a id="edge-card-health" class="ghost tiny" href="http://127.0.0.1:18080/_gpu_control/health"
+                  target="_blank" rel="noopener" data-keep-enabled="1">健康检查</a>
+              </div>
+            </article>
+
+            <article class="ingress-card" id="litellm-card">
+              <header>
+                <h3>LiteLLM · OpenAI 层</h3>
+                <span class="chip" id="litellm-card-state">-</span>
+              </header>
+              <p class="meta">可选：统一 <code>model</code> 名与 Admin。登录密码 = Master Key（用户名随意，如
+                <code>admin</code>）。</p>
+              <div class="kv"><b>地址</b> <a id="litellm-card-url" href="#" target="_blank" rel="noopener">-</a></div>
+              <div class="kv"><b>Master Key</b> <span id="litellm-key-meta">未加载</span></div>
+              <label class="field"><span>设置 / 生成 Master Key</span>
+                <input id="litellm-master-key" type="password" placeholder="sk-… 或点生成" autocomplete="off"
+                  data-keep-enabled="1" /></label>
+              <div class="btn-row">
+                <button id="btn-litellm-key-generate" class="primary tiny" data-keep-enabled="1"
+                  data-action="1">生成并保存</button>
+                <button id="btn-litellm-key-save" class="ghost tiny" data-keep-enabled="1" data-action="1">保存</button>
+                <button id="btn-litellm-key-clear" class="ghost tiny" data-keep-enabled="1" data-action="1">清除</button>
+                <button id="btn-litellm-restart" class="ghost tiny" data-keep-enabled="1" data-action="1">重启</button>
+                <a id="litellm-ui-link" class="ghost tiny" href="http://127.0.0.1:4000/ui/" target="_blank"
+                  rel="noopener" data-keep-enabled="1">打开 Admin UI</a>
+              </div>
+              <p class="meta" id="litellm-key-reveal" hidden></p>
+            </article>
+          </div>
+
+          <h3 class="sub">上游推理端点</h3>
           <p class="meta" id="pool-meta"></p>
-          <p class="meta" id="ingress-meta">统一入口未加载</p>
-          <details class="fold">
-            <summary>网关 / 负载计划 / 拓扑</summary>
+          <div id="api-mosaic" class="api-mosaic"></div>
+
+          <details class="fold" style="margin-top:12px">
+            <summary>高级：拓扑 / 负载计划 / 客户端片段</summary>
             <div class="btn-row">
               <button id="btn-lb-refresh" class="ghost tiny" data-keep-enabled="1" data-action="1">刷新负载计划</button>
               <button id="btn-gateway-render" class="ghost tiny" data-keep-enabled="1" data-action="1">写出网关配置</button>
-              <button id="btn-ingress-status" class="ghost tiny" data-keep-enabled="1" data-action="1">入口状态</button>
             </div>
             <p class="meta" id="gateway-topo">加载中…</p>
+            <div class="panel-h" style="margin-top:10px">
+              <h2>客户端片段</h2>
+              <select id="lb-strategy">
+                <option value="least_latency">健康优先 · 低延迟</option>
+                <option value="round_robin">健康列表轮询</option>
+                <option value="by_node">按节点排序</option>
+              </select>
+              <select id="snippet-kind">
+                <option value="python">Python 客户端</option>
+                <option value="nginx">nginx Edge LB</option>
+                <option value="litellm">LiteLLM model_list</option>
+                <option value="curl">curl 探测</option>
+                <option value="gateway_notes">分层说明</option>
+              </select>
+            </div>
+            <span class="meta" id="lb-meta"></span>
+            <pre id="client-snippet" class="snippet"></pre>
           </details>
-          <div id="api-mosaic" class="api-mosaic"></div>
-          <div class="panel-h" style="margin-top:14px">
-            <h2>负载均衡 / 网关片段</h2>
-            <select id="lb-strategy">
-              <option value="least_latency">健康优先 · 低延迟</option>
-              <option value="round_robin">健康列表轮询</option>
-              <option value="by_node">按节点排序</option>
-            </select>
-            <select id="snippet-kind">
-              <option value="python">Python 客户端</option>
-              <option value="nginx">nginx Edge LB</option>
-              <option value="litellm">LiteLLM model_list</option>
-              <option value="curl">curl 探测</option>
-              <option value="gateway_notes">分层说明</option>
-            </select>
-          </div>
-          <span class="meta" id="lb-meta"></span>
-          <pre id="client-snippet" class="snippet"></pre>
         </div>
       </section>
 
