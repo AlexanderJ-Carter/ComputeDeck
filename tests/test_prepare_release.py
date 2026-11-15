@@ -24,6 +24,14 @@ class PrepareReleaseTests(unittest.TestCase):
         self.assertEqual(MOD._bump("0.21.0", "minor"), "0.22.0")
         self.assertEqual(MOD._bump("0.21.0", "major"), "1.0.0")
 
+    def test_prerelease_version_pattern(self) -> None:
+        self.assertTrue(MOD._VERSION.match("1.0.0"))
+        self.assertTrue(MOD._VERSION.match("1.0.0-beta.1"))
+        self.assertTrue(MOD._VERSION.match("1.0.0-rc.1"))
+        self.assertFalse(MOD._VERSION.match("1.0.0-beta"))
+        self.assertTrue(MOD._is_prerelease("1.0.0-beta.1"))
+        self.assertFalse(MOD._is_prerelease("1.0.0"))
+
     def test_fold_changelog(self) -> None:
         text = (
             "# Changelog\n\n"

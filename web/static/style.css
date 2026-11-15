@@ -505,10 +505,50 @@ button.wide {
   font-size: 11px;
 }
 
+.mosaic-hint {
+  margin: -4px 0 12px;
+}
+
 .mosaic {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 10px;
+}
+
+.node-dialog {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  width: min(720px, calc(100vw - 24px));
+  max-width: min(720px, calc(100vw - 24px));
+}
+
+.node-dialog::backdrop {
+  background: rgba(6, 12, 10, 0.48);
+  backdrop-filter: blur(3px);
+}
+
+.node-dialog-card {
+  margin: 0;
+  padding: 16px 18px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-solid);
+  box-shadow: var(--shadow);
+  max-height: min(86vh, 920px);
+  overflow: auto;
+}
+
+.node-dialog-card .panel-h {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: -16px -18px 12px;
+  padding: 14px 18px 10px;
+  background: color-mix(in srgb, var(--panel-solid) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
 }
 
 .node-tile {
@@ -2106,6 +2146,13 @@ summary:focus-visible,
   display: block;
 }
 
+.trend-chart path.guide {
+  fill: none;
+  stroke: color-mix(in srgb, var(--muted) 28%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
 .trend-chart path.line {
   fill: none;
   stroke: var(--accent);
@@ -3073,16 +3120,6 @@ summary:focus-visible,
 
 .dash-latency {
   margin-top: 10px;
-}
-
-@media (min-width: 1101px) {
-  .panel.drawer {
-    position: sticky;
-    top: 14px;
-    align-self: start;
-    max-height: calc(100vh - 28px);
-    overflow: auto;
-  }
 }
 
 /* Node matrix tiles are real buttons now. */

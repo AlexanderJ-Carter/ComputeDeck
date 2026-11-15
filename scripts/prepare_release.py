@@ -30,11 +30,19 @@ VERSION_FILE = ROOT / "VERSION"
 PYPROJECT = ROOT / "pyproject.toml"
 
 _SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+# 正式版 X.Y.Z，或先导测试版 X.Y.Z-beta.N / -rc.N
+_VERSION = re.compile(
+    r"^(\d+)\.(\d+)\.(\d+)(?:-(?:alpha|beta|rc)\.\d+)?$"
+)
 _UNRELEASED = re.compile(
     r"^## \[Unreleased\]\s*\n(?P<body>.*?)(?=^## |\Z)",
     re.M | re.S,
 )
 _PY_VERSION = re.compile(r'^version\s*=\s*"[^"]*"', re.M)
+
+
+def _is_prerelease(version: str) -> bool:
+    return "-" in version
 
 
 def _read_version() -> str:
@@ -138,15 +146,21 @@ def main() -> None:
     args = parser.parse_args()
 
     current = _read_version()
-    target = args.version.lstrip("v") if args.version else _bump(current, args.bump)
-    if not _SEMVER.match(target):
-        raise SystemExit(f"目标版本须为 X.Y.Z: {target!r}")
+    # bump 基于正式版核心；若当前已是预发布，取其 X.Y.Z 再递增
+    core = current.split("-", 1)[0]
+    target = args.version.lstrip("v") if args.version else _bump(core, args.bump)
+    if not _VERSION.match(target):
+        raise SystemExit(
+            f"目标版本须为 X.Y.Z 或 X.Y.Z-beta.N / -rc.N: {target!r}"
+        )
 
     old_changelog = CHANGELOG.read_text(encoding="utf-8")
     new_changelog = _fold_changelog(old_changelog, target, args.date)
 
     print(f"当前 VERSION: {current}")
     print(f"目标版本:     {target}")
+    if _is_prerelease(target):
+        print("类型:         先导测试版（GitHub Release 将标 prerelease，不刷 latest）")
     print(f"CHANGELOG:    Unreleased → [{target}] - {args.date}")
     if not args.apply:
         print("\n预览模式（未写入）。确认后加 --apply；校验加 --check。")

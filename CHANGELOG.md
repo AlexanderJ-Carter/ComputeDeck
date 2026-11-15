@@ -11,8 +11,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- 发版支持先导测试版号（`X.Y.Z-beta.N` / `-rc.N`）：GitHub Release 标 prerelease，镜像不刷 `latest`
+
+### Changed
+
+- 节点矩阵：详情改为居中弹窗（点卡片打开，关闭/Esc/点遮罩收起），矩阵全宽展示
+
 ### Fixed
 
+- 看板趋势图：百分比轴固定 0–100 + 参考线，常数序列不再贴底「看不见」
 - GitHub Pages：`cancel-in-progress: false`，避免并发取消留下半成品 artifact、rerun 时 `deploy-pages` 因多个 `github-pages` 失败
 
 ---

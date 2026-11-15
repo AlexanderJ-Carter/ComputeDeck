@@ -1108,16 +1108,34 @@ function renderNodeAdmin(nodes) {
   bindRemoveButtons(document.getElementById("node-admin"));
 }
 
-function renderDrawer() {
+function closeNodeDrawer() {
+  const dlg = document.getElementById("node-drawer");
+  if (dlg?.open) dlg.close();
+}
+
+function openNodeDrawer() {
+  const dlg = document.getElementById("node-drawer");
+  if (!dlg || typeof dlg.showModal !== "function") return;
+  if (!dlg.open) dlg.showModal();
+}
+
+function renderDrawer({ open = false } = {}) {
   const body = document.getElementById("drawer-body");
+  const dlg = document.getElementById("node-drawer");
+  if (!body) return;
   const name = state.selectedNode;
   if (!name || !state.overview) {
     body.innerHTML =
-      '<p class="muted">点选左侧瓦片查看详情。<br/>任务启停请到「任务」页选目标节点。</p>';
+      '<p class="muted">点选节点卡片查看详情。<br/>任务启停请到「任务」页选目标节点。</p>';
+    if (dlg?.open) dlg.close();
     return;
   }
   const node = (state.overview.nodes || []).find((n) => n.name === name);
-  if (!node) return;
+  if (!node) {
+    body.innerHTML = '<p class="muted">节点不在当前快照中，请刷新总览。</p>';
+    if (dlg?.open) dlg.close();
+    return;
+  }
   const cordon = node.cordon || {};
   const procs = [];
   for (const g of node.gpus || []) {
@@ -1184,11 +1202,13 @@ function renderDrawer() {
   bindNodeActions(body);
   body.querySelectorAll("[data-open-term]").forEach((btn) => {
     btn.addEventListener("click", () => {
+      closeNodeDrawer();
       document.getElementById("term-node").value = btn.dataset.openTerm;
       setView("terminal");
       connectTerminal();
     });
   });
+  if (open || dlg?.open) openNodeDrawer();
 }
 
 function selectNode(name, { stay = false } = {}) {
@@ -1203,6 +1223,7 @@ function selectNode(name, { stay = false } = {}) {
     syncDeployMode();
   }
   if (state.overview) renderNodes(state.overview.nodes);
+  renderDrawer({ open: !stay });
   log(`已选中 ${name}`);
   if (!stay) setView("cluster");
 }
@@ -3687,6 +3708,18 @@ async function boot() {
   document.querySelectorAll(".nav-item").forEach((btn) => {
     btn.addEventListener("click", () => setView(btn.dataset.view));
   });
+  const nodeDrawerClose = document.getElementById("node-drawer-close");
+  const nodeDrawer = document.getElementById("node-drawer");
+  if (nodeDrawerClose) nodeDrawerClose.addEventListener("click", () => closeNodeDrawer());
+  if (nodeDrawer) {
+    nodeDrawer.addEventListener("click", (ev) => {
+      if (ev.target === nodeDrawer) closeNodeDrawer();
+    });
+    nodeDrawer.addEventListener("cancel", (ev) => {
+      ev.preventDefault();
+      closeNodeDrawer();
+    });
+  }
   document.querySelectorAll("#config-tabs .tab").forEach((btn) => {
     btn.addEventListener("click", () => setConfigTab(btn.dataset.tab, { updateHash: true }));
   });
@@ -4304,19 +4337,36 @@ const noticesState = {
   unread: 0,
 };
 
-function sparklinePath(values, width, height, pad = 4) {
+function sparklinePath(values, width, height, pad = 4, domain = null) {
   const nums = values.map((v) => (v == null || Number.isNaN(Number(v)) ? null : Number(v)));
   const solid = nums.filter((v) => v != null);
   if (solid.length < 2) return { line: "", area: "" };
-  const min = Math.min(...solid);
-  const max = Math.max(...solid);
+  let min = Math.min(...solid);
+  let max = Math.max(...solid);
+  if (domain && Number.isFinite(domain.min) && Number.isFinite(domain.max) && domain.max > domain.min) {
+    min = domain.min;
+    max = domain.max;
+  } else if (max === min) {
+    // 全常数时 (v-min)/span=0 会贴底，看起来像没画。
+    if (min === 0) {
+      max = 1;
+    } else if (min > 0) {
+      max = min * 1.25;
+      min = 0;
+    } else {
+      const padY = Math.abs(min) || 1;
+      min -= padY;
+      max += padY;
+    }
+  }
   const span = max - min || 1;
   const n = nums.length;
   const pts = [];
   nums.forEach((v, i) => {
     if (v == null) return;
     const x = pad + (i / Math.max(1, n - 1)) * (width - pad * 2);
-    const y = height - pad - ((v - min) / span) * (height - pad * 2);
+    const clamped = Math.min(max, Math.max(min, v));
+    const y = height - pad - ((clamped - min) / span) * (height - pad * 2);
     pts.push([x, y]);
   });
   if (pts.length < 2) return { line: "", area: "" };
@@ -4325,20 +4375,28 @@ function sparklinePath(values, width, height, pad = 4) {
   return { line, area };
 }
 
-function paintSpark(svgId, values, { altValues = null } = {}) {
+function paintSpark(svgId, values, { altValues = null, domain = null, altDomain = null } = {}) {
   const svg = $(svgId);
   if (!svg) return;
   const w = 320;
   const h = 72;
-  const main = sparklinePath(values, w, h);
+  const pad = 4;
+  const main = sparklinePath(values, w, h, pad, domain);
   let html = "";
+  // 参考线：顶 / 中 / 底，避免满刻度常数曲线「看不见」
+  html += `<path class="guide" d="M${pad},${pad} H${w - pad}"></path>`;
+  html += `<path class="guide" d="M${pad},${(h / 2).toFixed(1)} H${w - pad}"></path>`;
+  html += `<path class="guide" d="M${pad},${h - pad} H${w - pad}"></path>`;
   if (main.area) html += `<path class="area" d="${main.area}"></path>`;
   if (main.line) html += `<path class="line" d="${main.line}"></path>`;
   if (altValues) {
-    const alt = sparklinePath(altValues, w, h);
+    const alt = sparklinePath(altValues, w, h, pad, altDomain);
     if (alt.line) html += `<path class="line alt" d="${alt.line}"></path>`;
   }
-  svg.innerHTML = html || `<text x="12" y="40" fill="currentColor" font-size="12">采样不足，刷新总览稍后可见</text>`;
+  if (!main.line && !(altValues && sparklinePath(altValues, w, h, pad, altDomain).line)) {
+    html += `<text x="12" y="40" fill="currentColor" font-size="12">采样不足，刷新总览稍后可见</text>`;
+  }
+  svg.innerHTML = html;
 }
 
 function fmtPct(v) {
@@ -4361,23 +4419,14 @@ function renderTrends(payload) {
   set("trend-edge", last.edge_upstreams != null ? String(last.edge_upstreams) : "-");
   set("trend-checks", last.api_total != null ? String(last.api_total) : "-");
   set("trend-score", last.quality_score != null ? String(Math.round(last.quality_score)) : "-");
-  paintSpark(
-    "chart-api",
-    points.map((p) => p.api_ok_pct)
-  );
-  paintSpark(
-    "chart-gpu",
-    points.map((p) => p.gpu_util_pct)
-  );
-  paintSpark(
-    "chart-cpu",
-    points.map((p) => p.cpu_avg_pct)
-  );
-  paintSpark(
-    "chart-mix",
-    points.map((p) => p.quality_score),
-    { altValues: points.map((p) => p.api_total) }
-  );
+  const pctDomain = { min: 0, max: 100 };
+  paintSpark("chart-api", points.map((p) => p.api_ok_pct), { domain: pctDomain });
+  paintSpark("chart-gpu", points.map((p) => p.gpu_util_pct), { domain: pctDomain });
+  paintSpark("chart-cpu", points.map((p) => p.cpu_avg_pct), { domain: pctDomain });
+  paintSpark("chart-mix", points.map((p) => p.quality_score), {
+    domain: pctDomain,
+    altValues: points.map((p) => p.api_total),
+  });
 }
 
 function noticeItemHtml(row) {

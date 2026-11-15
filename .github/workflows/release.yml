@@ -25,6 +25,7 @@ jobs:
     outputs:
       version: ${{ steps.ver.outputs.version }}
       tag: ${{ steps.ver.outputs.tag }}
+      prerelease: ${{ steps.ver.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
 
@@ -34,11 +35,16 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           VERSION="${TAG#v}"
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-].*)?$ ]]; then
-            echo "tag 须为 vX.Y.Z，收到: $TAG"
+            echo "tag 须为 vX.Y.Z 或预发布后缀，收到: $TAG"
             exit 1
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [[ "$VERSION" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -89,10 +95,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          EXTRA=()
+          if [[ "${{ steps.ver.outputs.prerelease }}" == "true" ]]; then
+            EXTRA+=(--prerelease)
+            TITLE="ComputeDeck ${{ steps.ver.outputs.tag }}（先导测试版）"
+          else
+            TITLE="ComputeDeck ${{ steps.ver.outputs.tag }}"
+          fi
           gh release create "${{ steps.ver.outputs.tag }}" \
-            --title "ComputeDeck ${{ steps.ver.outputs.tag }}" \
+            --title "$TITLE" \
             --notes-file /tmp/github-release.md \
-            --verify-tag
+            --verify-tag \
+            "${EXTRA[@]}"
 
   image:
     needs: release
@@ -116,9 +130,9 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository_owner }}/computedeck
           tags: |
-            type=semver,pattern={{version}},value=${{ needs.release.outputs.version }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release.outputs.version }}
-            type=raw,value=latest
+            type=raw,value=${{ needs.release.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release.outputs.version }},enable=${{ needs.release.outputs.prerelease != 'true' }}
+            type=raw,value=latest,enable=${{ needs.release.outputs.prerelease != 'true' }}
           labels: |
             org.opencontainers.image.title=ComputeDeck
             org.opencontainers.image.description=Multi-node GPU control plane (Web / CLI / MCP)

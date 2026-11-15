@@ -362,22 +362,24 @@ gpu-control jobs install vllm-serve --name vllm</pre>
       </section>
 
       <section class="view" data-view-panel="cluster">
-        <div class="split">
-          <div class="panel">
-            <div class="panel-h">
-              <h2>节点矩阵</h2>
-              <span class="meta" id="generated-at">-</span>
-            </div>
-            <div class="mosaic" id="nodes"></div>
+        <div class="panel">
+          <div class="panel-h">
+            <h2>节点矩阵</h2>
+            <span class="meta" id="generated-at">-</span>
           </div>
-          <div class="panel drawer" id="node-drawer">
-            <div class="panel-h">
-              <h2>节点详情</h2>
-            </div>
-            <div class="drawer-body" id="drawer-body">
-            </div>
-          </div>
+          <p class="meta mosaic-hint">点击节点卡片打开详情与操作</p>
+          <div class="mosaic" id="nodes"></div>
         </div>
+        <dialog id="node-drawer" class="node-dialog" aria-labelledby="node-drawer-title">
+          <div class="node-dialog-card">
+            <div class="panel-h">
+              <h2 id="node-drawer-title">节点详情</h2>
+              <button type="button" class="ghost tiny" id="node-drawer-close" data-keep-enabled="1"
+                aria-label="关闭">关闭</button>
+            </div>
+            <div class="drawer-body" id="drawer-body"></div>
+          </div>
+        </dialog>
       </section>
 
       <section class="view" data-view-panel="nodes">
