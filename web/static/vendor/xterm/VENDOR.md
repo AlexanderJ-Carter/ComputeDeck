@@ -9,7 +9,7 @@
 
 来源：npm 包 `@xterm/xterm`（复制 `lib/xterm.js` 与 `css/xterm.css`）。
 
-许可证：MIT — 见 [LICENSE](LICENSE)。
+上游许可证：MIT — 见本目录 [LICENSE](LICENSE)（与仓库根目录 AGPL-3.0 相互独立）。
 
 ## 升级步骤
 
