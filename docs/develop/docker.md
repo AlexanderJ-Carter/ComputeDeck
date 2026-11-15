@@ -34,4 +34,5 @@ docker pull ghcr.io/alexanderj-carter/computedeck:latest
 - 容器内建 `.venv`，与仓库 `paths.VENV_*` / Ansible 调用方式一致
 - 挂载 `config/local` 与 `state`，配置与租约/队列不进镜像层
 - 默认监听 `0.0.0.0:8787`，**生产必须开鉴权**（password / OIDC + Token）
+- compose 里 `GPU_CONTROL_UI_SECURE` 默认 `0`（本机 HTTP）；反代 HTTPS 后再设 `1`
 - 不把 GPU 运行时打进控制面镜像；worker 上的 Docker Job 仍由节点本地 runtime 执行
