@@ -11,6 +11,12 @@
 
 ## [Unreleased]
 
+---
+
+## [1.0.0-beta.1] - 2026-11-15
+
+ComputeDeck **1.0 先导测试版**：控制面 / CLI / MCP / 展板已可日常试用；预发布镜像不覆盖 `latest`。
+
 ### Added
 
 - 发版支持先导测试版号（`X.Y.Z-beta.N` / `-rc.N`）：GitHub Release 标 prerelease，镜像不刷 `latest`
@@ -25,7 +31,6 @@
 - GitHub Pages：`cancel-in-progress: false`，避免并发取消留下半成品 artifact、rerun 时 `deploy-pages` 因多个 `github-pages` 失败
 
 ---
-
 ## [0.23.1] - 2026-11-15
 
 ### Added
@@ -359,6 +364,7 @@
 4. 版本锚点见下方；具备远程后可改为 compare URL。
 
 [Unreleased]: #unreleased
+[1.0.0-beta.1]: #100-beta1---2026-11-15
 [0.23.1]: #0231---2026-11-15
 [0.23.0]: #0230---2026-11-15
 [0.22.0]: #0220---2026-11-15
