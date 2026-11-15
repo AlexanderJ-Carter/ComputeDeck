@@ -37,15 +37,26 @@ gpu-control doctor
 
 | 方式 | 说明 |
 |------|------|
-| 源码 | 克隆后 `uv pip install -r requirements.txt` |
+| 源码 | 克隆后 `uv pip install -r requirements.txt`（Agent/MCP 另装 `requirements-mcp.txt`） |
 | 容器 | `Dockerfile` + `docker compose`；发版镜像 `ghcr.io/alexanderj-carter/computedeck` |
-| PyPI | 未做；需先理顺可安装包布局再开 Trusted Publishing |
+| PyPI | **不做**；控制面绑配置树 / Ansible / 静态资源，不是可独立 wheel 的库 |
+| npm | **不做**；前端依赖已 vendor（如 xterm），产品不是 Node 包 |
 
-可选后续：把 `uv.lock` 纳入仓库（需统一 `uv sync`）。
+可选后续：把 `uv.lock` 纳入仓库并统一 `uv sync`（锁文件已可本地生成）。
 
 ### 发版（tag）
 
+便捷准备（写入版本 + 折叠 CHANGELOG + 校验，**不 push**）：
+
+```bash
+python scripts/prepare_release.py --bump patch          # 预览
+python scripts/prepare_release.py --bump patch --apply --check
+```
+
+手工等价步骤：
+
 1. 同步 `VERSION` 与 `pyproject.toml` 的 `version`，把 CHANGELOG `[Unreleased]` 落成 `## [X.Y.Z] - YYYY-MM-DD`。
 2. 本地：`python scripts/release_notes.py --check X.Y.Z` 与 `./scripts/check.sh`。
-3. `git tag -a vX.Y.Z -m "vX.Y.Z"` 并推送 tag（需你明确允许 push）。
-4. Actions `Release` 会创建 GitHub Release，并推送 `ghcr.io/<owner>/computedeck:<version>`（及 `latest`）。
+3. 提交后：`git tag -a vX.Y.Z -m "vX.Y.Z"` 并推送 tag（**需你明确允许 push**）。
+4. Actions `Release` 创建 GitHub Release，并推送 `ghcr.io/<owner>/computedeck:<version>`（及 `latest`，含 SBOM/provenance）。
+5. **首次**把 GHCR Package `computedeck` 设为 Public（否则匿名 pull 401），见 [docker.md](docker.md)。

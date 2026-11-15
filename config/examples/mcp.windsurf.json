@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "gpu-control": {
+      "command": "/ABS/PATH/TO/ComputeDeck/bin/gpu-control-mcp",
+      "env": {
+        "GPU_CONTROL_API_BASE": "http://127.0.0.1:8787",
+        "GPU_CONTROL_API_TOKEN": ""
+      }
+    }
+  },
+  "_gpu_control_notes": [
+    "Windsurf / Cascade：合并进 MCP 设置（字段名通常为 mcpServers，与 Cursor 相近）",
+    "产品名 ComputeDeck；MCP 服务名仍为 gpu-control",
+    "command 换成主控上 bin/gpu-control-mcp 的绝对路径",
+    "鉴权启用后填写 GPU_CONTROL_API_TOKEN",
+    "约定：AGENTS.md · docs/ai-接入.md"
+  ]
+}

@@ -83,13 +83,24 @@ gpu-control ui --background
 gpu-control watchdog --background
 ```
 
-容器起控制面（可选）：`docker compose up -d --build`，见 [`docs/develop/docker.md`](docs/develop/docker.md)。
+容器起控制面（可选）：`docker compose up -d --build`，见 [`docs/develop/docker.md`](docs/develop/docker.md)。  
+发版镜像：`ghcr.io/alexanderj-carter/computedeck`（**不发 PyPI / npm**；仓库即控制面）。
 
 本机看 UI（主控在远端时）：
 
 ```bash
 ssh -L 8787:127.0.0.1:8787 <control>
 # 浏览器 http://127.0.0.1:8787/
+```
+
+### Agent / MCP
+
+同一入口 `bin/gpu-control-mcp`；示例在 `config/examples/mcp.*`（Cursor / Claude Code / Codex / Continue / Windsurf）。  
+约定：[AGENTS.md](AGENTS.md) · [CLAUDE.md](CLAUDE.md) · [docs/ai-接入.md](docs/ai-接入.md)。
+
+```bash
+uv pip install -r requirements-mcp.txt
+gpu-control auth issue-token   # → GPU_CONTROL_API_TOKEN
 ```
 
 ## 常用命令
@@ -125,10 +136,11 @@ gpu-control doctor
 | `bin/gpu-control` | CLI 入口 |
 | `web/` | UI 与 HTTP API |
 | `mcp_server/` | MCP（`gc_*`） |
-| `config/examples/` | 可提交的示例配置与 Job 模板 |
+| `config/examples/` | 可提交的示例配置、Job 模板与 MCP 客户端样例 |
 | `config/local/` | 本机场景（gitignore，勿提交） |
 | `jobs/` | 内置 `shell-job`；业务 Job 装到 `config/local/jobs/` |
 | `docs/` | 手册与 MkDocs 源 |
+| `AGENTS.md` / `CLAUDE.md` | 多 Agent 约定（Codex / Claude Code 等会读） |
 
 ## 参与与许可
 

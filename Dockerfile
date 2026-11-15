@@ -1,5 +1,20 @@
-# ComputeDeck 控制面镜像（UI / CLI / Ansible）。Worker 仍是真实 GPU 主机，不入此镜像。
+# ComputeDeck 控制面镜像（UI / CLI / Ansible / MCP 依赖）。Worker 仍是真实 GPU 主机，不入此镜像。
 FROM python:3.11-slim-bookworm
+
+ARG VERSION=0.0.0
+ARG VCS_REF=unknown
+ARG BUILD_DATE=unknown
+
+LABEL org.opencontainers.image.title="ComputeDeck" \
+      org.opencontainers.image.description="Multi-node GPU control plane (Web / CLI / MCP). CLI name: gpu-control." \
+      org.opencontainers.image.source="https://github.com/AlexanderJ-Carter/ComputeDeck" \
+      org.opencontainers.image.url="https://github.com/AlexanderJ-Carter/ComputeDeck" \
+      org.opencontainers.image.documentation="https://github.com/AlexanderJ-Carter/ComputeDeck/tree/main/docs" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.vendor="ComputeDeck" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.created="${BUILD_DATE}"
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
@@ -26,7 +41,8 @@ RUN chmod +x /app/bin/gpu-control /app/bin/gpu-control-mcp \
 ENV PATH="/app/.venv/bin:/app/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
     GPU_CONTROL_UI_HOST=0.0.0.0 \
-    GPU_CONTROL_UI_PORT=8787
+    GPU_CONTROL_UI_PORT=8787 \
+    COMPUTEDECK_VERSION="${VERSION}"
 
 EXPOSE 8787
 

@@ -3,8 +3,10 @@ name: Release
 # 打 annotated tag vX.Y.Z 并推送后：
 # 1) 校验版本 + check.sh + MkDocs
 # 2) 用 CHANGELOG 建 GitHub Release
-# 3) 构建并推送控制面镜像到 GHCR
-# 暂不发布 PyPI（uv package=false，仓库即控制面）。
+# 3) 构建并推送控制面镜像到 GHCR（含 OCI 标签 / SBOM / provenance）
+# 不发布 PyPI / npm（uv package=false，仓库即控制面）。
+#
+# 本地准备：python scripts/prepare_release.py --bump patch --apply --check
 
 on:
   push:
@@ -14,6 +16,8 @@ on:
 permissions:
   contents: write
   packages: write
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -66,13 +70,17 @@ jobs:
           {
             echo "## ComputeDeck ${{ steps.ver.outputs.tag }}"
             echo
-            echo "命令行仍为 \`gpu-control\`。"
+            echo "命令行仍为 \`gpu-control\`。主产物是控制面容器；不发 PyPI / npm。"
             echo
             echo "### 安装"
             echo
-            echo "- 源码：克隆后 \`uv pip install -r requirements.txt\`（暂不发 PyPI）"
+            echo "- 源码：\`git clone\` 后 \`uv pip install -r requirements.txt\`"
             echo "- 容器：\`docker pull ghcr.io/alexanderj-carter/computedeck:${{ steps.ver.outputs.version }}\`"
+            echo "- Compose：复制 \`.env.example\` → \`.env\` 后 \`docker compose up -d\`"
+            echo "- MCP：\`uv pip install -r requirements-mcp.txt\` · 示例 \`config/examples/mcp.*\`"
             echo "- 展板：https://alexanderj-carter.github.io/ComputeDeck/"
+            echo
+            echo "若 \`docker pull\` 401：到 GitHub → Packages → \`computedeck\` → Package settings → Change visibility → Public。"
             echo
             cat /tmp/release-notes.md
           } > /tmp/github-release.md
@@ -111,13 +119,39 @@ jobs:
             type=semver,pattern={{version}},value=${{ needs.release.outputs.version }}
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.release.outputs.version }}
             type=raw,value=latest
+          labels: |
+            org.opencontainers.image.title=ComputeDeck
+            org.opencontainers.image.description=Multi-node GPU control plane (Web / CLI / MCP)
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=AGPL-3.0-only
+
+      - name: Build date
+        id: date
+        run: echo "value=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ needs.release.outputs.version }}
+            VCS_REF=${{ github.sha }}
+            BUILD_DATE=${{ steps.date.outputs.value }}
+          provenance: true
+          sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          {
+            echo "### GHCR"
+            echo "- \`ghcr.io/${{ github.repository_owner }}/computedeck:${{ needs.release.outputs.version }}\`"
+            echo "- digest: \`${{ steps.build.outputs.digest }}\`"
+            echo
+            echo "首次发布后请将 Package 设为 **Public**，否则匿名 pull 会 401。"
+          } >> "$GITHUB_STEP_SUMMARY"

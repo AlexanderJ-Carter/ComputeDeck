@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -15,11 +16,10 @@
   <link rel="stylesheet" href="styles.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link
-    rel="stylesheet"
-    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&family=Syne:wght@700;800&display=swap"
-  />
+  <link rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&family=Syne:wght@700;800&display=swap" />
 </head>
+
 <body>
   <a class="skip" href="#deck">跳到内容</a>
 
@@ -47,7 +47,8 @@
         <div class="spotlight" id="hero-spot" aria-hidden="true"></div>
       </div>
       <div class="slide-inner hero-inner">
-        <img class="hero-logo reveal" src="assets/logo.svg" width="104" height="104" alt="ComputeDeck" decoding="async" fetchpriority="high" />
+        <img class="hero-logo reveal" src="assets/logo.svg" width="104" height="104" alt="ComputeDeck" decoding="async"
+          fetchpriority="high" />
         <p class="eyebrow reveal d1">多节点 GPU 控制面</p>
         <h1 class="reveal d2">ComputeDeck</h1>
         <p class="lede reveal d3">主控一台，卡、任务和入口都管得住。</p>
@@ -163,7 +164,8 @@ GPU 3  76%  PID  9921  ???</pre>
         <div>
           <p class="eyebrow reveal">Job 插件</p>
           <h2 class="reveal d1">装上模板，就能启停</h2>
-          <p class="body reveal d2">推荐包一次装齐 vLLM、微调、Ray、Docker。多机训练自动注入 <code>NNODES</code>、<code>MASTER_ADDR</code>。</p>
+          <p class="body reveal d2">推荐包一次装齐 vLLM、微调、Ray、Docker。多机训练自动注入 <code>NNODES</code>、<code>MASTER_ADDR</code>。
+          </p>
           <p class="cmd reveal d3"><code>gpu-control jobs install --recommended</code></p>
         </div>
         <div class="tpl-stack reveal d3">
@@ -172,7 +174,8 @@ GPU 3  76%  PID  9921  ???</pre>
           <div class="tpl"><span class="tag dist">分布式</span> ray-cluster</div>
           <div class="tpl"><span class="tag">通用</span> shell-job · docker-job</div>
           <figure class="viz mini">
-            <img src="assets/distributed-inject.svg" alt="多机环境变量注入示意" loading="lazy" decoding="async" width="640" height="360" />
+            <img src="assets/distributed-inject.svg" alt="多机环境变量注入示意" loading="lazy" decoding="async" width="640"
+              height="360" />
           </figure>
         </div>
       </div>
@@ -185,7 +188,8 @@ GPU 3  76%  PID  9921  ???</pre>
         <div>
           <p class="eyebrow reveal">配置驱动</p>
           <h2 class="reveal d1">换集群，主要改 JSON</h2>
-          <p class="body reveal d2">真实环境写在 <code>config/local/</code>。路径、SSH、标签、默认 Job、<code>unit_gpus</code> 写清楚，框架保持中性。</p>
+          <p class="body reveal d2">真实环境写在 <code>config/local/</code>。路径、SSH、标签、默认 Job、<code>unit_gpus</code>
+            写清楚，框架保持中性。</p>
         </div>
         <div class="code-shell reveal d3">
           <div class="code-chrome"><span>nodes.json</span><em>defaults.paths</em></div>
@@ -206,18 +210,19 @@ GPU 3  76%  PID  9921  ???</pre>
     <!-- 7 Edge -->
     <section class="slide" id="s7" data-title="入口">
       <div class="slide-bg mesh-a"></div>
-      <div class="slide-inner split">
+      <div class="slide-inner split edge-split">
         <div>
-          <p class="eyebrow reveal">统一入口</p>
-          <h2 class="reveal d1">上游健康，不行就换路</h2>
-          <p class="body reveal d2">内置 Edge：轮询或 least-conn，失败重试、上游冷却。需要时再叠 nginx 或 LiteLLM。</p>
+          <p class="eyebrow reveal">控制面能力 · 推理入口</p>
+          <h2 class="reveal d1">健康上游才进池，挂了就换路</h2>
+          <p class="body reveal d2">ComputeDeck 自带轻量 Edge（轮询 / least-conn、重试、冷却），给推理 Job 一个对内入口；要对外再叠 nginx 或
+            LiteLLM。它是控制面的一块能力，不是单独的网关产品。</p>
           <div class="flow reveal d3" aria-hidden="true">
-            <span>Client</span><i></i><span>Edge</span><i></i><span class="ok">Healthy</span><i></i><span>GPU API</span>
+            <span>Client</span><i></i><span>Edge</span><i></i><span class="ok">健康池</span><i></i><span>节点 API</span>
           </div>
           <ul class="bullet reveal d4">
-            <li><code>gateway ensure</code> 一次规整</li>
-            <li>端点健康探测，附带客户端 LB 片段</li>
-            <li>TLS、对外 URL 可配</li>
+            <li><code>gateway ensure</code> 规整入口与上游</li>
+            <li>端点健康探测；也可导出客户端 LB 片段</li>
+            <li>TLS、对外 URL 可配；生产常再挂反代</li>
           </ul>
         </div>
         <div class="lb-stage reveal d3" aria-hidden="true">
@@ -275,7 +280,8 @@ GPU 3  76%  PID  9921  ???</pre>
         <div>
           <p class="eyebrow reveal">Agent 友好</p>
           <h2 class="reveal d1">人和程序共用一套能力</h2>
-          <p class="body reveal d2">浏览器、CLI、MCP 读同一份目录。Cursor 走 <code>gc_*</code>，脚本带 Bearer，人看看板。</p>
+          <p class="body reveal d2">浏览器、CLI、MCP 读同一份目录。Cursor / Claude Code / Codex 等走同一
+            <code>bin/gpu-control-mcp</code> 与 <code>gc_*</code>；脚本带 Bearer，人看看板或小助手。</p>
         </div>
         <div class="term reveal d3" aria-hidden="true">
           <div class="term-bar"><i></i><i></i><i></i><span>mcp · gc_*</span></div>
@@ -326,24 +332,30 @@ GPU 3  76%  PID  9921  ???</pre>
       <div class="slide-inner finale-inner">
         <p class="eyebrow reveal">开源 · AGPL-3.0</p>
         <h2 class="reveal d1">拿到你的机房里用</h2>
-        <p class="body narrow reveal d2">克隆仓库，写好 <code>config/local</code>，装推荐 Job，打开 UI。</p>
+        <p class="body narrow reveal d2">仓库即控制面：克隆 + <code>uv</code>，或 <code>docker compose</code> / GHCR。不发 PyPI /
+          npm。写好 <code>config/local</code>，装推荐 Job，打开 UI。</p>
         <div class="code-shell slim reveal d3">
-          <div class="code-chrome"><span>快速开始</span></div>
+          <div class="code-chrome"><span>快速开始 · 源码</span></div>
           <pre class="code-panel"><code>git clone https://github.com/AlexanderJ-Carter/ComputeDeck.git
 cd ComputeDeck
 uv venv .venv && uv pip install -r requirements.txt
-gpu-control doctor && gpu-control ui --background</code></pre>
+gpu-control doctor && gpu-control ui --background
+# 或：docker compose up -d --build</code></pre>
         </div>
         <div class="cta-row reveal d4">
           <a class="btn primary" href="https://github.com/AlexanderJ-Carter/ComputeDeck">打开 GitHub</a>
           <a class="btn ghost" href="https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/docs/手册.md">阅读手册</a>
-          <a class="btn ghost" href="https://github.com/AlexanderJ-Carter/ComputeDeck/tree/main/docs/ai-接入.md">AI / MCP</a>
+          <a class="btn ghost" href="https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/docs/ai-接入.md">AI /
+            MCP</a>
+          <a class="btn ghost"
+            href="https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/docs/develop/docker.md">容器部署</a>
         </div>
-        <p class="foot reveal d5">产品名 ComputeDeck · 命令行 gpu-control</p>
+        <p class="foot reveal d5">产品名 ComputeDeck · 命令行 gpu-control · 镜像 ghcr.io/…/computedeck</p>
       </div>
     </section>
   </main>
 
   <script src="app.js" defer></script>
 </body>
+
 </html>

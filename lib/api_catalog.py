@@ -606,9 +606,15 @@ def catalog_payload() -> dict[str, Any]:
             "examples": {
                 "cursor": "config/examples/mcp.cursor.json",
                 "claude_code": "config/examples/mcp.claude-code.json",
-                "codex": "config/examples/mcp.codex.json",
+                "codex": "config/examples/mcp.codex.toml",
+                "codex_json": "config/examples/mcp.codex.json",
+                "continue": "config/examples/mcp.continue.json",
+                "windsurf": "config/examples/mcp.windsurf.json",
                 "generic": "config/examples/mcp.generic.json",
             },
+            "agents_md": "AGENTS.md",
+            "claude_md": "CLAUDE.md",
+            "skill": ".cursor/skills/gpu-control/SKILL.md",
             "env": auth["mcp_env"],
         },
         "assistant": {
@@ -618,7 +624,8 @@ def catalog_payload() -> dict[str, Any]:
         },
         "ai_notes": [
             "产品名 ComputeDeck；CLI/MCP/service 仍为 gpu-control。",
-            "MCP 适用于 Cursor / Claude Code / Codex 等任意 stdio Agent；示例见 mcp.examples。",
+            "MCP 适用于 Cursor / Claude Code / Codex / Continue / Windsurf 等任意 stdio Agent；示例见 mcp.examples。",
+            "仓库约定 AGENTS.md；Claude Code 另见 CLAUDE.md；交付为源码+uv 或 GHCR，不发 PyPI/npm。",
             "鉴权启用后，HTTP 客户端必须带 Bearer；MCP 设 GPU_CONTROL_API_TOKEN。",
             "改配置优先 POST /api/config/{cluster,nodes,job/NAME}，再 gc_node(render) / doctor。",
             "启停负载用 Job 插件；不要假设只有某一业务 Job。",

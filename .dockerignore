@@ -10,6 +10,9 @@ state/**
 snapshots/**
 config/local/**
 !config/local/.gitkeep
+deploy/ssh/**
+!deploy/ssh/.gitkeep
+!deploy/ssh/README.md
 *.log
 *.pid
 .DS_Store
@@ -19,3 +22,15 @@ uv.lock
 agent-transcripts/
 *.tmp
 docs/assets/*.jpg
+docs/superpowers/
+*.md
+!README.md
+!CHANGELOG.md
+!AGENTS.md
+!CLAUDE.md
+!LICENSE
+!NOTICE
+tests/
+examples/
+mkdocs.yml
+requirements-docs.txt

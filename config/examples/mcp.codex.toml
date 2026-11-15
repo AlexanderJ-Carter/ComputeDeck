@@ -1,0 +1,13 @@
+# OpenAI Codex MCP 示例（合并进 ~/.codex/config.toml）
+# 产品名 ComputeDeck；服务名仍为 gpu-control
+# 把 command 换成主控上 bin/gpu-control-mcp 的绝对路径
+# 鉴权启用后填写 GPU_CONTROL_API_TOKEN（gpu-control auth issue-token）
+# 不设 GPU_CONTROL_API_BASE 时走本机 CLI
+# 约定：AGENTS.md · docs/ai-接入.md
+
+[mcp_servers.gpu-control]
+command = "/ABS/PATH/TO/ComputeDeck/bin/gpu-control-mcp"
+
+[mcp_servers.gpu-control.env]
+GPU_CONTROL_API_BASE = "http://127.0.0.1:8787"
+GPU_CONTROL_API_TOKEN = ""

@@ -1,9 +1,9 @@
 # AI / API / MCP 接入
 
-**ComputeDeck**（命令行 / MCP：`gpu-control`）给 Cursor 或其他 Agent 调配置、启停 Job、腾空节点、排队占卡时，按本页接入。
+**ComputeDeck**（命令行 / MCP：`gpu-control`）给 Cursor、Claude Code、Codex、Continue、Windsurf 或其他 Agent 调配置、启停 Job、腾空节点、排队占卡时，按本页接入。
 
 权威机器契约：`GET /api` · `GET /api/openapi.json` · 浏览器 `/api/docs`。  
-仓库约定：[AGENTS.md](https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/AGENTS.md)；Cursor Skill：[gpu-control/SKILL.md](https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/.cursor/skills/gpu-control/SKILL.md)。
+仓库约定：[AGENTS.md](https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/AGENTS.md)；Claude Code：[CLAUDE.md](https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/CLAUDE.md)；Cursor Skill：[gpu-control/SKILL.md](https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/.cursor/skills/gpu-control/SKILL.md)。
 
 ## 鉴权
 
@@ -32,7 +32,7 @@ gpu-control auth status
 |------|------|------|
 | **HTTP** | `http://<control>:8787/api` | 脚本、OpenAPI、MCP 走 HTTP |
 | **CLI** | `gpu-control …` | 主控本机、Ansible |
-| **MCP** | `bin/gpu-control-mcp`（stdio） | Cursor 等 Agent |
+| **MCP** | `bin/gpu-control-mcp`（stdio） | 任意支持 MCP 的 Agent |
 
 ```bash
 # 机器可读目录（含鉴权说明）
@@ -50,6 +50,14 @@ open http://127.0.0.1:8787/api/docs
 1. 有一等 `gc_*` → 用它（参数结构化，少拼 CLI）。
 2. 调度 / 排障 / 入口 / 节点：`gc_queue` · `gc_lease` · `gc_diagnose` · `gc_gateway` · `gc_node`。
 3. 其余冷门子命令才用 `gc_cli`；完整路径表或 body → `gc_api_catalog` / `/api/openapi.json`。
+
+### 交付形态
+
+| 方式 | 说明 |
+|------|------|
+| 源码 + `uv` | 默认；控制面与配置、静态资源、Ansible 同树 |
+| 容器 / GHCR | 只跑 Control：`docker compose` 或 `ghcr.io/alexanderj-carter/computedeck` |
+| PyPI / npm | **不做**（`package = false`；前端依赖已 vendor，不发 npm 包） |
 
 ---
 
@@ -80,6 +88,11 @@ open http://127.0.0.1:8787/api/docs
 - `GET /api/leases` · `POST /api/leases` · `POST /api/leases/{id}/release`
 - `GET /api/queue` · `POST /api/queue/submit` · `POST /api/queue/schedule` · `POST /api/queue/{id}/cancel`
 
+助手：
+
+- `GET /api/assistant/policy` · `GET /api/assistant/status` · `POST /api/assistant/chat`
+- `GET /api/exec/suggest` — 远程命令补全
+
 完整列表以 `GET /api` 或 `/api/docs` 为准。
 
 **改配置后建议顺序**：写 config → `POST /api/setup/render`（或 CLI `node render`）→ `GET /api/doctor`。
@@ -88,7 +101,7 @@ open http://127.0.0.1:8787/api/docs
 
 ## 3. MCP（任意 Agent）
 
-同一 stdio 入口：`bin/gpu-control-mcp`。适用于 **Cursor / Claude Code / Codex** 以及其他支持 MCP 的客户端，不绑死某一 IDE。
+同一 stdio 入口：`bin/gpu-control-mcp`。适用于 **Cursor / Claude Code / Codex / Continue / Windsurf** 以及其他支持 MCP 的客户端，不绑死某一 IDE。
 
 主控安装：
 
@@ -98,14 +111,24 @@ uv pip install -r requirements-mcp.txt
 chmod +x bin/gpu-control-mcp
 ```
 
-| 客户端 | 示例配置 |
-|--------|----------|
-| Cursor | `config/examples/mcp.cursor.json` |
-| Claude Code | `config/examples/mcp.claude-code.json` |
-| Codex | `config/examples/mcp.codex.json` |
-| 通用 | `config/examples/mcp.generic.json` |
+| 客户端 | 示例配置 | 放入何处（常见） |
+|--------|----------|------------------|
+| Cursor | `config/examples/mcp.cursor.json` | `~/.cursor/mcp.json` 或项目 `.cursor/mcp.json` |
+| Claude Code | `config/examples/mcp.claude-code.json` | 项目 `.mcp.json` 或用户 MCP 设置 |
+| Codex | `config/examples/mcp.codex.toml` | `~/.codex/config.toml`（JSON 变体见 `mcp.codex.json`） |
+| Continue | `config/examples/mcp.continue.json` | `~/.continue/config.json` 的 `mcpServers` |
+| Windsurf | `config/examples/mcp.windsurf.json` | Windsurf MCP 设置（字段多与 Cursor 相近） |
+| 通用 | `config/examples/mcp.generic.json` | 任意 stdio MCP 宿主 |
 
-Cursor 示例：
+公共字段：
+
+| 环境变量 | 作用 |
+|----------|------|
+| `GPU_CONTROL_API_BASE` | 设置后工具优先打 HTTP（UI 需在跑） |
+| `GPU_CONTROL_API_TOKEN` | Bearer；鉴权启用时必填，否则 401 |
+| （均未设） | 工具直接调本地 CLI，不依赖 UI |
+
+Cursor 片段示例：
 
 ```json
 {
@@ -121,14 +144,10 @@ Cursor 示例：
 }
 ```
 
-| 环境变量 | 作用 |
-|----------|------|
-| `GPU_CONTROL_API_BASE` | 设置后工具优先打 HTTP（UI 需在跑） |
-| `GPU_CONTROL_API_TOKEN` | Bearer；鉴权启用时必填，否则 401 |
-| （均未设） | 工具直接调本地 CLI，不依赖 UI |
+容器里跑控制面时：MCP 进程仍建议在**宿主机**指向仓库/挂载树里的 `bin/gpu-control-mcp`，并用 `GPU_CONTROL_API_BASE=http://127.0.0.1:8787` 打到已映射的 UI；或在容器内 `docker compose exec` 调试 CLI，不必把 IDE 的 stdio 硬塞进容器。
 
 教学与风险：MCP `instructions` 与 `GET /api/assistant/policy` 同源（`lib/assistant_policy.py`）。  
-UI 小助手：`POST /api/assistant/chat`（`cluster.control.assistant` 配 OpenAI 兼容上游；未配则降级快捷动作）。
+UI 小助手：`POST /api/assistant/chat`（`cluster.control.assistant` 配 OpenAI 兼容上游；未配则讲解 + 快捷动作）。
 
 一等工具（20）：`gc_api_catalog` · `gc_auth_status` · `gc_doctor` · `gc_overview` · `gc_get_jobs` · `gc_job_action` · `gc_get_config` · `gc_put_config` · `gc_models` · `gc_toolkits` · `gc_procs` · `gc_free_node` · `gc_deploy` · `gc_queue` · `gc_lease` · `gc_diagnose` · `gc_gateway` · `gc_node` · `gc_exec` · `gc_cli`。
 
@@ -176,6 +195,6 @@ UI 小助手：`POST /api/assistant/chat`（`cluster.control.assistant` 配 Open
 4. `kill` / `free` / 写配置前，先用 `gc_overview` / `gc_get_config` 确认目标。
 5. 收到 HTTP 401 时检查 token，可用 `gc_auth_status` 或 `GET /api/auth/status`。
 6. 返回体：HTTP 看 JSON；`gc_cli` 看 `rc` / `stdout` / `stderr`，`rc≠0` 当失败。
-7. 项目 Skill：`.cursor/skills/gpu-control/SKILL.md`；仓库约定：`AGENTS.md`。
+7. 项目约定：`AGENTS.md`；Claude Code：`CLAUDE.md`；Cursor Skill：`.cursor/skills/gpu-control/SKILL.md`。
 
-运维语义见 [手册.md](手册.md)。
+运维语义见 [手册.md](手册.md)；容器见 [develop/docker.md](develop/docker.md)。

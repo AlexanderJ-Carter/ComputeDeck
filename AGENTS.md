@@ -2,11 +2,13 @@
 
 产品名 **ComputeDeck**；CLI、MCP 服务名、环境变量前缀仍为 `gpu-control`。
 
+适用于 Cursor · Claude Code · Codex · Continue · Windsurf 及其他 MCP / 读仓库约定的 Agent。
+
 ## 权威来源
 
 1. 运行时契约：`GET /api` · `GET /api/openapi.json`（由 `lib/api_catalog.py` 生成）
 2. 人读接入：`docs/ai-接入.md`
-3. Cursor Skill：`.cursor/skills/gpu-control/SKILL.md`
+3. 客户端补充：Cursor Skill `.cursor/skills/gpu-control/SKILL.md`；Claude Code 见根目录 `CLAUDE.md`
 
 不要凭记忆编造不存在的 `gc_*` 或 `/api` 路径；先查 catalog。
 
@@ -28,6 +30,21 @@
 
 ## 多 Agent / 助手
 
-- MCP 入口同一：`bin/gpu-control-mcp`（Cursor / Claude Code / Codex / 其它 stdio 客户端）
-- 示例：`config/examples/mcp.*.json`；风险：`GET /api/assistant/policy`
+| 客户端 | 示例 |
+|--------|------|
+| Cursor | `config/examples/mcp.cursor.json` |
+| Claude Code | `config/examples/mcp.claude-code.json`（可作 `.mcp.json`） |
+| Codex | `config/examples/mcp.codex.toml`（及 `.json`） |
+| Continue | `config/examples/mcp.continue.json` |
+| Windsurf | `config/examples/mcp.windsurf.json` |
+| 通用 stdio | `config/examples/mcp.generic.json` |
+
+- MCP 入口同一：`bin/gpu-control-mcp`（先 `uv pip install -r requirements-mcp.txt`）
+- 风险分级：`GET /api/assistant/policy`（与 MCP `instructions` 同源）
 - UI 小助手：`GET /api/assistant/status` · `POST /api/assistant/chat`（`cluster.control.assistant`）
+
+## 交付形态（给 Agent）
+
+- **默认**：克隆仓库 + `uv`；控制面与 `config/` / `web/` / Ansible 同树
+- **容器**：`docker compose` / GHCR `ghcr.io/alexanderj-carter/computedeck`（只跑 Control）
+- **不发** npm 包；**暂不发** PyPI（`package = false`，仓库即控制面）

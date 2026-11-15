@@ -268,7 +268,7 @@ def _fallback_reply(user_text: str, context: dict[str, Any]) -> dict[str, Any]:
     elif any(k in text for k in ("mcp", "cursor", "claude", "codex", "agent")):
         lines.append(
             "MCP 入口是 `bin/gpu-control-mcp`。"
-            "示例：`config/examples/mcp.cursor.json` / `mcp.claude-code.json` / `mcp.codex.json`。"
+            "示例：`config/examples/mcp.cursor.json` · `mcp.claude-code.json` · `mcp.codex.toml` · `mcp.continue.json` · `mcp.windsurf.json`。"
             "设 `GPU_CONTROL_API_BASE` + `GPU_CONTROL_API_TOKEN` 即可给 Cursor / Claude Code / Codex 用。"
         )
     elif any(k in text for k in ("free", "腾空", "清卡", "cordon")):

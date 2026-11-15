@@ -14,11 +14,13 @@
 ### Added
 
 - 控制面小助手：`POST /api/assistant/chat` · `GET /api/assistant/status`（OpenAI 兼容上游；未配置则讲解+快捷动作）；远程命令补全 `GET /api/exec/suggest`
-- 多 Agent MCP 示例：Cursor / Claude Code / Codex / 通用；`lib/assistant_policy.py` 风险分级
+- 多 Agent MCP 示例：Cursor / Claude Code / Codex（含 TOML）/ Continue / Windsurf / 通用；`lib/assistant_policy.py` 风险分级
+- `CLAUDE.md`：Claude Code 入口；`AGENTS.md` 覆盖多客户端与交付形态（源码+uv / GHCR，不发 PyPI/npm）
 - 展板 Edge 故障转移 / least-conn 动效；窄屏标题与顶栏/终页布局修复
 - MCP 一等工具：`gc_queue` · `gc_lease` · `gc_diagnose` · `gc_gateway` · `gc_node`；`gc_deploy(force/…)` · `gc_models(pull)`；catalog↔MCP 同步测试
 - 发版：`scripts/release_notes.py` + tag `v*` 自动 GitHub Release；推送 GHCR 控制面镜像（暂不上传 PyPI）
-- 容器：`Dockerfile` · `docker-compose.yml` · `deploy/ssh/`；CI 构建冒烟
+- 发版便捷：`scripts/prepare_release.py`（bump / 折叠 CHANGELOG / 可选 check）；`.env.example` 配合 compose
+- 容器：`Dockerfile`（OCI label）· `docker-compose.yml` · `deploy/ssh/`；CI 构建冒烟；Release 推送附 SBOM/provenance
 - `AGENTS.md`：Agent 硬约束与权威契约入口
 - 开源治理文件：`CODE_OF_CONDUCT` · `AUTHORS` · `NOTICE` · `SUPPORT` · `GOVERNANCE` · Issue/PR 模板
 - 产品名 **ComputeDeck**，命令行 `gpu-control`
@@ -39,6 +41,8 @@
 - README / 用户文档定稿：自然表述、架构图；不做无产品依据的伪性能对标
 - 公开仓库改名为 **ComputeDeck**；宣传展板 `demo/` + GitHub Pages 工作流（动效、自定义域名说明）
 - Agent 面：Skill / `docs/ai-接入.md` / MCP instructions / OpenAPI 标题对齐 ComputeDeck；补 queue·lease 工作流与 catalog CLI 摘要
+- Agent / 发布文档规整：各客户端 MCP 示例路径与注释统一；明确 Docker/GHCR 为主、不发 PyPI/npm；容器文档补充 MCP 接法
+- 展板：Edge 页改成「控制面能力」表述（非独立网关产品）；Agent 页覆盖多客户端；终页补充 Docker/GHCR 与不发 PyPI/npm
 - 宣传展板：默认自动播放、更自然文案、流体字阶与响应式；字体异步、配图懒加载、可见页才跑粒子/GPU 动效
 - 宣传展板视觉：重做「为什么」对照页；能力轨 / 模型步骤 / 代码窗壳；全页节奏统一
 - 宣传展板动效：气泡入场、桥接脉冲、能力轨侧线、健康环计数、背景极光与进度扫光

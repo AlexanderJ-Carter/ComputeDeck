@@ -44,7 +44,10 @@ TEACHING_SUMMARY = (
 MCP_CLIENT_EXAMPLES = {
     "cursor": "config/examples/mcp.cursor.json",
     "claude_code": "config/examples/mcp.claude-code.json",
-    "codex": "config/examples/mcp.codex.json",
+    "codex": "config/examples/mcp.codex.toml",
+    "codex_json": "config/examples/mcp.codex.json",
+    "continue": "config/examples/mcp.continue.json",
+    "windsurf": "config/examples/mcp.windsurf.json",
     "generic": "config/examples/mcp.generic.json",
 }
 

@@ -18,6 +18,8 @@ description: >-
 2. 有 MCP：优先一等 `gc_*`；其余再用 `gc_cli`。
 3. `GPU_CONTROL_API_BASE` 指向 UI 时 MCP 走 HTTP；鉴权开则设 `GPU_CONTROL_API_TOKEN`。
 4. 401：`gc_auth_status` / `GET /api/auth/status`；本机 `gpu-control auth issue-token`。
+5. 多客户端示例：`config/examples/mcp.*.json` / `mcp.codex.toml`；约定见根目录 `AGENTS.md`（Claude Code 另见 `CLAUDE.md`）。
+6. 交付：克隆 + `uv`，或控制面容器（GHCR）；不发 npm；暂不发 PyPI。
 
 ## 一等 MCP（20）
 

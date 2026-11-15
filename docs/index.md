@@ -18,7 +18,8 @@
 | [高可用与负载均衡](高可用与负载均衡.md) | Edge、watchdog、AI Gateway |
 | [升级与备份](升级与备份.md) | 升级、回滚、迁移 |
 | [故障排查](故障排查.md) | 常见症状 |
-| [AI / MCP 接入](ai-接入.md) | Agent、Bearer、Cursor |
+| [AI / MCP 接入](ai-接入.md) | Cursor / Claude Code / Codex 等 Agent、Bearer、助手 |
+| [容器部署](develop/docker.md) | 控制面 Docker / GHCR（不发 PyPI） |
 | [HTTP API](api/index.md) | 分组与示例 |
 | [OpenAPI](api/openapi.md) | `/api/docs` |
 | [开发约定](develop/docstrings.md) | Docstring · [布局](develop/layout.md) · [CI](develop/ci.md) |

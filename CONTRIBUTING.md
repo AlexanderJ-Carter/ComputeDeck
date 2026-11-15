@@ -39,12 +39,19 @@ UI 冒烟（需 UI 已启动且有 token）：
 
 ## 发版
 
-1. 同步 `VERSION` 与 `pyproject.toml` 的 `version`。
-2. 将 `[Unreleased]` 移入新版本节（`## [X.Y.Z] - YYYY-MM-DD`）。
-3. 本地：`python scripts/release_notes.py --check X.Y.Z` 与 `./scripts/check.sh`。
-4. 打 annotated tag 并推送：`git tag -a vX.Y.Z -m "vX.Y.Z"` → 推送 tag 后 Actions 会建 GitHub Release。
+主产物：**GitHub Release** + **GHCR** `ghcr.io/alexanderj-carter/computedeck`（不发 PyPI / npm）。
 
-**不发布 PyPI**：当前是仓库即控制面（`package = false`），用克隆 + `uv pip install -r requirements.txt` 安装。详见 [`docs/develop/ci.md`](docs/develop/ci.md)。
+```bash
+# 预览 → 写入版本/CHANGELOG → 跑校验（不推远程）
+python scripts/prepare_release.py --bump patch
+python scripts/prepare_release.py --bump patch --apply --check
+# 再按脚本打印的 git commit / tag 步骤操作；push 前须明确允许
+```
+
+首次镜像推送后：Packages → `computedeck` → **Public**（见 [`docs/develop/docker.md`](docs/develop/docker.md)）。
+
+**不发布 PyPI / npm**：仓库即控制面（`package = false`），用克隆 + `uv` 或容器。详见 [`docs/develop/ci.md`](docs/develop/ci.md)。  
+Agent 约定：[`AGENTS.md`](AGENTS.md) · [`CLAUDE.md`](CLAUDE.md) · [`docs/ai-接入.md`](docs/ai-接入.md)。
 
 ## 文档
 

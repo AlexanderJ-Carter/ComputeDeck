@@ -2,9 +2,11 @@
 # 用法：
 #   1. cp -n config/examples/cluster.example.json config/local/cluster.json
 #   2. cp -n config/examples/nodes.example.json config/local/nodes.json
-#   3. 准备 SSH 私钥到 deploy/ssh/（或设 COMPUTEDECK_SSH_DIR）
-#   4. docker compose up -d --build
-#   5. 浏览器 http://127.0.0.1:8787 （生产务必开鉴权）
+#   3. cp -n .env.example .env   # 可选
+#   4. 准备 SSH 私钥到 deploy/ssh/（或设 COMPUTEDECK_SSH_DIR）
+#   5. docker compose up -d --build
+#      # 或拉发版镜像：COMPUTEDECK_IMAGE=ghcr.io/alexanderj-carter/computedeck:X.Y.Z docker compose up -d
+#   6. 浏览器 http://127.0.0.1:8787 （生产务必开鉴权）
 
 services:
   control:
