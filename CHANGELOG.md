@@ -11,6 +11,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Edge `:18080` 根路径兜底页：浏览器打开不再反代出上游 401 JSON；说明这是内置 Edge（不是 nginx）
+
 ### Changed
 
 - 看板趋势指标语义：拆成 **GPU 算力 / 显存（nvidia-smi 实测）** 与 **槽位占用（occupied 占比）**；只保留最近约 1 小时短窗，不再堆长期历史

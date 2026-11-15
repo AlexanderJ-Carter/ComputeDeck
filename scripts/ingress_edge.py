@@ -25,6 +25,7 @@ import time
 from http.client import HTTPConnection
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from html import escape
 from urllib.parse import urlsplit
 
 import _bootstrap  # noqa: F401
@@ -36,6 +37,9 @@ from ingress_tls import build_ssl_context, normalize_ingress, probe_tls  # noqa:
 ENDPOINTS_FILE = STATE_DIR / "endpoints.json"
 HEALTH_FILE = STATE_DIR / "endpoint_health.json"
 STATUS_FILE = STATE_DIR / "ingress_edge.json"
+
+# 浏览器打开根路径时不要反代到上游（否则常见一坨 401 JSON）。
+_LANDING_PATHS = frozenset({"/", "/index.html", "/favicon.ico"})
 
 HOP_BY_HOP = {
     "connection",
@@ -181,6 +185,100 @@ SETTINGS = load_ingress_settings()
 POOL = UpstreamPool(SETTINGS)
 
 
+def landing_html(*, snap: dict, listen: str = "", public_base_url: str = "") -> str:
+    """根路径兜底页：说明这是 Edge 推理入口，不是 nginx 默认页。"""
+    available = int(snap.get("available") or 0)
+    total = int(snap.get("upstream_count") or 0)
+    strategy = escape(str(snap.get("strategy") or SETTINGS.get("strategy") or "round_robin"))
+    raw_base = (public_base_url or "").rstrip("/") or (f"http://{listen}" if listen else "")
+    base = escape(raw_base)
+    health = f"{base}/_gpu_control/health" if base else "/_gpu_control/health"
+    status = "上游就绪" if available > 0 else "暂无可用上游"
+    hint = (
+        "把 OpenAI 兼容请求打到下方路径，并带上推理服务要求的 Authorization。"
+        if available > 0
+        else "当前没有健康上游：请在控制面配置端点并完成健康探测后再访问。"
+    )
+    return f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ComputeDeck Edge</title>
+  <style>
+    :root {{
+      color-scheme: light dark;
+      --bg: #0f1412;
+      --panel: #17201c;
+      --ink: #e8f0ec;
+      --muted: #8fa399;
+      --line: #2a3a33;
+      --accent: #3dba8c;
+      --warn: #d4a017;
+    }}
+    @media (prefers-color-scheme: light) {{
+      :root {{
+        --bg: #f4f7f5;
+        --panel: #ffffff;
+        --ink: #14201a;
+        --muted: #5c6f66;
+        --line: #d5e0da;
+        --accent: #1f8f66;
+      }}
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0; min-height: 100vh; display: grid; place-items: center;
+      font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: radial-gradient(1200px 600px at 20% -10%, #1c3a2e 0%, transparent 55%), var(--bg);
+      color: var(--ink); padding: 24px;
+    }}
+    main {{
+      width: min(560px, 100%); background: var(--panel); border: 1px solid var(--line);
+      border-radius: 16px; padding: 28px 28px 24px; box-shadow: 0 18px 50px rgba(0,0,0,.18);
+    }}
+    .eyebrow {{ color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }}
+    h1 {{ margin: 8px 0 6px; font-size: 26px; letter-spacing: -.03em; }}
+    p {{ margin: 0 0 14px; color: var(--muted); }}
+    .status {{
+      display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px;
+      border: 1px solid var(--line); font-size: 13px; margin: 4px 0 16px;
+    }}
+    .dot {{ width: 8px; height: 8px; border-radius: 50%; background: {"var(--accent)" if available else "var(--warn)"}; }}
+    code, pre {{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12.5px;
+    }}
+    pre {{
+      margin: 0 0 14px; padding: 12px 14px; border-radius: 10px; overflow: auto;
+      background: color-mix(in srgb, var(--ink) 6%, transparent); border: 1px solid var(--line);
+      color: var(--ink);
+    }}
+    ul {{ margin: 0 0 8px; padding-left: 1.15em; color: var(--muted); }}
+    li {{ margin: 4px 0; }}
+    a {{ color: var(--accent); }}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="eyebrow">ComputeDeck · Edge</div>
+    <h1>统一推理入口</h1>
+    <p>这是控制面内置的反向代理（不是 nginx 默认页）。浏览器打开根路径只会看到本页；真正的推理流量走 API 路径。</p>
+    <div class="status"><span class="dot"></span>{escape(status)} · {available}/{total} 上游 · {strategy}</div>
+    <p>{escape(hint)}</p>
+    <pre>POST {base or ""}/v1/chat/completions
+Authorization: Bearer &lt;推理密钥&gt;</pre>
+    <ul>
+      <li>健康检查：<a href="{health}"><code>/_gpu_control/health</code></a></li>
+      <li>控制面 UI：通常在同一主机的 <code>:8787</code></li>
+      <li>可选 AI Gateway（LiteLLM）另占 <code>:4000</code>，与本入口独立</li>
+    </ul>
+  </main>
+</body>
+</html>
+"""
+
+
 def _write_status(listen: str, extra: dict | None = None) -> None:
     payload = {
         "ok": True,
@@ -241,7 +339,8 @@ class EdgeHandler(BaseHTTPRequestHandler):
         self._dispatch()
 
     def _dispatch(self) -> None:
-        if self.path.startswith("/_gpu_control/health"):
+        path = urlsplit(self.path).path or "/"
+        if path.startswith("/_gpu_control/health"):
             snap = POOL.snapshot()
             body = json.dumps(
                 {"ok": True, "service": "gpu-control-edge", **snap},
@@ -254,7 +353,28 @@ class EdgeHandler(BaseHTTPRequestHandler):
             if self.command != "HEAD":
                 self.wfile.write(body)
             return
+        if self.command in {"GET", "HEAD"} and path in _LANDING_PATHS:
+            self._serve_landing(path)
+            return
         self._proxy()
+
+    def _serve_landing(self, path: str) -> None:
+        if path == "/favicon.ico":
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        snap = POOL.snapshot()
+        listen = f"{SETTINGS.get('bind')}:{SETTINGS.get('port')}"
+        public = str(SETTINGS.get("public_base_url") or "")
+        body = landing_html(snap=snap, listen=listen, public_base_url=public).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def _proxy(self) -> None:
         length = int(self.headers.get("Content-Length") or 0)
