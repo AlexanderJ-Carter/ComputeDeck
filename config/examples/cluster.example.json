@@ -40,7 +40,7 @@
       "api_key_env": "GPU_CONTROL_ASSISTANT_API_KEY",
       "api_key_file": "config/local/secrets/assistant_api_key",
       "timeout_sec": 60,
-      "note": "OpenAI 兼容 Chat Completions；留空则 UI 小助手降级为讲解 + 快捷动作"
+      "note": "OpenAI 兼容 Chat Completions；建议在 UI 助手设置填写 Base URL / 模型 / Key（可拉取 /models 下拉）"
     }
   },
   "api": {

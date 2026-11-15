@@ -91,6 +91,9 @@ open http://127.0.0.1:8787/api/docs
 助手：
 
 - `GET /api/assistant/policy` · `GET /api/assistant/status` · `POST /api/assistant/chat`
+- `POST /api/assistant/config` · `GET|POST /api/assistant/models` — UI 设置上游与拉取模型列表
+- `POST /api/assistant/analyze` — 只读解读 overview + notices + diagnose
+- `GET /api/notices` · `POST /api/notices/mark` — 监管公告（规则告警；可 `?sync=1`）
 - `GET /api/exec/suggest` — 远程命令补全
 
 完整列表以 `GET /api` 或 `/api/docs` 为准。
@@ -147,7 +150,7 @@ Cursor 片段示例：
 容器里跑控制面时：MCP 进程仍建议在**宿主机**指向仓库/挂载树里的 `bin/gpu-control-mcp`，并用 `GPU_CONTROL_API_BASE=http://127.0.0.1:8787` 打到已映射的 UI；或在容器内 `docker compose exec` 调试 CLI，不必把 IDE 的 stdio 硬塞进容器。
 
 教学与风险：MCP `instructions` 与 `GET /api/assistant/policy` 同源（`lib/assistant_policy.py`）。  
-UI 小助手：`POST /api/assistant/chat`（`cluster.control.assistant` 配 OpenAI 兼容上游；未配则讲解 + 快捷动作）。
+UI 小助手：设置面板填 Base URL / 模型 / Key（`POST /api/assistant/config`，可 `POST /api/assistant/models` 下拉）；`POST /api/assistant/chat` 调 OpenAI 兼容上游；未配则引导去设置。
 
 一等工具（20）：`gc_api_catalog` · `gc_auth_status` · `gc_doctor` · `gc_overview` · `gc_get_jobs` · `gc_job_action` · `gc_get_config` · `gc_put_config` · `gc_models` · `gc_toolkits` · `gc_procs` · `gc_free_node` · `gc_deploy` · `gc_queue` · `gc_lease` · `gc_diagnose` · `gc_gateway` · `gc_node` · `gc_exec` · `gc_cli`。
 

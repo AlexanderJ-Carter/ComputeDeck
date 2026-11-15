@@ -51,7 +51,10 @@
     } else stopGpuShuffle();
     if (id === "s7") startLbDemo();
     else stopLbDemo();
-    if (id === "s9") runTerminal();
+    if (id === "s9") {
+      runTerminal();
+      runAiDemo();
+    }
     syncParticles(id);
   };
 
@@ -314,6 +317,55 @@
       };
       requestAnimationFrame(tick);
     });
+  }
+
+  let aiDemoStarted = false;
+
+  function typeInto(el, text, ms, done) {
+    if (!el) {
+      if (done) done();
+      return;
+    }
+    if (reduce) {
+      el.textContent = text;
+      if (done) done();
+      return;
+    }
+    el.textContent = "";
+    let i = 0;
+    const tick = () => {
+      if (i >= text.length) {
+        if (done) done();
+        return;
+      }
+      el.textContent += text.charAt(i++);
+      window.setTimeout(tick, ms);
+    };
+    tick();
+  }
+
+  function runAiDemo() {
+    if (aiDemoStarted) return;
+    aiDemoStarted = true;
+    const bot = document.getElementById("ai-bot-line");
+    const insight = document.getElementById("ai-insight-line");
+    const suggestItems = [...document.querySelectorAll("#ai-suggest-list li")];
+    const botText =
+      bot?.textContent?.trim() ||
+      "健康分 78 · 闲 12 卡 · 入口 least-conn 正常。建议先开 watchdog，再看 gpu-3 的 API 探测失败。";
+    const insightText = insight?.textContent?.trim() || "AI：优先恢复 watchdog，再探测失败端点。";
+    if (bot) bot.textContent = "";
+    if (insight) insight.textContent = "";
+    typeInto(bot, botText, 18, () => {
+      typeInto(insight, insightText, 22);
+    });
+    if (suggestItems.length && !reduce) {
+      let idx = 0;
+      window.setInterval(() => {
+        suggestItems.forEach((li, i) => li.classList.toggle("on", i === idx));
+        idx = (idx + 1) % suggestItems.length;
+      }, 1400);
+    }
   }
 
   function runTerminal() {

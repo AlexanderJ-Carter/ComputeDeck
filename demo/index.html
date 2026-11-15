@@ -5,9 +5,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ComputeDeck — 多节点 GPU 控制面</title>
-  <meta name="description" content="ComputeDeck：发现、租约、Job、统一入口与 Agent，一套控制面管住 GPU 集群。" />
+  <meta name="description" content="ComputeDeck：多节点 GPU 控制面 · 看板助手 · 命令补全 · 监管公告 · MCP。" />
   <meta property="og:title" content="ComputeDeck" />
-  <meta property="og:description" content="多节点 GPU 控制面 · Web · CLI · MCP" />
+  <meta property="og:description" content="多节点 GPU 控制面 · Web · CLI · AI 助手 · MCP" />
   <meta name="theme-color" content="#eef3f0" />
   <link rel="icon" href="assets/logo.svg" type="image/svg+xml" />
   <link rel="preload" href="styles.css" as="style" />
@@ -52,11 +52,11 @@
         <p class="eyebrow reveal d1">多节点 GPU 控制面</p>
         <h1 class="reveal d2">ComputeDeck</h1>
         <p class="lede reveal d3">主控一台，卡、任务和入口都管得住。</p>
-        <p class="lede sub reveal d3">看板、命令行、Agent，说的是同一套事。</p>
+        <p class="lede sub reveal d3">看板带 AI 助手与监管公告；命令行可补全；Agent 走同一套 MCP。</p>
         <div class="hero-stats reveal d4">
           <div class="stat-card"><b data-count="20">0</b><span>MCP 工具</span></div>
-          <div class="stat-card"><b data-count="10">0</b><span>推荐 Job 模板</span></div>
-          <div class="stat-card"><b data-count="3">0</b><span>入口方式</span></div>
+          <div class="stat-card"><b data-count="3">0</b><span>AI 能力</span></div>
+          <div class="stat-card"><b data-count="10">0</b><span>推荐 Job</span></div>
         </div>
         <p class="hint reveal d5">下滑浏览 · ↓ / 空格 · 默认自动播放</p>
       </div>
@@ -120,10 +120,10 @@ GPU 3  76%  PID  9921  ???</pre>
           <li><strong>入口</strong><span>Edge · 重试 · least-conn</span></li>
           <li><strong>腾空</strong><span>free · cordon · 清进程</span></li>
           <li><strong>模型栈</strong><span>拉取校验 · train/serve</span></li>
+          <li><strong>AI</strong><span>助手对话 · 命令补全 · 监管</span></li>
           <li><strong>Agent</strong><span>OpenAPI · 20 个 gc_*</span></li>
-          <li><strong>可靠</strong><span>flock · watchdog · diagnose</span></li>
         </ol>
-        <p class="rail-foot reveal d4">场景写在 <code>config/local</code>，换集群主要改 JSON。</p>
+        <p class="rail-foot reveal d4">场景在 UI 里配；高级仍可写 <code>config/local</code>。</p>
       </div>
     </section>
 
@@ -273,17 +273,56 @@ GPU 3  76%  PID  9921  ???</pre>
       </div>
     </section>
 
-    <!-- 9 Agent -->
-    <section class="slide" id="s9" data-title="Agent">
+    <!-- 9 AI · Agent -->
+    <section class="slide" id="s9" data-title="AI">
       <div class="slide-bg mesh-a"></div>
-      <div class="slide-inner split">
-        <div>
-          <p class="eyebrow reveal">Agent 友好</p>
-          <h2 class="reveal d1">人和程序共用一套能力</h2>
-          <p class="body reveal d2">浏览器、CLI、MCP 读同一份目录。Cursor / Claude Code / Codex 等走同一
-            <code>bin/gpu-control-mcp</code> 与 <code>gc_*</code>；脚本带 Bearer，人看看板或小助手。</p>
+      <div class="slide-inner">
+        <p class="eyebrow reveal">AI · Agent</p>
+        <h2 class="reveal d1">看板里就能问、补全、盯异常</h2>
+        <p class="body narrow reveal d2">助手对话解读集群；远程命令智能补全；规则告警进公告栏，一键 AI
+          解读。Cursor / Claude Code 仍走同一 <code>bin/gpu-control-mcp</code>。</p>
+        <div class="ai-demo reveal d3" aria-hidden="true">
+          <article class="ai-card">
+            <header>
+              <strong>控制面助手</strong>
+              <span>对话 · 只读工具</span>
+            </header>
+            <div class="ai-thread">
+              <p class="ai-msg user">现在集群状态怎么样？</p>
+              <p class="ai-msg bot" id="ai-bot-line">健康分 78 · 闲 12 卡 · 入口 least-conn 正常。建议先开
+                watchdog，再看 gpu-3 的 API 探测失败。</p>
+            </div>
+            <footer class="ai-chips">
+              <span>查看总览</span><span>跑自检</span><span>去配置上游</span>
+            </footer>
+          </article>
+          <article class="ai-card">
+            <header>
+              <strong>命令补全</strong>
+              <span>exec suggest</span>
+            </header>
+            <div class="ai-suggest">
+              <div class="ai-suggest-input"><code>gpu-control fre<span class="caret">|</span></code></div>
+              <ul id="ai-suggest-list">
+                <li class="on"><code>free --node gpu-2</code><em>腾空节点</em></li>
+                <li><code>free --node gpu-2 --cordon</code><em>腾空并隔离</em></li>
+                <li><code>procs list --node gpu-2</code><em>看占用进程</em></li>
+              </ul>
+            </div>
+          </article>
+          <article class="ai-card">
+            <header>
+              <strong>监管公告</strong>
+              <span>规则 + AI 解读</span>
+            </header>
+            <ul class="ai-notices">
+              <li data-sev="warn"><b>Watchdog 未在运行</b><span>巡检进程未检测到</span></li>
+              <li data-sev="error"><b>健康评分偏低</b><span>SSH / API 需关注</span></li>
+              <li class="ai-insight" id="ai-insight-line">AI：优先恢复 watchdog，再探测失败端点。</li>
+            </ul>
+          </article>
         </div>
-        <div class="term reveal d3" aria-hidden="true">
+        <div class="term ai-term reveal d4" aria-hidden="true">
           <div class="term-bar"><i></i><i></i><i></i><span>mcp · gc_*</span></div>
           <pre id="term-lines"></pre>
         </div>
@@ -330,27 +369,34 @@ GPU 3  76%  PID  9921  ???</pre>
     <section class="slide finale" id="s11" data-title="开始">
       <div class="slide-bg hero-bg"><canvas id="finale-canvas" aria-hidden="true"></canvas></div>
       <div class="slide-inner finale-inner">
-        <p class="eyebrow reveal">开源 · AGPL-3.0</p>
-        <h2 class="reveal d1">拿到你的机房里用</h2>
-        <p class="body narrow reveal d2">仓库即控制面：克隆 + <code>uv</code>，或 <code>docker compose</code> / GHCR。不发 PyPI /
-          npm。写好 <code>config/local</code>，装推荐 Job，打开 UI。</p>
+        <div class="finale-copy">
+          <p class="eyebrow reveal">开源 · AGPL-3.0</p>
+          <h2 class="reveal d1">拿到你的机房里用</h2>
+          <p class="body reveal d2">克隆 + <code>uv</code> 或容器跑起控制面。UI 里配节点 / Job / 助手上游；看板能对话、补全命令、看监管公告。不发 PyPI / npm。</p>
+          <ul class="finale-ai reveal d3">
+            <li><strong>AI 对话</strong><span>总览 · 自检 · 建议操作</span></li>
+            <li><strong>命令补全</strong><span>exec suggest</span></li>
+            <li><strong>监管公告</strong><span>规则告警 + AI 解读</span></li>
+            <li><strong>MCP</strong><span>Cursor / Claude / Codex</span></li>
+          </ul>
+          <div class="cta-row reveal d4">
+            <a class="btn primary" href="https://github.com/AlexanderJ-Carter/ComputeDeck">打开 GitHub</a>
+            <a class="btn ghost" href="https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/docs/ai-接入.md">AI /
+              MCP</a>
+            <a class="btn ghost" href="https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/docs/手册.md">阅读手册</a>
+            <a class="btn ghost"
+              href="https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/docs/develop/docker.md">容器部署</a>
+          </div>
+          <p class="foot reveal d5">ComputeDeck · gpu-control · ghcr.io/…/computedeck</p>
+        </div>
         <div class="code-shell slim reveal d3">
-          <div class="code-chrome"><span>快速开始 · 源码</span></div>
+          <div class="code-chrome"><span>快速开始</span></div>
           <pre class="code-panel"><code>git clone https://github.com/AlexanderJ-Carter/ComputeDeck.git
 cd ComputeDeck
 uv venv .venv && uv pip install -r requirements.txt
 gpu-control doctor && gpu-control ui --background
 # 或：docker compose up -d --build</code></pre>
         </div>
-        <div class="cta-row reveal d4">
-          <a class="btn primary" href="https://github.com/AlexanderJ-Carter/ComputeDeck">打开 GitHub</a>
-          <a class="btn ghost" href="https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/docs/手册.md">阅读手册</a>
-          <a class="btn ghost" href="https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/docs/ai-接入.md">AI /
-            MCP</a>
-          <a class="btn ghost"
-            href="https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/docs/develop/docker.md">容器部署</a>
-        </div>
-        <p class="foot reveal d5">产品名 ComputeDeck · 命令行 gpu-control · 镜像 ghcr.io/…/computedeck</p>
       </div>
     </section>
   </main>

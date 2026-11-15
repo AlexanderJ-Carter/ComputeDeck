@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+import urllib.error
 from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
@@ -57,9 +58,21 @@ from jobs_util import (  # noqa: E402
 from api_catalog import catalog_payload, openapi_payload  # noqa: E402
 from assistant_policy import policy_payload  # noqa: E402
 from assistant_chat import (  # noqa: E402
+    analyze_dashboard,
     assistant_status,
+    format_upstream_error,
+    list_upstream_models,
+    probe_upstream,
+    save_assistant_config,
     compact_overview,
     handle_chat,
+)
+from notices_util import (  # noqa: E402
+    findings_to_notices,
+    list_notices,
+    mark_notices,
+    overview_to_notices,
+    upsert_notices,
 )
 from toolkits_util import catalog_payload as toolkits_catalog_payload  # noqa: E402
 from toolkits_util import load_toolkit_state  # noqa: E402
@@ -769,6 +782,7 @@ def _build_overview(*, light: bool = False) -> dict:
         "ingress": _gateway_status_fresh(allow_cli=not light),
         "quality": build_quality_report(),
         "watchdog": watchdog_status(),
+        "notices": list_notices(limit=20),
         "queue": queue,
         "cordoned": cordoned,
         "endpoint_health": endpoint_health,
@@ -1787,6 +1801,21 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, assistant_status(cluster))
             return
 
+        if path == "/api/assistant/models":
+            qs = parse_qs(parsed.query)
+            base_url = (qs.get("base_url") or [None])[0]
+            try:
+                payload = list_upstream_models(base_url=base_url or None)
+            except ValueError as exc:
+                self._json(400, {"ok": False, "error": str(exc)})
+                return
+            except Exception as exc:  # noqa: BLE001
+                info = format_upstream_error(exc, base_url=base_url or "")
+                self._json(502, {"ok": False, **info})
+                return
+            self._json(200, payload)
+            return
+
         if path == "/api/exec/suggest":
             qs = parse_qs(parsed.query)
             q = (qs.get("q") or [""])[0]
@@ -1821,7 +1850,34 @@ class Handler(BaseHTTPRequestHandler):
                 payload = json.loads(result["stdout"] or "{}")
             except json.JSONDecodeError:
                 payload = {"ok": False, "error": "diagnose parse failed", "result": result}
+            findings = payload.get("findings") if isinstance(payload, dict) else None
+            if isinstance(findings, list):
+                upsert_notices(findings_to_notices(findings))
             self._json(200, payload)
+            return
+
+        if path == "/api/notices":
+            qs = parse_qs(parsed.query)
+            sync = (qs.get("sync") or ["0"])[0] in {"1", "true", "yes"}
+            if sync:
+                overview = build_overview(light=True)
+                rows = overview_to_notices(overview)
+                result = run_cli(["diagnose", "check"], timeout=60)
+                try:
+                    diag = json.loads(result["stdout"] or "{}")
+                except json.JSONDecodeError:
+                    diag = {}
+                findings = diag.get("findings") if isinstance(diag, dict) else None
+                if isinstance(findings, list):
+                    rows.extend(findings_to_notices(findings))
+                if rows:
+                    upsert_notices(rows)
+            include_dismissed = (qs.get("all") or ["0"])[0] in {"1", "true", "yes"}
+            try:
+                limit = int((qs.get("limit") or ["50"])[0])
+            except ValueError:
+                limit = 50
+            self._json(200, list_notices(include_dismissed=include_dismissed, limit=limit))
             return
 
         if path == "/api/overview":
@@ -2049,6 +2105,110 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path.startswith("/api") and not self._auth_gate(path, parsed.query):
+            return
+
+        if path == "/api/assistant/config":
+            base_url = str(body.get("base_url") or "").strip()
+            model = str(body.get("model") or "").strip()
+            enabled = bool(body.get("enabled", True))
+            clear_key = bool(body.get("clear_api_key"))
+            api_key = body.get("api_key")
+            if api_key is not None and not isinstance(api_key, str):
+                self._json(400, {"ok": False, "error": "api_key 须为字符串"})
+                return
+            timeout_raw = body.get("timeout_sec")
+            timeout_sec = int(timeout_raw) if timeout_raw is not None else None
+            try:
+                status = save_assistant_config(
+                    base_url=base_url,
+                    model=model,
+                    enabled=enabled,
+                    timeout_sec=timeout_sec,
+                    api_key=api_key,
+                    clear_api_key=clear_key,
+                )
+            except (OSError, ValueError, TypeError) as exc:
+                self._json(400, {"ok": False, "error": str(exc)})
+                return
+            self._json(200, {"ok": True, **status})
+            return
+
+        if path == "/api/assistant/models":
+            # 允许用草稿 Base URL / Key 试拉，不必先保存
+            draft_base = body.get("base_url")
+            draft_key = body.get("api_key")
+            base_arg = str(draft_base).strip() if isinstance(draft_base, str) else None
+            try:
+                payload = list_upstream_models(
+                    base_url=base_arg,
+                    api_key=str(draft_key) if isinstance(draft_key, str) else None,
+                )
+            except ValueError as exc:
+                self._json(400, {"ok": False, "error": str(exc)})
+                return
+            except Exception as exc:  # noqa: BLE001
+                info = format_upstream_error(exc, base_url=base_arg or "")
+                self._json(502, {"ok": False, **info})
+                return
+            self._json(200, payload)
+            return
+
+        if path == "/api/assistant/probe":
+            draft_base = body.get("base_url")
+            draft_key = body.get("api_key")
+            base_arg = str(draft_base).strip() if isinstance(draft_base, str) else None
+            try:
+                payload = probe_upstream(
+                    base_url=base_arg,
+                    api_key=str(draft_key) if isinstance(draft_key, str) else None,
+                )
+            except ValueError as exc:
+                self._json(400, {"ok": False, "error": str(exc)})
+                return
+            # 探测失败也用 200 + ok:false，便于 UI 展示 dns/hint 结构化字段
+            self._json(200, payload)
+            return
+
+        if path == "/api/notices/mark":
+            ids = body.get("ids")
+            if ids is not None and not isinstance(ids, list):
+                self._json(400, {"ok": False, "error": "ids 须为数组"})
+                return
+            read = body.get("read")
+            dismissed = body.get("dismissed")
+            if read is None and dismissed is None:
+                self._json(400, {"ok": False, "error": "须提供 read 或 dismissed"})
+                return
+            payload = mark_notices(
+                ids=[str(x) for x in ids] if isinstance(ids, list) else None,
+                read=bool(read) if read is not None else None,
+                dismissed=bool(dismissed) if dismissed is not None else None,
+            )
+            invalidate_overview_cache()
+            self._json(200, {"ok": True, **payload})
+            return
+
+        if path == "/api/assistant/analyze":
+            cluster = _read_json(cluster_file(), {})
+            overview = build_overview(light=True)
+            upsert_notices(overview_to_notices(overview))
+            result = run_cli(["diagnose", "check"], timeout=60)
+            try:
+                diag = json.loads(result["stdout"] or "{}")
+            except json.JSONDecodeError:
+                diag = {}
+            findings = diag.get("findings") if isinstance(diag, dict) else []
+            if isinstance(findings, list):
+                upsert_notices(findings_to_notices(findings))
+            notices = list_notices(limit=30).get("items") or []
+            out = analyze_dashboard(
+                overview=overview,
+                notices=notices,
+                findings=findings if isinstance(findings, list) else [],
+                cluster=cluster,
+            )
+            invalidate_overview_cache()
+            self._json(200, out)
             return
 
         if path == "/api/assistant/chat":

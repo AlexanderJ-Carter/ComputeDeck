@@ -80,6 +80,9 @@
           <button id="btn-doctor" class="ghost" data-keep-enabled="1" data-action="1">自检</button>
           <button id="btn-api-health" class="ghost" data-keep-enabled="1" data-action="1">探测 API</button>
           <button id="btn-refresh" class="primary" data-keep-enabled="1" data-action="1">刷新 GPU</button>
+          <button type="button" id="btn-notices" class="ghost notices-bell" data-keep-enabled="1" aria-expanded="false" aria-controls="notices-pop" title="公告">
+            公告<span id="notices-badge" class="notices-badge" hidden>0</span>
+          </button>
           <span id="busy-indicator" class="chip chip--info" hidden>执行中…</span>
           <button type="button" id="console-unread" class="chip warn console-unread" hidden data-keep-enabled="1">有新输出</button>
           <span id="auth-session-chip" class="chip chip--neutral" hidden data-keep-enabled="1"></span>
@@ -88,6 +91,17 @@
       </header>
 
       <section class="view active dash" data-view-panel="actions">
+        <section class="panel dash-notices" aria-labelledby="dash-notices-title">
+          <header class="panel-h">
+            <h2 id="dash-notices-title">监管公告</h2>
+            <div class="btn-row">
+              <button type="button" id="btn-notices-sync" class="ghost tiny" data-keep-enabled="1">同步检测</button>
+              <button type="button" id="btn-ai-analyze" class="primary tiny" data-keep-enabled="1">AI 解读</button>
+            </div>
+          </header>
+          <div id="notices-list" class="notices-list"></div>
+          <pre id="ai-analyze-box" class="snippet notices-ai" hidden></pre>
+        </section>
         <div class="dash-top">
           <section class="panel dash-health" aria-labelledby="dash-health-title">
             <div class="health-ring" id="quality-ring" style="--score:0" data-tone="idle" role="img" aria-label="集群健康评分">
@@ -685,11 +699,17 @@ gpu-control ui --background</pre>
             <div class="panel">
               <div class="panel-h">
                 <h2>3. 节点清单</h2>
-                <button id="btn-save-nodes-json" class="primary tiny" data-keep-enabled="1">保存并生成</button>
+                <div class="btn-row">
+                  <button type="button" id="btn-add-node-card" class="ghost tiny" data-keep-enabled="1">加节点</button>
+                  <button id="btn-save-nodes-json" class="primary tiny" data-keep-enabled="1">保存并生成</button>
+                </div>
               </div>
-              <p class="muted" style="margin-top:0">每行：<code>名称 地址 [GPU数] [标签] [# 备注]</code>，例如
-                <code>gpu-1 10.0.0.1 4 a100,serving # 训练池</code></p>
-              <textarea id="nodes-editor" spellcheck="false"></textarea>
+              <div id="nodes-cards" class="nodes-cards"></div>
+              <details class="fold">
+                <summary>高级：文本行编辑</summary>
+                <p class="muted">每行：<code>名称 地址 [GPU数] [标签] [# 备注]</code></p>
+                <textarea id="nodes-editor" spellcheck="false"></textarea>
+              </details>
             </div>
 
             <div class="panel">
@@ -698,7 +718,7 @@ gpu-control ui --background</pre>
                 <button id="btn-save-job" class="primary tiny" data-keep-enabled="1">保存</button>
               </div>
               <p class="muted" style="margin-top:0">
-                选择已有 Job，或改名另存为新 Job。只编辑常用字段；保存时会保留 <code>kind/model/env/docker</code> 等原始配置。
+                表单覆盖契约字段；未列出的键（如 model / distributed）保存时保留。
               </p>
               <label class="field">
                 <span>选择已有</span>
@@ -707,10 +727,77 @@ gpu-control ui --background</pre>
               <label class="field"><span>Job 名</span><input id="job-name" placeholder="my-service" /></label>
               <p class="path-line" id="setup-job-path">config/local/jobs/&lt;name&gt;.json</p>
               <label class="field"><span>描述</span><input id="job-desc" /></label>
-              <label class="field"><span>每节点 GPU</span><input id="job-gpus" type="number" /></label>
-              <label class="field"><span>Python 路径</span><input id="job-python" /></label>
-              <label class="field"><span>脚本路径</span><input id="job-script" /></label>
+              <div class="field-row">
+                <label class="field"><span>类型 kind</span>
+                  <select id="job-kind" data-keep-enabled="1">
+                    <option value="service">service</option>
+                    <option value="train">train</option>
+                  </select>
+                </label>
+                <label class="field"><span>运行时</span>
+                  <select id="job-runtime" data-keep-enabled="1">
+                    <option value="process">process</option>
+                    <option value="docker">docker</option>
+                  </select>
+                </label>
+                <label class="field"><span>每节点 GPU</span><input id="job-gpus" type="number" /></label>
+              </div>
+              <div id="job-process-fields">
+                <label class="field"><span>Python 路径</span><input id="job-python" /></label>
+                <label class="field"><span>脚本路径</span><input id="job-script" /></label>
+              </div>
+              <div id="job-docker-fields" hidden>
+                <label class="field"><span>Docker 镜像</span><input id="job-docker-image" placeholder="registry/image:tag" /></label>
+              </div>
               <label class="field"><span>额外参数（空格分隔）</span><input id="job-extra" placeholder="--flag value" /></label>
+              <label class="field"><span>环境变量（KEY=VAL 每行）</span><textarea id="job-env" rows="3" spellcheck="false" placeholder="CUDA_VISIBLE_DEVICES=0"></textarea></label>
+            </div>
+          </div>
+
+          <div class="setup-grid">
+            <div class="panel">
+              <div class="panel-h">
+                <h2>5. Watchdog</h2>
+                <button id="btn-save-watchdog" class="primary tiny" data-keep-enabled="1">保存</button>
+              </div>
+              <label class="field switch-field">
+                <span>启用自动巡检重启</span>
+                <input type="checkbox" id="wd-enabled" data-keep-enabled="1" />
+              </label>
+              <label class="field"><span>监控 Job（逗号分隔，空=默认 Job）</span><input id="wd-jobs" placeholder="shell-job" /></label>
+              <div class="field-row">
+                <label class="field"><span>间隔秒</span><input id="wd-interval" type="number" /></label>
+                <label class="field"><span>最大重启</span><input id="wd-max-restarts" type="number" /></label>
+                <label class="field"><span>失败阈值</span><input id="wd-failure-threshold" type="number" /></label>
+              </div>
+              <label class="field"><span>节点范围</span><input id="wd-nodes" placeholder="all" /></label>
+            </div>
+            <div class="panel">
+              <div class="panel-h">
+                <h2>6. 鉴权</h2>
+                <button id="btn-save-auth" class="primary tiny" data-keep-enabled="1">保存</button>
+              </div>
+              <label class="field"><span>模式</span>
+                <select id="auth-mode" data-keep-enabled="1">
+                  <option value="off">off（关闭）</option>
+                  <option value="password">password</option>
+                  <option value="oidc">oidc</option>
+                </select>
+              </label>
+              <label class="field"><span>Session TTL（小时）</span><input id="auth-ttl" type="number" /></label>
+              <label class="field"><span>密码哈希文件</span><input id="auth-password-hash" /></label>
+              <label class="field"><span>Session 密钥文件</span><input id="auth-session-secret" /></label>
+              <label class="field"><span>API Token 文件</span><input id="auth-api-token" /></label>
+              <details class="fold">
+                <summary>OIDC</summary>
+                <label class="field"><span>Issuer</span><input id="auth-oidc-issuer" /></label>
+                <label class="field"><span>Client ID</span><input id="auth-oidc-client-id" /></label>
+                <label class="field"><span>Client Secret 文件</span><input id="auth-oidc-secret" /></label>
+                <label class="field switch-field">
+                  <span>允许密码回落</span>
+                  <input type="checkbox" id="auth-oidc-password-fallback" data-keep-enabled="1" />
+                </label>
+              </details>
             </div>
           </div>
         </div>
@@ -761,6 +848,16 @@ gpu-control ui --background</pre>
     </div>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <div id="notices-pop" class="notices-pop" hidden role="dialog" aria-label="公告">
+    <header class="notices-pop-h">
+      <strong>公告</strong>
+      <div class="btn-row">
+        <button type="button" id="btn-notices-read-all" class="ghost tiny" data-keep-enabled="1">全部已读</button>
+        <button type="button" id="btn-notices-close" class="ghost tiny" data-keep-enabled="1">关闭</button>
+      </div>
+    </header>
+    <div id="notices-pop-list" class="notices-list"></div>
+  </div>
   <button type="button" id="assistant-fab" class="assistant-fab" data-keep-enabled="1" aria-expanded="false" aria-controls="assistant-panel" title="小助手">助手</button>
   <section id="assistant-panel" class="assistant-panel" hidden aria-label="控制面小助手">
     <header class="assistant-h">
@@ -768,15 +865,58 @@ gpu-control ui --background</pre>
         <strong>ComputeDeck 助手</strong>
         <span class="meta" id="assistant-mode">加载中…</span>
       </div>
-      <button type="button" id="assistant-close" class="ghost tiny" data-keep-enabled="1">关闭</button>
+      <div class="assistant-h-actions">
+        <button type="button" id="assistant-settings-btn" class="ghost tiny" data-keep-enabled="1">设置</button>
+        <button type="button" id="assistant-close" class="ghost tiny" data-keep-enabled="1">关闭</button>
+      </div>
     </header>
-    <div id="assistant-quick" class="assistant-quick"></div>
-    <div id="assistant-thread" class="assistant-thread" role="log" aria-live="polite"></div>
-    <div id="assistant-pending" class="assistant-pending" hidden></div>
-    <form id="assistant-form" class="assistant-form">
-      <input id="assistant-input" type="text" placeholder="问状态、用法，或让我建议操作…" autocomplete="off" data-keep-enabled="1" />
-      <button type="submit" class="primary" id="assistant-send" data-keep-enabled="1">发送</button>
-    </form>
+    <div id="assistant-settings" class="assistant-settings" hidden>
+      <label class="assistant-field">
+        <span>上游预设</span>
+        <select id="assistant-preset" data-keep-enabled="1">
+          <option value="custom">自定义 OpenAI 兼容（内网推荐）</option>
+          <option value="openai">OpenAI 官方（需控制面能解析外网）</option>
+        </select>
+      </label>
+      <label class="assistant-field">
+        <span>Base URL</span>
+        <input id="assistant-base-url" type="url" placeholder="http://内网网关:端口/v1" autocomplete="off" data-keep-enabled="1" />
+      </label>
+      <label class="assistant-field">
+        <span>API Key</span>
+        <input id="assistant-api-key" type="password" placeholder="按需填写；已配置可留空" autocomplete="off" data-keep-enabled="1" />
+      </label>
+      <label class="assistant-field">
+        <span>模型</span>
+        <div class="assistant-model-row">
+          <select id="assistant-model-select" data-keep-enabled="1">
+            <option value="">— 先拉取或手填 —</option>
+          </select>
+          <input id="assistant-model" type="text" list="assistant-model-list" placeholder="如 gpt-4o-mini" autocomplete="off" data-keep-enabled="1" />
+          <datalist id="assistant-model-list"></datalist>
+        </div>
+      </label>
+      <label class="assistant-check">
+        <input id="assistant-clear-key" type="checkbox" data-keep-enabled="1" />
+        <span>清除已保存的 API Key</span>
+      </label>
+      <p class="meta" id="assistant-settings-hint">请求由控制面主机访问 Base URL（不是浏览器本机）。内网请填可达兼容网关，先「连通探测」再拉取模型。</p>
+      <div class="assistant-settings-actions">
+        <button type="button" id="assistant-probe" class="ghost" data-keep-enabled="1">连通探测</button>
+        <button type="button" id="assistant-fetch-models" class="ghost" data-keep-enabled="1">拉取模型</button>
+        <button type="button" id="assistant-save-config" class="primary" data-keep-enabled="1">保存</button>
+        <button type="button" id="assistant-settings-back" class="ghost" data-keep-enabled="1">返回对话</button>
+      </div>
+    </div>
+    <div id="assistant-chat-view" class="assistant-chat-view">
+      <div id="assistant-quick" class="assistant-quick"></div>
+      <div id="assistant-thread" class="assistant-thread" role="log" aria-live="polite"></div>
+      <div id="assistant-pending" class="assistant-pending" hidden></div>
+      <form id="assistant-form" class="assistant-form">
+        <input id="assistant-input" type="text" placeholder="问状态、用法，或让我建议操作…" autocomplete="off" data-keep-enabled="1" />
+        <button type="submit" class="primary" id="assistant-send" data-keep-enabled="1">发送</button>
+      </form>
+    </div>
   </section>
   <div id="auth-gate" class="auth-gate" hidden>
     <form id="auth-form" class="auth-card" autocomplete="current-password">

@@ -442,11 +442,15 @@ async function api(path, options = {}) {
     throw new Error(data.error || "需要登录");
   }
   if (!res.ok) {
-    const detail = data.results
+    let detail = data.results
       ? JSON.stringify(data.results, null, 2)
       : data.result
         ? `${data.result.stdout || ""}\n${data.result.stderr || ""}`.trim()
-        : data.error || JSON.stringify(data);
+        : "";
+    if (!detail) {
+      const parts = [data.error, data.hint, data.detail].filter(Boolean);
+      detail = parts.length ? parts.join(" — ") : JSON.stringify(data);
+    }
     throw new Error(detail || `HTTP ${res.status}`);
   }
   if (res.headers.get("ETag")) data.__etag = res.headers.get("ETag");
@@ -2191,6 +2195,7 @@ function renderDashboard(data) {
 
   renderDashGateway(data.ingress || state.ingress);
   if (data.ingress) state.ingress = data.ingress;
+  if (data.notices) renderNotices(data.notices);
 
   const tk = data.toolkits || {};
   const chips = $("dash-toolkit-chips");
@@ -2913,6 +2918,111 @@ function fillJobForm(job, fallbackName = "") {
   $("job-python").value = (job && job.python) || "";
   $("job-script").value = (job && job.script) || "";
   $("job-extra").value = ((job && job.extra_args) || []).join(" ");
+  const kind = $("job-kind");
+  if (kind) kind.value = (job && job.kind) || "service";
+  const runtime = $("job-runtime");
+  if (runtime) runtime.value = (job && job.runtime) || "process";
+  const image = $("job-docker-image");
+  if (image) image.value = (job && job.docker && job.docker.image) || "";
+  const envBox = $("job-env");
+  if (envBox) {
+    const env = (job && job.env) || {};
+    envBox.value = Object.entries(env)
+      .map(([k, v]) => `${k}=${v}`)
+      .join("\n");
+  }
+  syncJobRuntimeFields();
+}
+
+function syncJobRuntimeFields() {
+  const runtime = ($("job-runtime")?.value || "process").trim();
+  const proc = $("job-process-fields");
+  const dock = $("job-docker-fields");
+  if (proc) proc.hidden = runtime !== "process";
+  if (dock) dock.hidden = runtime !== "docker";
+}
+
+function parseEnvText(text) {
+  const out = {};
+  for (const raw of String(text || "").split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq <= 0) continue;
+    out[line.slice(0, eq).trim()] = line.slice(eq + 1).trim();
+  }
+  return out;
+}
+
+function renderNodesCards(doc) {
+  const root = $("nodes-cards");
+  if (!root) return;
+  const nodes = (doc && doc.nodes) || {};
+  const names = Object.keys(nodes);
+  root.innerHTML =
+    names
+      .map((name) => {
+        const meta = nodes[name] || {};
+        return `<div class="node-card" data-node-card="${escapeHtml(name)}">
+          <div class="field-row">
+            <label class="field"><span>名称</span><input data-nc="name" value="${escapeHtml(name)}" /></label>
+            <label class="field"><span>地址</span><input data-nc="host" value="${escapeHtml(meta.ansible_host || "")}" /></label>
+            <label class="field"><span>GPU</span><input data-nc="gpus" type="number" value="${escapeHtml(meta.gpus_per_node ?? "")}" /></label>
+          </div>
+          <label class="field"><span>标签（逗号）</span><input data-nc="labels" value="${escapeHtml((meta.labels || []).join(","))}" /></label>
+          <label class="field"><span>备注</span><input data-nc="note" value="${escapeHtml(meta.note || "")}" /></label>
+          <div class="node-card-actions">
+            <button type="button" class="ghost tiny" data-remove-node-card="${escapeHtml(name)}" data-keep-enabled="1">删除</button>
+          </div>
+        </div>`;
+      })
+      .join("") || '<p class="meta">暂无节点，点「加节点」或用高级文本行。</p>';
+  root.querySelectorAll("[data-remove-node-card]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const card = btn.closest("[data-node-card]");
+      if (card) card.remove();
+      syncNodesEditorFromCards();
+    });
+  });
+}
+
+function cardsToNodesDoc(baseDoc) {
+  const base = baseDoc || { defaults: {}, nodes: {} };
+  const baseNodes = base.nodes || {};
+  const doc = { ...base, defaults: { ...(base.defaults || {}) }, nodes: {} };
+  document.querySelectorAll("#nodes-cards [data-node-card]").forEach((card) => {
+    const name = (card.querySelector('[data-nc="name"]')?.value || "").trim();
+    const host = (card.querySelector('[data-nc="host"]')?.value || "").trim();
+    if (!name || !host) return;
+    const gpusRaw = (card.querySelector('[data-nc="gpus"]')?.value || "").trim();
+    const labels = (card.querySelector('[data-nc="labels"]')?.value || "")
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
+    const note = (card.querySelector('[data-nc="note"]')?.value || "").trim();
+    const prev = baseNodes[name] || baseNodes[card.dataset.nodeCard] || {};
+    const node = { ...prev, ansible_host: host };
+    if (!node.role) node.role = doc.defaults.role || "serving";
+    if (gpusRaw && /^\d+$/.test(gpusRaw)) node.gpus_per_node = Number(gpusRaw);
+    if (labels.length) node.labels = labels;
+    if (note) node.note = note;
+    else if ("note" in node) delete node.note;
+    doc.nodes[name] = node;
+  });
+  return doc;
+}
+
+function syncNodesEditorFromCards() {
+  const editor = $("nodes-editor");
+  if (!editor) return;
+  const doc = cardsToNodesDoc((stateSetup.data && stateSetup.data.nodes) || { defaults: {}, nodes: {} });
+  editor.value = nodesDocToEditor(doc);
+}
+
+function syncNodesCardsFromEditor() {
+  const base = (stateSetup.data && stateSetup.data.nodes) || { defaults: {}, nodes: {} };
+  const doc = editorToNodes($("nodes-editor")?.value || "", base);
+  renderNodesCards(doc);
 }
 
 /* Load the full Job JSON (not the summary) so saving can merge instead of
@@ -2980,6 +3090,30 @@ function fillSetupForm(data) {
   const tlsCa = document.getElementById("cluster-tls-ca");
   if (tlsCa) tlsCa.value = tls.ca_file || "";
   document.getElementById("nodes-editor").value = nodesDocToEditor(data.nodes || {});
+  renderNodesCards(data.nodes || {});
+
+  const wd = cluster.watchdog || {};
+  const wdEn = $("wd-enabled");
+  if (wdEn) wdEn.checked = wd.enabled !== false;
+  if ($("wd-jobs")) $("wd-jobs").value = (wd.jobs || []).join(",");
+  if ($("wd-interval")) $("wd-interval").value = wd.interval_sec ?? 60;
+  if ($("wd-max-restarts")) $("wd-max-restarts").value = wd.max_restarts ?? 3;
+  if ($("wd-failure-threshold")) $("wd-failure-threshold").value = wd.failure_threshold ?? 2;
+  if ($("wd-nodes")) $("wd-nodes").value = wd.nodes || "all";
+
+  const auth = (cluster.control && cluster.control.auth) || {};
+  const oidc = auth.oidc || {};
+  if ($("auth-mode")) $("auth-mode").value = auth.mode || "off";
+  if ($("auth-ttl")) $("auth-ttl").value = auth.session_ttl_hours ?? 168;
+  if ($("auth-password-hash")) $("auth-password-hash").value = auth.password_hash_file || "";
+  if ($("auth-session-secret")) $("auth-session-secret").value = auth.session_secret_file || "";
+  if ($("auth-api-token")) $("auth-api-token").value = auth.api_token_file || "";
+  if ($("auth-oidc-issuer")) $("auth-oidc-issuer").value = oidc.issuer || "";
+  if ($("auth-oidc-client-id")) $("auth-oidc-client-id").value = oidc.client_id || "";
+  if ($("auth-oidc-secret")) $("auth-oidc-secret").value = oidc.client_secret_file || "";
+  if ($("auth-oidc-password-fallback")) {
+    $("auth-oidc-password-fallback").checked = !!oidc.allow_password_fallback;
+  }
 
   const pick = document.getElementById("setup-job-pick");
   if (pick) {
@@ -3113,6 +3247,62 @@ async function testSsh() {
   }
 }
 
+function applyWatchdogFields(cluster) {
+  const jobs = ($("wd-jobs")?.value || "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  cluster.watchdog = {
+    ...(cluster.watchdog || {}),
+    enabled: !!$("wd-enabled")?.checked,
+    jobs,
+    interval_sec: Number($("wd-interval")?.value || 60),
+    max_restarts: Number($("wd-max-restarts")?.value || 3),
+    failure_threshold: Number($("wd-failure-threshold")?.value || 2),
+    nodes: ($("wd-nodes")?.value || "all").trim() || "all",
+  };
+  return cluster;
+}
+
+function applyAuthFields(cluster) {
+  const control = { ...(cluster.control || {}) };
+  const prev = control.auth || {};
+  const prevOidc = prev.oidc || {};
+  control.auth = {
+    ...prev,
+    mode: ($("auth-mode")?.value || "off").trim() || "off",
+    session_ttl_hours: Number($("auth-ttl")?.value || 168),
+    password_hash_file: ($("auth-password-hash")?.value || "").trim(),
+    session_secret_file: ($("auth-session-secret")?.value || "").trim(),
+    api_token_file: ($("auth-api-token")?.value || "").trim(),
+    oidc: {
+      ...prevOidc,
+      issuer: ($("auth-oidc-issuer")?.value || "").trim(),
+      client_id: ($("auth-oidc-client-id")?.value || "").trim(),
+      client_secret_file: ($("auth-oidc-secret")?.value || "").trim(),
+      allow_password_fallback: !!$("auth-oidc-password-fallback")?.checked,
+    },
+  };
+  cluster.control = control;
+  return cluster;
+}
+
+async function postClusterConfig(data, okMsg) {
+  setBusy(true);
+  try {
+    const resp = await api("/api/config/cluster", {
+      method: "POST",
+      body: JSON.stringify({ data }),
+    });
+    fillSetupForm(resp.setup);
+    toastOk(okMsg || "集群配置已保存");
+  } catch (err) {
+    actionError("保存集群配置", err);
+  } finally {
+    setBusy(false);
+  }
+}
+
 async function saveCluster() {
   const base = (stateSetup.data && stateSetup.data.cluster) || {};
   const baseGw = base.gateway || {};
@@ -3159,24 +3349,32 @@ async function saveCluster() {
       },
     },
   };
-  setBusy(true);
-  try {
-    const resp = await api("/api/config/cluster", {
-      method: "POST",
-      body: JSON.stringify({ data }),
-    });
-    fillSetupForm(resp.setup);
-    toastOk("集群配置已保存");
-  } catch (err) {
-    actionError("保存集群配置", err);
-  } finally {
-    setBusy(false);
-  }
+  applyWatchdogFields(data);
+  applyAuthFields(data);
+  await postClusterConfig(data, "集群配置已保存");
+}
+
+async function saveWatchdog() {
+  const data = { ...((stateSetup.data && stateSetup.data.cluster) || {}) };
+  applyWatchdogFields(data);
+  await postClusterConfig(data, "Watchdog 已保存");
+}
+
+async function saveAuthConfig() {
+  const data = { ...((stateSetup.data && stateSetup.data.cluster) || {}) };
+  applyAuthFields(data);
+  await postClusterConfig(data, "鉴权配置已保存");
 }
 
 async function saveNodesEditor() {
   const base = (stateSetup.data && stateSetup.data.nodes) || { defaults: {}, nodes: {} };
-  const data = editorToNodes($("nodes-editor").value, base);
+  // 卡片优先；若卡片为空则回落文本行
+  let data = cardsToNodesDoc(base);
+  if (!Object.keys(data.nodes).length) {
+    data = editorToNodes($("nodes-editor").value, base);
+  } else {
+    $("nodes-editor").value = nodesDocToEditor(data);
+  }
   if (!Object.keys(data.nodes).length) {
     toastBad("至少保留一个节点");
     return;
@@ -3242,16 +3440,22 @@ async function saveJob() {
       base = {};
     }
   }
+  const runtime = ($("job-runtime")?.value || base.runtime || "process").trim();
   const data = {
     ...base,
     name,
     description: $("job-desc").value.trim(),
+    kind: ($("job-kind")?.value || base.kind || "service").trim(),
     gpus_per_node: Number($("job-gpus").value || 4),
-    runtime: base.runtime || "process",
+    runtime,
     python: $("job-python").value.trim(),
     script: $("job-script").value.trim(),
     extra_args: extra,
+    env: parseEnvText($("job-env")?.value || ""),
   };
+  if (runtime === "docker") {
+    data.docker = { ...(base.docker || {}), image: ($("job-docker-image")?.value || "").trim() };
+  }
   if (!Array.isArray(data.actions) || !data.actions.length) {
     data.actions = ["start", "stop", "restart", "status", "wait"];
   }
@@ -3461,6 +3665,39 @@ async function boot() {
   document.getElementById("btn-save-cluster").addEventListener("click", saveCluster);
   document.getElementById("btn-save-nodes-json").addEventListener("click", saveNodesEditor);
   document.getElementById("btn-save-job").addEventListener("click", saveJob);
+  document.getElementById("btn-save-watchdog")?.addEventListener("click", saveWatchdog);
+  document.getElementById("btn-save-auth")?.addEventListener("click", saveAuthConfig);
+  document.getElementById("btn-add-node-card")?.addEventListener("click", () => {
+    const root = $("nodes-cards");
+    if (!root) return;
+    const id = `new-${Date.now()}`;
+    const wrap = document.createElement("div");
+    wrap.innerHTML = `<div class="node-card" data-node-card="${id}">
+      <div class="field-row">
+        <label class="field"><span>名称</span><input data-nc="name" placeholder="gpu-n" /></label>
+        <label class="field"><span>地址</span><input data-nc="host" placeholder="10.0.0.x" /></label>
+        <label class="field"><span>GPU</span><input data-nc="gpus" type="number" value="4" /></label>
+      </div>
+      <label class="field"><span>标签（逗号）</span><input data-nc="labels" placeholder="serving" /></label>
+      <label class="field"><span>备注</span><input data-nc="note" /></label>
+      <div class="node-card-actions">
+        <button type="button" class="ghost tiny" data-remove-node-card="${id}" data-keep-enabled="1">删除</button>
+      </div>
+    </div>`;
+    const card = wrap.firstElementChild;
+    root.appendChild(card);
+    card.querySelector("[data-remove-node-card]")?.addEventListener("click", () => {
+      card.remove();
+      syncNodesEditorFromCards();
+    });
+  });
+  document.getElementById("job-runtime")?.addEventListener("change", syncJobRuntimeFields);
+  document.getElementById("nodes-editor")?.addEventListener("change", syncNodesCardsFromEditor);
+  on("btn-notices", "click", () => setNoticesPopOpen(!!$("notices-pop")?.hidden));
+  on("btn-notices-close", "click", () => setNoticesPopOpen(false));
+  on("btn-notices-read-all", "click", () => markAllNoticesRead());
+  on("btn-notices-sync", "click", () => syncNotices({ toast: true }));
+  on("btn-ai-analyze", "click", runAiAnalyze);
   document.getElementById("btn-api-health").addEventListener("click", runApiHealth);
   document.getElementById("btn-api-health-2").addEventListener("click", runApiHealth);
   document.getElementById("btn-probe").addEventListener("click", async () => {
@@ -3871,6 +4108,7 @@ async function boot() {
   });
 
   bindAssistant();
+  bindNotices();
 
   if (state.auth && state.auth.enabled && !state.auth.authenticated) {
     writeConsoleText("控制台已锁定，请先登录。", { meta: "等待登录", empty: true });
@@ -3898,11 +4136,151 @@ async function boot() {
   }
 }
 
+const noticesState = {
+  open: false,
+  items: [],
+  unread: 0,
+};
+
+function noticeItemHtml(row) {
+  const unread = row.read ? "" : " unread";
+  const sev = escapeHtml(row.severity || "info");
+  const fix = row.fix
+    ? `<code class="meta">${escapeHtml(String(row.fix))}</code>`
+    : "";
+  return `<article class="notice-item${unread}" data-severity="${sev}" data-notice-id="${escapeHtml(row.id)}">
+    <header>
+      <strong>${escapeHtml(row.title || row.id)}</strong>
+      <span class="meta">${escapeHtml(row.source || "")} · ${escapeHtml(sev)}</span>
+    </header>
+    <p>${escapeHtml(row.detail || "")}</p>
+    ${fix}
+    <div class="notice-actions">
+      ${row.read ? "" : `<button type="button" class="ghost tiny" data-notice-read="${escapeHtml(row.id)}" data-keep-enabled="1">已读</button>`}
+      <button type="button" class="ghost tiny" data-notice-dismiss="${escapeHtml(row.id)}" data-keep-enabled="1">清除</button>
+    </div>
+  </article>`;
+}
+
+function bindNoticeActions(root) {
+  if (!root) return;
+  root.querySelectorAll("[data-notice-read]").forEach((btn) => {
+    btn.addEventListener("click", () => markNotices([btn.dataset.noticeRead], { read: true }));
+  });
+  root.querySelectorAll("[data-notice-dismiss]").forEach((btn) => {
+    btn.addEventListener("click", () => markNotices([btn.dataset.noticeDismiss], { dismissed: true }));
+  });
+}
+
+function renderNotices(payload) {
+  const data = payload || {};
+  noticesState.items = data.items || [];
+  noticesState.unread = Number(data.unread || 0);
+  const badge = $("notices-badge");
+  if (badge) {
+    if (noticesState.unread > 0) {
+      badge.hidden = false;
+      badge.textContent = String(Math.min(99, noticesState.unread));
+    } else {
+      badge.hidden = true;
+    }
+  }
+  const html =
+    noticesState.items.map(noticeItemHtml).join("") ||
+    '<p class="meta">暂无公告。点「同步检测」拉取 diagnose / 健康规则。</p>';
+  const list = $("notices-list");
+  const popList = $("notices-pop-list");
+  if (list) {
+    list.innerHTML = html;
+    bindNoticeActions(list);
+  }
+  if (popList) {
+    popList.innerHTML = html;
+    bindNoticeActions(popList);
+  }
+}
+
+function setNoticesPopOpen(open) {
+  noticesState.open = !!open;
+  const pop = $("notices-pop");
+  const btn = $("btn-notices");
+  if (pop) pop.hidden = !open;
+  if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+async function syncNotices({ toast: showToast = false } = {}) {
+  try {
+    const data = await api("/api/notices?sync=1", { timeoutMs: 90000 });
+    renderNotices(data);
+    if (showToast) toastOk(`已同步 ${data.count || 0} 条公告`);
+  } catch (err) {
+    if (showToast) toastBad(`同步公告失败：${err.message || err}`);
+    else log(`notices sync: ${err.message || err}`);
+  }
+}
+
+async function markNotices(ids, flags) {
+  try {
+    const data = await api("/api/notices/mark", {
+      method: "POST",
+      body: JSON.stringify({ ids, ...flags }),
+    });
+    renderNotices(data);
+  } catch (err) {
+    toastBad(`更新公告失败：${err.message || err}`);
+  }
+}
+
+async function markAllNoticesRead() {
+  await markNotices(undefined, { read: true });
+}
+
+async function runAiAnalyze() {
+  const box = $("ai-analyze-box");
+  const btn = $("btn-ai-analyze");
+  if (btn) btn.disabled = true;
+  if (box) {
+    box.hidden = false;
+    box.textContent = "正在同步检测并请求 AI 解读…";
+  }
+  try {
+    const data = await api("/api/assistant/analyze", {
+      method: "POST",
+      body: "{}",
+      timeoutMs: 120000,
+    });
+    if (box) box.textContent = data.reply || data.error || "（无解读）";
+    if (data.open_settings) {
+      setAssistantOpen(true);
+      setAssistantSettingsOpen(true);
+    }
+    await syncNotices();
+  } catch (err) {
+    if (box) box.textContent = `解读失败：${err.message || err}`;
+    toastBad(`AI 解读失败：${err.message || err}`);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function bindNotices() {
+  document.addEventListener("click", (ev) => {
+    const pop = $("notices-pop");
+    const btn = $("btn-notices");
+    if (!noticesState.open || !pop) return;
+    const t = ev.target;
+    if (pop.contains(t) || btn?.contains(t)) return;
+    setNoticesPopOpen(false);
+  });
+}
+
 const assistantState = {
   open: false,
   busy: false,
+  settingsOpen: false,
   messages: [],
   status: null,
+  models: [],
 };
 
 function setAssistantOpen(open) {
@@ -3911,7 +4289,87 @@ function setAssistantOpen(open) {
   const fab = $("assistant-fab");
   if (panel) panel.hidden = !open;
   if (fab) fab.setAttribute("aria-expanded", open ? "true" : "false");
-  if (open) $("assistant-input")?.focus();
+  if (open) {
+    if (assistantState.settingsOpen) $("assistant-base-url")?.focus();
+    else $("assistant-input")?.focus();
+  }
+}
+
+function setAssistantSettingsOpen(open) {
+  assistantState.settingsOpen = !!open;
+  const settings = $("assistant-settings");
+  const chat = $("assistant-chat-view");
+  const btn = $("assistant-settings-btn");
+  if (settings) settings.hidden = !open;
+  if (chat) chat.hidden = !!open;
+  if (btn) btn.textContent = open ? "对话" : "设置";
+  if (open) {
+    fillAssistantSettingsForm(assistantState.status);
+    $("assistant-base-url")?.focus();
+  } else {
+    $("assistant-input")?.focus();
+  }
+}
+
+function fillAssistantSettingsForm(status) {
+  const base = status?.base_url || "";
+  const model = status?.model || "";
+  const preset = $("assistant-preset");
+  const baseInput = $("assistant-base-url");
+  const modelInput = $("assistant-model");
+  const keyInput = $("assistant-api-key");
+  const clearKey = $("assistant-clear-key");
+  const hint = $("assistant-settings-hint");
+  if (baseInput) baseInput.value = base;
+  if (modelInput) modelInput.value = model;
+  if (keyInput) keyInput.value = "";
+  if (clearKey) clearKey.checked = false;
+  if (preset) {
+    const openaiUrl = "https://api.openai.com/v1";
+    preset.value = !base || base === openaiUrl ? "openai" : "custom";
+  }
+  if (hint) {
+    const note = status?.network_note || "请求由控制面主机访问 Base URL（不是浏览器本机）。";
+    hint.textContent = status?.api_key_configured
+      ? `${note} 已保存 API Key（留空则保留）。`
+      : note;
+  }
+  renderAssistantModelOptions(assistantState.models, model);
+}
+
+function renderAssistantModelOptions(models, selected) {
+  const select = $("assistant-model-select");
+  const list = $("assistant-model-list");
+  const ids = Array.isArray(models) ? models : [];
+  assistantState.models = ids;
+  if (list) {
+    list.innerHTML = ids.map((id) => `<option value="${escapeHtml(id)}"></option>`).join("");
+  }
+  if (!select) return;
+  const current = selected || $("assistant-model")?.value || "";
+  const opts = ['<option value="">— 手填或选择 —</option>'];
+  for (const id of ids) {
+    const sel = id === current ? " selected" : "";
+    opts.push(`<option value="${escapeHtml(id)}"${sel}>${escapeHtml(id)}</option>`);
+  }
+  if (current && !ids.includes(current)) {
+    opts.push(`<option value="${escapeHtml(current)}" selected>${escapeHtml(current)}（当前）</option>`);
+  }
+  select.innerHTML = opts.join("");
+}
+
+function applyAssistantStatus(data) {
+  assistantState.status = data;
+  const mode = $("assistant-mode");
+  if (mode) {
+    if (data.ready) {
+      mode.textContent = `模型 · ${data.model || "configured"}`;
+    } else {
+      mode.textContent = "未配置 · 请设置上游";
+    }
+  }
+  renderAssistantQuick(data.quick_actions || []);
+  if (assistantState.settingsOpen) fillAssistantSettingsForm(data);
 }
 
 function appendAssistantMsg(role, text, extra = {}) {
@@ -3942,7 +4400,12 @@ function renderAssistantQuick(actions) {
   root.querySelectorAll("[data-assistant-quick]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const action = (assistantState.status?.quick_actions || []).find((x) => x.id === btn.dataset.assistantQuick);
-      if (action?.prompt) sendAssistant(action.prompt);
+      if (!action?.prompt) return;
+      if (action.prompt === "__open_settings__") {
+        setAssistantSettingsOpen(true);
+        return;
+      }
+      sendAssistant(action.prompt);
     });
   });
 }
@@ -4016,22 +4479,118 @@ async function loadAssistantStatus() {
   const mode = $("assistant-mode");
   try {
     const data = await api("/api/assistant/status");
-    assistantState.status = data;
-    if (mode) {
-      mode.textContent = data.ready
-        ? `模型 · ${data.model || "configured"}`
-        : "讲解模式 · 未配置上游";
-    }
-    renderAssistantQuick(data.quick_actions || []);
+    applyAssistantStatus(data);
   } catch (err) {
     if (mode) mode.textContent = "助手暂不可用";
     log(`assistant status: ${err.message || err}`);
   }
 }
 
+function assistantDraftBody() {
+  const baseUrl = ($("assistant-base-url")?.value || "").trim();
+  const apiKey = ($("assistant-api-key")?.value || "").trim();
+  const body = {};
+  if (baseUrl) body.base_url = baseUrl;
+  if (apiKey) body.api_key = apiKey;
+  return body;
+}
+
+async function probeAssistantUpstream() {
+  const hint = $("assistant-settings-hint");
+  const btn = $("assistant-probe");
+  if (btn) btn.disabled = true;
+  try {
+    const data = await api("/api/assistant/probe", {
+      method: "POST",
+      body: JSON.stringify(assistantDraftBody()),
+      timeoutMs: 45000,
+    });
+    if (data.ok) {
+      renderAssistantModelOptions(data.models_sample || [], $("assistant-model")?.value);
+      if (hint) hint.textContent = `连通正常 · ${data.host || ""} · 约 ${data.count || 0} 个模型`;
+      toastOk("上游连通正常");
+    } else {
+      if (hint) hint.textContent = `${data.error || "探测失败"}${data.hint ? " — " + data.hint : ""}`;
+      toastBad(data.error || "探测失败");
+    }
+  } catch (err) {
+    if (hint) hint.textContent = `探测失败：${err.message || err}`;
+    toastBad(`连通探测失败：${err.message || err}`);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function fetchAssistantModels() {
+  const hint = $("assistant-settings-hint");
+  const btn = $("assistant-fetch-models");
+  if (!$("assistant-base-url")?.value?.trim()) {
+    toastBad("请先填写 Base URL（内网请用可达的兼容网关）");
+    return;
+  }
+  if (btn) btn.disabled = true;
+  try {
+    const data = await api("/api/assistant/models", {
+      method: "POST",
+      body: JSON.stringify(assistantDraftBody()),
+      timeoutMs: 45000,
+    });
+    renderAssistantModelOptions(data.models || [], data.selected || $("assistant-model")?.value);
+    if (hint) hint.textContent = `已拉取 ${data.count || 0} 个模型（${data.base_url || ""}）`;
+    toastOk(`已拉取 ${data.count || 0} 个模型`);
+  } catch (err) {
+    if (hint) hint.textContent = `拉取失败：${err.message || err}`;
+    toastBad(`拉取模型失败：${err.message || err}`);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function saveAssistantConfig() {
+  const baseUrl = ($("assistant-base-url")?.value || "").trim();
+  const model = ($("assistant-model")?.value || "").trim();
+  const apiKey = ($("assistant-api-key")?.value || "").trim();
+  const clearKey = !!$("assistant-clear-key")?.checked;
+  const hint = $("assistant-settings-hint");
+  const btn = $("assistant-save-config");
+  if (!baseUrl || !model) {
+    toastBad("请填写 Base URL 与模型");
+    return;
+  }
+  if (btn) btn.disabled = true;
+  try {
+    const body = {
+      base_url: baseUrl,
+      model,
+      enabled: true,
+      clear_api_key: clearKey,
+    };
+    if (apiKey) body.api_key = apiKey;
+    const data = await api("/api/assistant/config", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    applyAssistantStatus(data);
+    if ($("assistant-api-key")) $("assistant-api-key").value = "";
+    if ($("assistant-clear-key")) $("assistant-clear-key").checked = false;
+    if (hint) hint.textContent = data.ready ? "已保存，可返回对话。" : "已保存，但仍未就绪。";
+    toastOk(data.ready ? "助手上游已就绪" : "已保存配置");
+    if (data.ready) setAssistantSettingsOpen(false);
+  } catch (err) {
+    if (hint) hint.textContent = `保存失败：${err.message || err}`;
+    toastBad(`保存失败：${err.message || err}`);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 async function sendAssistant(text) {
   const content = (text || "").trim();
   if (!content || assistantState.busy) return;
+  if (content === "__open_settings__") {
+    setAssistantSettingsOpen(true);
+    return;
+  }
   const input = $("assistant-input");
   if (input) input.value = "";
   assistantState.messages.push({ role: "user", content });
@@ -4050,6 +4609,7 @@ async function sendAssistant(text) {
     appendAssistantMsg("bot", reply, { warning: data.warning });
     if (data.quick_actions) renderAssistantQuick(data.quick_actions);
     renderAssistantPending(data.pending_actions || []);
+    if (data.open_settings) setAssistantSettingsOpen(true);
   } catch (err) {
     appendAssistantMsg("bot", `请求失败：${err.message || err}`);
   } finally {
@@ -4062,6 +4622,13 @@ function bindAssistant() {
   const fab = $("assistant-fab");
   const closeBtn = $("assistant-close");
   const form = $("assistant-form");
+  const settingsBtn = $("assistant-settings-btn");
+  const settingsBack = $("assistant-settings-back");
+  const fetchBtn = $("assistant-fetch-models");
+  const probeBtn = $("assistant-probe");
+  const saveBtn = $("assistant-save-config");
+  const preset = $("assistant-preset");
+  const modelSelect = $("assistant-model-select");
   if (fab) {
     fab.addEventListener("click", () => {
       setAssistantOpen(!assistantState.open);
@@ -4069,6 +4636,41 @@ function bindAssistant() {
     });
   }
   if (closeBtn) closeBtn.addEventListener("click", () => setAssistantOpen(false));
+  if (settingsBtn) {
+    settingsBtn.addEventListener("click", () => {
+      setAssistantSettingsOpen(!assistantState.settingsOpen);
+    });
+  }
+  if (settingsBack) settingsBack.addEventListener("click", () => setAssistantSettingsOpen(false));
+  if (fetchBtn) fetchBtn.addEventListener("click", () => fetchAssistantModels());
+  if (probeBtn) probeBtn.addEventListener("click", () => probeAssistantUpstream());
+  if (saveBtn) saveBtn.addEventListener("click", () => saveAssistantConfig());
+  if (preset) {
+    preset.addEventListener("change", () => {
+      const baseInput = $("assistant-base-url");
+      const hint = $("assistant-settings-hint");
+      if (!baseInput) return;
+      if (preset.value === "openai") {
+        baseInput.value = "https://api.openai.com/v1";
+        if (hint) {
+          hint.textContent =
+            "OpenAI 官方需控制面主机能解析外网 DNS。当前内网机器常失败：请改用「自定义」填可达网关，或先点连通探测。";
+        }
+      } else if (!baseInput.value || baseInput.value === "https://api.openai.com/v1") {
+        baseInput.value = "";
+        baseInput.focus();
+        if (hint) {
+          hint.textContent = "请填写控制面可达的兼容网关，例如 http://10.x.x.x:8000/v1";
+        }
+      }
+    });
+  }
+  if (modelSelect) {
+    modelSelect.addEventListener("change", () => {
+      const modelInput = $("assistant-model");
+      if (modelInput && modelSelect.value) modelInput.value = modelSelect.value;
+    });
+  }
   if (form) {
     form.addEventListener("submit", (ev) => {
       ev.preventDefault();

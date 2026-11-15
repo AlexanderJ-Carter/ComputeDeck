@@ -41,7 +41,8 @@
 
 - MCP 入口同一：`bin/gpu-control-mcp`（先 `uv pip install -r requirements-mcp.txt`）
 - 风险分级：`GET /api/assistant/policy`（与 MCP `instructions` 同源）
-- UI 小助手：`GET /api/assistant/status` · `POST /api/assistant/chat`（`cluster.control.assistant`）
+- UI 小助手：`GET /api/assistant/status` · `POST /api/assistant/config` · `GET|POST /api/assistant/models` · `POST /api/assistant/analyze` · `POST /api/assistant/chat`（`cluster.control.assistant`）
+- 监管公告：`GET /api/notices` · `POST /api/notices/mark`（规则写入，AI 只读解读）
 
 ## 交付形态（给 Agent）
 

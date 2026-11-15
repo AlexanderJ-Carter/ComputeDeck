@@ -11,11 +11,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- UI 小助手设置面板：OpenAI / 自定义兼容上游、`POST /api/assistant/config`、`GET|POST /api/assistant/models` 拉取后下拉选模型；未配置时引导设置
+- 监管公告：`GET /api/notices` · `POST /api/notices/mark`（diagnose / watchdog / 健康规则 → `state/notices.json`）；看板铃铛 +「AI 解读」`POST /api/assistant/analyze`
+- 配置向导增强：节点卡片表单、Job `kind/runtime/docker/env`、Watchdog 与鉴权可视化分节
+- 助手上游：`POST /api/assistant/probe` 连通探测；DNS/超时中文提示；内网引导自定义兼容网关
+- 宣传展板：AI 页（助手对话 / 命令补全 / 监管公告）；终页文案+安装分栏并突出 AI
+
 ### Fixed
 
-- CHANGELOG 补 `0.22.0` 锚点；`prepare_release` 发版时同步写入锚点并去掉空分类壳
-- 文档对齐：官方 GHCR 已 Public；统一「不发 PyPI/npm」表述
-- 跳过 Job 目录里的 macOS `._*` AppleDouble，避免 UI/助手 `utf-8` 解码失败；助手密钥路径按 `Path` 解析
+- 跳过 Job 目录 macOS `._*` AppleDouble，避免 UI/助手 UTF-8 解码失败；助手密钥路径按 `Path` 解析
+- 助手拉取模型失败时给出控制面 DNS/网络可读错误，避免只显示裸 `urlopen` 异常
 
 ---
 

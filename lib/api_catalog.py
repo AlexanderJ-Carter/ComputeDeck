@@ -110,6 +110,32 @@ _BODY: dict[str, dict[str, Any]] = {
             "confirm": {"type": "boolean"},
         },
     },
+    "assistant_config": {
+        "type": "object",
+        "properties": {
+            "base_url": {"type": "string", "description": "OpenAI 兼容根，如 https://api.openai.com/v1"},
+            "model": {"type": "string"},
+            "enabled": {"type": "boolean"},
+            "timeout_sec": {"type": "integer"},
+            "api_key": {"type": "string", "description": "写入 secrets 文件；省略则保留原密钥"},
+            "clear_api_key": {"type": "boolean", "description": "为真则删除密钥文件"},
+        },
+    },
+    "assistant_models": {
+        "type": "object",
+        "properties": {
+            "base_url": {"type": "string", "description": "草稿 Base URL，可先于保存试拉"},
+            "api_key": {"type": "string", "description": "草稿密钥，可先于保存试拉"},
+        },
+    },
+    "notices_mark": {
+        "type": "object",
+        "properties": {
+            "ids": {"type": "array", "items": {"type": "string"}, "description": "省略则作用于全部未清除项"},
+            "read": {"type": "boolean"},
+            "dismissed": {"type": "boolean"},
+        },
+    },
     "models_pull": {
         "type": "object",
         "properties": {
@@ -419,15 +445,61 @@ def http_endpoints() -> list[dict[str, Any]]:
         {
             "method": "GET",
             "path": "/api/assistant/status",
-            "summary": "小助手是否就绪与快捷动作",
+            "summary": "小助手是否就绪、预设与快捷动作",
+            "group": "meta",
+        },
+        {
+            "method": "POST",
+            "path": "/api/assistant/config",
+            "summary": "保存助手上游（base_url/model/api_key）",
+            "group": "config",
+            "body": "assistant_config",
+        },
+        {
+            "method": "GET",
+            "path": "/api/assistant/models",
+            "summary": "拉取上游模型列表 ?base_url=",
+            "group": "meta",
+        },
+        {
+            "method": "POST",
+            "path": "/api/assistant/models",
+            "summary": "用草稿凭证拉取上游模型列表",
+            "group": "meta",
+            "body": "assistant_models",
+        },
+        {
+            "method": "POST",
+            "path": "/api/assistant/probe",
+            "summary": "探测控制面到助手上游的 DNS/HTTP 可达性",
+            "group": "meta",
+            "body": "assistant_models",
+        },
+        {
+            "method": "POST",
+            "path": "/api/assistant/analyze",
+            "summary": "AI 只读解读看板（overview + notices + diagnose）",
             "group": "meta",
         },
         {
             "method": "POST",
             "path": "/api/assistant/chat",
-            "summary": "控制面小助手对话（OpenAI 兼容；无上游则降级）",
+            "summary": "控制面小助手对话（OpenAI 兼容；未配置则引导设置）",
             "group": "meta",
             "body": "assistant_chat",
+        },
+        {
+            "method": "GET",
+            "path": "/api/notices",
+            "summary": "公告列表 ?sync=1 从 diagnose/overview 刷新",
+            "group": "meta",
+        },
+        {
+            "method": "POST",
+            "path": "/api/notices/mark",
+            "summary": "标记公告已读/清除",
+            "group": "ops",
+            "body": "notices_mark",
         },
         {"method": "POST", "path": "/api/run-python", "summary": "远程跑 Python", "group": "ops"},
         {
@@ -620,7 +692,15 @@ def catalog_payload() -> dict[str, Any]:
         "assistant": {
             "policy": "/api/assistant/policy",
             "status": "/api/assistant/status",
+            "config": "/api/assistant/config",
+            "models": "/api/assistant/models",
+            "analyze": "/api/assistant/analyze",
+            "probe": "/api/assistant/probe",
             "chat": "/api/assistant/chat",
+        },
+        "notices": {
+            "list": "/api/notices",
+            "mark": "/api/notices/mark",
         },
         "ai_notes": [
             "产品名 ComputeDeck；CLI/MCP/service 仍为 gpu-control。",
