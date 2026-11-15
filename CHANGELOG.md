@@ -13,6 +13,18 @@
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Security
+
+---
+
+## [0.22.0] - 2026-11-15
+
+### Added
+
 - 控制面小助手：`POST /api/assistant/chat` · `GET /api/assistant/status`（OpenAI 兼容上游；未配置则讲解+快捷动作）；远程命令补全 `GET /api/exec/suggest`
 - 多 Agent MCP 示例：Cursor / Claude Code / Codex（含 TOML）/ Continue / Windsurf / 通用；`lib/assistant_policy.py` 风险分级
 - `CLAUDE.md`：Claude Code 入口；`AGENTS.md` 覆盖多客户端与交付形态（源码+uv / GHCR，不发 PyPI/npm）
@@ -59,7 +71,6 @@
 - GPU 数量改读配置 / 实采 / `scheduling.unit_gpus`；清理场景专用默认与文案；`gc_deploy` / `/api/deploy` 与 CLI 对齐
 - API catalog 补 `jobs/{name}/logs`；高可用文档增加 strategy 词汇表
 - 删除 `legacy_vllm` 别名；训练日志预设对齐 `/tmp/gpu-control-jobs`；`check.sh` 覆盖 `mcp_server`
-
 ## [0.21.0] - 2026-11-14
 
 ### Added
