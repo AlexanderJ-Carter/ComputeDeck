@@ -19,7 +19,8 @@
   --fs-md: clamp(1.02rem, 0.94rem + 0.45vw, 1.2rem);
   --fs-lg: clamp(1.2rem, 1.05rem + 0.8vw, 1.55rem);
   --fs-h2: clamp(1.45rem, 1.1rem + 1.8vw, 2.85rem);
-  --fs-h1: clamp(1.9rem, 0.85rem + 7.5vw, 5.2rem);
+  /* Syne 显示体偏宽：按 “ComputeDeck” 实测字宽收字，避免被 slide overflow 裁切 */
+  --fs-h1: clamp(1.5rem, calc((100vw - 2.5rem) / 12.2), 4.5rem);
   --pad-x: clamp(1rem, 3vw, 1.75rem);
   --pad-top: clamp(4.5rem, 8vh, 5.75rem);
   --pad-bot: clamp(2rem, 4vh, 3rem);
@@ -222,6 +223,8 @@ body {
   position: relative;
   z-index: 1;
   width: var(--content);
+  max-width: 100%;
+  min-width: 0;
 }
 .slide-inner.split {
   display: grid;
@@ -230,8 +233,14 @@ body {
   align-items: center;
 }
 
-.hero { text-align: center; }
-.hero-inner { display: grid; justify-items: center; }
+.hero { text-align: center; width: 100%; max-width: 100%; min-width: 0; }
+.hero-inner {
+  display: grid;
+  justify-items: center;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
 
 .hero-logo {
   border-radius: 24px;
@@ -260,8 +269,12 @@ h1 {
   font-size: var(--fs-h1);
   font-weight: 800;
   line-height: 1.02;
+  width: 100%;
   max-width: 100%;
-  overflow-wrap: anywhere;
+  min-width: 0;
+  text-align: center;
+  white-space: nowrap;
+  letter-spacing: -0.045em;
 }
 h2 { font-size: var(--fs-h2); font-weight: 800; max-width: 14ch; }
 h3 { font-size: var(--fs-md); margin-bottom: 0.75rem; }
@@ -857,9 +870,10 @@ h3 { font-size: var(--fs-md); margin-bottom: 0.75rem; }
   :root {
     --pad-top: 4.25rem;
     --pad-bot: 1.5rem;
-    --fs-h1: clamp(1.75rem, 9.5vw, 2.4rem);
+    --fs-h1: clamp(1.45rem, calc((100vw - 2rem) / 12.5), 2.2rem);
     --fs-h2: clamp(1.35rem, 5.5vw, 1.85rem);
   }
+  .hero h1 { letter-spacing: -0.055em; }
   .brand span { max-width: 9.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hero-stats {
     display: grid;
