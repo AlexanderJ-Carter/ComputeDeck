@@ -21,6 +21,7 @@
 - 发版：`scripts/release_notes.py` + tag `v*` 自动 GitHub Release；推送 GHCR 控制面镜像（暂不上传 PyPI）
 - 发版便捷：`scripts/prepare_release.py`（bump / 折叠 CHANGELOG / 可选 check）；`.env.example` 配合 compose
 - control 同步：`scripts/deploy_control.sh`（tar + 重启 UI，保留 `config/local` / `state`）
+- Claude Code 根目录 `.mcp.json.example`（复制为 `.mcp.json` 即可改路径）
 - 容器：`Dockerfile`（OCI label）· `docker-compose.yml` · `deploy/ssh/`；CI 构建冒烟；Release 推送附 SBOM/provenance
 - `AGENTS.md`：Agent 硬约束与权威契约入口
 - 开源治理文件：`CODE_OF_CONDUCT` · `AUTHORS` · `NOTICE` · `SUPPORT` · `GOVERNANCE` · Issue/PR 模板
@@ -35,6 +36,7 @@
 
 - OIDC 默认 `require_userinfo=true`（禁止仅解码未验签 `id_token`）；pending `0600`
 - 密码登录来源 IP 节流（过多失败 429）；响应 CSP / Permissions-Policy；doctor 检查密钥文件权限
+- `/api/assistant/policy` 纳入鉴权发现路径（无需 Token 可读工具风险；chat/status 仍需登录）
 
 ### Changed
 

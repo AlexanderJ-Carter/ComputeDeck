@@ -46,12 +46,13 @@ AUTH_PUBLIC_PATHS = frozenset({
     "/api/auth/oidc/login",
     "/api/auth/oidc/callback",
 })
-# 目录 / OpenAPI / 文档页保持可达，便于 Agent 发现鉴权要求。
+# 目录 / OpenAPI / 文档页 / 助手策略保持可达，便于 Agent 发现鉴权与工具风险。
 AUTH_DISCOVERY_PATHS = frozenset({
     "/api",
     "/api/",
     "/api/openapi.json",
     "/api/docs",
+    "/api/assistant/policy",
     "/docs",
     "/help",
     "/help/",

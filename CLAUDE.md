@@ -17,7 +17,7 @@ uv pip install -r requirements-mcp.txt
 chmod +x bin/gpu-control-mcp
 ```
 
-把 [config/examples/mcp.claude-code.json](config/examples/mcp.claude-code.json) 合并进项目 `.mcp.json` 或用户 MCP 设置；`command` 换成主控上 `bin/gpu-control-mcp` 的绝对路径。鉴权开则设 `GPU_CONTROL_API_TOKEN`（`gpu-control auth issue-token`）。
+把 [`.mcp.json.example`](.mcp.json.example) 或 [config/examples/mcp.claude-code.json](config/examples/mcp.claude-code.json) 复制/合并为项目 `.mcp.json`；`command` 换成主控上 `bin/gpu-control-mcp` 的绝对路径。鉴权开则设 `GPU_CONTROL_API_TOKEN`（`gpu-control auth issue-token`）。
 
 ## 行为摘要
 

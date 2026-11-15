@@ -96,12 +96,16 @@ ssh -L 8787:127.0.0.1:8787 <control>
 ### Agent / MCP
 
 同一入口 `bin/gpu-control-mcp`；示例在 `config/examples/mcp.*`（Cursor / Claude Code / Codex / Continue / Windsurf）。  
+Claude Code 也可复制 [`.mcp.json.example`](.mcp.json.example) → `.mcp.json` 再改绝对路径与 Token。  
 约定：[AGENTS.md](AGENTS.md) · [CLAUDE.md](CLAUDE.md) · [docs/ai-接入.md](docs/ai-接入.md)。
 
 ```bash
 uv pip install -r requirements-mcp.txt
 gpu-control auth issue-token   # → GPU_CONTROL_API_TOKEN
 ```
+
+发版准备：`python scripts/prepare_release.py --bump minor`（不 push）。  
+同步到已有 control：`CONTROL_HOST=<host> ./scripts/deploy_control.sh`。
 
 ## 常用命令
 

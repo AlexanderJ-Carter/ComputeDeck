@@ -41,3 +41,7 @@ resources.json
 
 # Agent scratch (do not commit)
 docs/superpowers/
+
+# Local MCP client config (may contain token); keep *.example
+.mcp.json
+.cursor/mcp.json

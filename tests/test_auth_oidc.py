@@ -13,6 +13,12 @@ sys.path.insert(0, str(ROOT / "lib"))
 
 
 class AuthSessionTests(unittest.TestCase):
+    def test_discovery_includes_assistant_policy(self) -> None:
+        from auth_util import AUTH_DISCOVERY_PATHS, AUTH_PUBLIC_PATHS
+
+        self.assertIn("/api/assistant/policy", AUTH_DISCOVERY_PATHS)
+        self.assertIn("/api/health", AUTH_PUBLIC_PATHS)
+
     def test_session_roundtrip(self) -> None:
         from auth_util import AuthConfig, issue_session, verify_session
 
