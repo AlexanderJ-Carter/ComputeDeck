@@ -220,9 +220,24 @@ GPU 3  76%  PID  9921  ???</pre>
             <li>TLS、对外 URL 可配</li>
           </ul>
         </div>
-        <figure class="viz reveal d3">
-          <img src="assets/edge-ingress.svg" alt="Edge 健康转发拓扑" loading="lazy" decoding="async" width="640" height="400" />
-        </figure>
+        <div class="lb-stage reveal d3" aria-hidden="true">
+          <div class="lb-edge">
+            <strong>Edge</strong>
+            <span class="lb-mode">least-conn · retry</span>
+            <i class="lb-pulse"></i>
+          </div>
+          <div class="lb-links">
+            <span class="lb-beam" data-to="0"></span>
+            <span class="lb-beam" data-to="1"></span>
+            <span class="lb-beam" data-to="2"></span>
+          </div>
+          <ul class="lb-pool">
+            <li class="is-ok" data-up="0"><b>gpu-1</b><em>healthy</em></li>
+            <li class="is-ok" data-up="1"><b>gpu-2</b><em>healthy</em></li>
+            <li class="is-ok" data-up="2"><b>gpu-3</b><em>healthy</em></li>
+          </ul>
+          <p class="lb-caption"><span class="lb-tag">failover</span> 上游冷却后自动换路</p>
+        </div>
       </div>
     </section>
 
@@ -291,7 +306,7 @@ GPU 3  76%  PID  9921  ???</pre>
           </article>
           <article>
             <strong>鉴权</strong>
-            <p>密码或 OIDC，Session 与 Bearer。</p>
+            <p>密码或 OIDC（PKCE + userinfo），Session / Bearer；密钥权限与登录节流。</p>
           </article>
           <article>
             <strong>终端</strong>

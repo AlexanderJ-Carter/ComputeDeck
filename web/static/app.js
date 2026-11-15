@@ -3870,6 +3870,8 @@ async function boot() {
     }
   });
 
+  bindAssistant();
+
   if (state.auth && state.auth.enabled && !state.auth.authenticated) {
     writeConsoleText("控制台已锁定，请先登录。", { meta: "等待登录", empty: true });
     return;
@@ -3885,6 +3887,7 @@ async function boot() {
     await loadQuality();
     await seedConsole();
     hideConsoleUnread();
+    await loadAssistantStatus();
   } catch (err) {
     log(String(err.message || err));
     writeConsoleText(`初始化失败：${err.message || err}\n\n可以点「一键连通」重试。`, {
@@ -3892,6 +3895,185 @@ async function boot() {
     });
   } finally {
     setBusy(false);
+  }
+}
+
+const assistantState = {
+  open: false,
+  busy: false,
+  messages: [],
+  status: null,
+};
+
+function setAssistantOpen(open) {
+  assistantState.open = !!open;
+  const panel = $("assistant-panel");
+  const fab = $("assistant-fab");
+  if (panel) panel.hidden = !open;
+  if (fab) fab.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) $("assistant-input")?.focus();
+}
+
+function appendAssistantMsg(role, text, extra = {}) {
+  const thread = $("assistant-thread");
+  if (!thread) return;
+  const el = document.createElement("div");
+  el.className = `assistant-msg ${role === "user" ? "user" : "bot"}`;
+  el.textContent = text || "";
+  if (extra.warning) {
+    const w = document.createElement("span");
+    w.className = "warn";
+    w.textContent = extra.warning;
+    el.appendChild(w);
+  }
+  thread.appendChild(el);
+  thread.scrollTop = thread.scrollHeight;
+}
+
+function renderAssistantQuick(actions) {
+  const root = $("assistant-quick");
+  if (!root) return;
+  root.innerHTML = (actions || [])
+    .map(
+      (a) =>
+        `<button type="button" data-assistant-quick="${escapeHtml(a.id)}" title="${escapeHtml(a.hint || "")}">${escapeHtml(a.label)}</button>`
+    )
+    .join("");
+  root.querySelectorAll("[data-assistant-quick]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const action = (assistantState.status?.quick_actions || []).find((x) => x.id === btn.dataset.assistantQuick);
+      if (action?.prompt) sendAssistant(action.prompt);
+    });
+  });
+}
+
+function renderAssistantPending(pending) {
+  const root = $("assistant-pending");
+  if (!root) return;
+  const items = pending || [];
+  if (!items.length) {
+    root.hidden = true;
+    root.innerHTML = "";
+    return;
+  }
+  root.hidden = false;
+  root.innerHTML = items
+    .map((row, i) => {
+      const tool = row.tool || "";
+      const args = JSON.stringify(row.args || {});
+      return `<button type="button" data-pending-idx="${i}"><strong>${escapeHtml(tool)}</strong> · ${escapeHtml(row.risk || "")}<br><code>${escapeHtml(args)}</code></button>`;
+    })
+    .join("");
+  root.querySelectorAll("[data-pending-idx]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const row = items[Number(btn.dataset.pendingIdx)];
+      if (row) runAssistantPending(row);
+    });
+  });
+}
+
+async function runAssistantPending(row) {
+  const tool = row.tool;
+  const args = row.args || {};
+  try {
+    if (tool === "gc_deploy") {
+      await api("/api/deploy", {
+        method: "POST",
+        body: JSON.stringify({
+          job: args.job,
+          nodes: args.nodes,
+          force: !!args.force,
+        }),
+      });
+      toastOk(`已部署 ${args.job || ""}`);
+    } else if (tool === "gc_free_node") {
+      await api("/api/free", {
+        method: "POST",
+        body: JSON.stringify({ node: args.node, cordon: !!args.cordon }),
+      });
+      toastOk(`已腾空 ${args.node || ""}`);
+    } else if (tool === "gc_job_action") {
+      const name = args.name;
+      const action = args.action;
+      await api(`/api/jobs/${encodeURIComponent(name)}/action`, {
+        method: "POST",
+        body: JSON.stringify({ action, node: args.node }),
+      });
+      toastOk(`Job ${name} ${action}`);
+    } else {
+      toastBad(`暂不支持一键确认：${tool}`);
+      return;
+    }
+    appendAssistantMsg("bot", `已执行 ${tool}。可在「执行输出」查看细节。`);
+    renderAssistantPending([]);
+    await refresh(false);
+  } catch (err) {
+    actionError("助手建议操作", err);
+  }
+}
+
+async function loadAssistantStatus() {
+  const mode = $("assistant-mode");
+  try {
+    const data = await api("/api/assistant/status");
+    assistantState.status = data;
+    if (mode) {
+      mode.textContent = data.ready
+        ? `模型 · ${data.model || "configured"}`
+        : "讲解模式 · 未配置上游";
+    }
+    renderAssistantQuick(data.quick_actions || []);
+  } catch (err) {
+    if (mode) mode.textContent = "助手暂不可用";
+    log(`assistant status: ${err.message || err}`);
+  }
+}
+
+async function sendAssistant(text) {
+  const content = (text || "").trim();
+  if (!content || assistantState.busy) return;
+  const input = $("assistant-input");
+  if (input) input.value = "";
+  assistantState.messages.push({ role: "user", content });
+  appendAssistantMsg("user", content);
+  assistantState.busy = true;
+  const sendBtn = $("assistant-send");
+  if (sendBtn) sendBtn.disabled = true;
+  try {
+    const data = await api("/api/assistant/chat", {
+      method: "POST",
+      body: JSON.stringify({ messages: assistantState.messages }),
+      timeoutMs: 120000,
+    });
+    const reply = data.reply || data.error || "（无回复）";
+    assistantState.messages.push({ role: "assistant", content: reply });
+    appendAssistantMsg("bot", reply, { warning: data.warning });
+    if (data.quick_actions) renderAssistantQuick(data.quick_actions);
+    renderAssistantPending(data.pending_actions || []);
+  } catch (err) {
+    appendAssistantMsg("bot", `请求失败：${err.message || err}`);
+  } finally {
+    assistantState.busy = false;
+    if (sendBtn) sendBtn.disabled = false;
+  }
+}
+
+function bindAssistant() {
+  const fab = $("assistant-fab");
+  const closeBtn = $("assistant-close");
+  const form = $("assistant-form");
+  if (fab) {
+    fab.addEventListener("click", () => {
+      setAssistantOpen(!assistantState.open);
+      if (assistantState.open && !assistantState.status) loadAssistantStatus();
+    });
+  }
+  if (closeBtn) closeBtn.addEventListener("click", () => setAssistantOpen(false));
+  if (form) {
+    form.addEventListener("submit", (ev) => {
+      ev.preventDefault();
+      sendAssistant($("assistant-input")?.value || "");
+    });
   }
 }
 

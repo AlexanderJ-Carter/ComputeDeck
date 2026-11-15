@@ -29,5 +29,5 @@
 ## 多 Agent / 助手
 
 - MCP 入口同一：`bin/gpu-control-mcp`（Cursor / Claude Code / Codex / 其它 stdio 客户端）
-- 示例：`config/examples/mcp.*.json`；风险与教学：`GET /api/assistant/policy`
-- 设计：`docs/superpowers/specs/2026-11-15-assistant-and-console-ux-design.md`
+- 示例：`config/examples/mcp.*.json`；风险：`GET /api/assistant/policy`
+- UI 小助手：`GET /api/assistant/status` · `POST /api/assistant/chat`（`cluster.control.assistant`）

@@ -128,7 +128,7 @@ Cursor 示例：
 | （均未设） | 工具直接调本地 CLI，不依赖 UI |
 
 教学与风险：MCP `instructions` 与 `GET /api/assistant/policy` 同源（`lib/assistant_policy.py`）。  
-设计说明：`docs/superpowers/specs/2026-11-15-assistant-and-console-ux-design.md`。
+UI 小助手：`POST /api/assistant/chat`（`cluster.control.assistant` 配 OpenAI 兼容上游；未配则降级快捷动作）。
 
 一等工具（20）：`gc_api_catalog` · `gc_auth_status` · `gc_doctor` · `gc_overview` · `gc_get_jobs` · `gc_job_action` · `gc_get_config` · `gc_put_config` · `gc_models` · `gc_toolkits` · `gc_procs` · `gc_free_node` · `gc_deploy` · `gc_queue` · `gc_lease` · `gc_diagnose` · `gc_gateway` · `gc_node` · `gc_exec` · `gc_cli`。
 

@@ -29,8 +29,18 @@
         "allowed_emails": [],
         "allowed_subjects": [],
         "allowed_groups": [],
-        "allow_password_fallback": false
+        "allow_password_fallback": false,
+        "require_userinfo": true
       }
+    },
+    "assistant": {
+      "enabled": true,
+      "base_url": "",
+      "model": "",
+      "api_key_env": "GPU_CONTROL_ASSISTANT_API_KEY",
+      "api_key_file": "config/local/secrets/assistant_api_key",
+      "timeout_sec": 60,
+      "note": "OpenAI 兼容 Chat Completions；留空则 UI 小助手降级为讲解 + 快捷动作"
     }
   },
   "api": {

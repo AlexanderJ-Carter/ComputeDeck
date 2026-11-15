@@ -92,6 +92,24 @@ _BODY: dict[str, dict[str, Any]] = {
             "preset": {"type": "string", "description": "远程命令预设 id"},
         },
     },
+    "assistant_chat": {
+        "type": "object",
+        "required": ["messages"],
+        "properties": {
+            "messages": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "role": {"type": "string", "enum": ["user", "assistant", "system"]},
+                        "content": {"type": "string"},
+                    },
+                    "required": ["role", "content"],
+                },
+            },
+            "confirm": {"type": "boolean"},
+        },
+    },
     "models_pull": {
         "type": "object",
         "properties": {
@@ -398,6 +416,19 @@ def http_endpoints() -> list[dict[str, Any]]:
             "summary": "助手/MCP 工具风险与教学摘要",
             "group": "meta",
         },
+        {
+            "method": "GET",
+            "path": "/api/assistant/status",
+            "summary": "小助手是否就绪与快捷动作",
+            "group": "meta",
+        },
+        {
+            "method": "POST",
+            "path": "/api/assistant/chat",
+            "summary": "控制面小助手对话（OpenAI 兼容；无上游则降级）",
+            "group": "meta",
+            "body": "assistant_chat",
+        },
         {"method": "POST", "path": "/api/run-python", "summary": "远程跑 Python", "group": "ops"},
         {
             "method": "POST",
@@ -582,7 +613,8 @@ def catalog_payload() -> dict[str, Any]:
         },
         "assistant": {
             "policy": "/api/assistant/policy",
-            "design": "docs/superpowers/specs/2026-11-15-assistant-and-console-ux-design.md",
+            "status": "/api/assistant/status",
+            "chat": "/api/assistant/chat",
         },
         "ai_notes": [
             "产品名 ComputeDeck；CLI/MCP/service 仍为 gpu-control。",

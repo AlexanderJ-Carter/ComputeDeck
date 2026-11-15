@@ -16,11 +16,13 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
 import os
 import secrets
+import threading
 import time
 from dataclasses import dataclass
 from http.cookies import SimpleCookie
@@ -29,6 +31,11 @@ from typing import Any
 from urllib.parse import parse_qs
 
 from paths import LOCAL_DIR, PROJECT_DIR, cluster_file, expand_path
+
+_LOGIN_LOCK = threading.Lock()
+_LOGIN_FAILS: dict[str, list[float]] = {}
+_LOGIN_WINDOW_SEC = 300
+_LOGIN_MAX_FAILS = 8
 
 COOKIE_NAME = "gc_session"
 AUTH_PUBLIC_PATHS = frozenset({
@@ -401,6 +408,33 @@ def authenticate_http(
     return None, "authentication required"
 
 
+def login_rate_limited(client_key: str) -> bool:
+    """密码登录是否因失败次数过多被节流。"""
+    key = (client_key or "unknown").strip() or "unknown"
+    now = time.time()
+    with _LOGIN_LOCK:
+        stamps = [t for t in _LOGIN_FAILS.get(key, []) if now - t < _LOGIN_WINDOW_SEC]
+        _LOGIN_FAILS[key] = stamps
+        return len(stamps) >= _LOGIN_MAX_FAILS
+
+
+def record_login_failure(client_key: str) -> None:
+    """记录一次密码登录失败（用于节流）。"""
+    key = (client_key or "unknown").strip() or "unknown"
+    now = time.time()
+    with _LOGIN_LOCK:
+        stamps = [t for t in _LOGIN_FAILS.get(key, []) if now - t < _LOGIN_WINDOW_SEC]
+        stamps.append(now)
+        _LOGIN_FAILS[key] = stamps
+
+
+def clear_login_failures(client_key: str) -> None:
+    """登录成功后清除失败计数。"""
+    key = (client_key or "unknown").strip() or "unknown"
+    with _LOGIN_LOCK:
+        _LOGIN_FAILS.pop(key, None)
+
+
 def try_login(password: str, *, cfg: AuthConfig | None = None) -> AuthPrincipal | None:
     """密码登录；失败返回 ``None``。"""
     cfg = cfg or load_auth_config()
@@ -507,18 +541,36 @@ def doctor_auth_notes(cluster: dict | None = None) -> tuple[list[str], list[str]
                 notes.append(f"OIDC issuer={oc.get('issuer')} client_id={oc.get('client_id')}")
             if oc.get("allow_password_fallback") and password_configured(cfg):
                 notes.append("OIDC 允许密码回落登录")
+            if oc.get("require_userinfo", True):
+                notes.append("OIDC require_userinfo=true（推荐）")
+            else:
+                notes.append(
+                    "WARN: OIDC require_userinfo=false — id_token 仅做 iss/aud/exp 校验、不验签"
+                )
+    for label, path in (
+        ("password hash", cfg.password_hash_file),
+        ("session secret", cfg.session_secret_file),
+        ("api token", cfg.api_token_file),
+    ):
+        if path.is_file():
+            mode = path.stat().st_mode & 0o777
+            if mode & 0o077:
+                issues.append(
+                    f"{label} 权限过宽 ({oct(mode)})，建议 chmod 600 {relative_secret(path)}"
+                )
+    secrets_dir = _secrets_dir()
+    if secrets_dir.is_dir():
+        mode = secrets_dir.stat().st_mode & 0o777
+        if mode & 0o077:
+            notes.append(f"secrets 目录权限 {oct(mode)}，建议 chmod 700")
     return issues, notes
 
 
 def _b64url(raw: bytes) -> str:
-    import base64
-
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
 def _b64url_decode(text: str) -> bytes:
-    import base64
-
     pad = "=" * (-len(text) % 4)
     return base64.urlsafe_b64decode(text + pad)
 

@@ -761,6 +761,23 @@ gpu-control ui --background</pre>
     </div>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <button type="button" id="assistant-fab" class="assistant-fab" data-keep-enabled="1" aria-expanded="false" aria-controls="assistant-panel" title="小助手">助手</button>
+  <section id="assistant-panel" class="assistant-panel" hidden aria-label="控制面小助手">
+    <header class="assistant-h">
+      <div>
+        <strong>ComputeDeck 助手</strong>
+        <span class="meta" id="assistant-mode">加载中…</span>
+      </div>
+      <button type="button" id="assistant-close" class="ghost tiny" data-keep-enabled="1">关闭</button>
+    </header>
+    <div id="assistant-quick" class="assistant-quick"></div>
+    <div id="assistant-thread" class="assistant-thread" role="log" aria-live="polite"></div>
+    <div id="assistant-pending" class="assistant-pending" hidden></div>
+    <form id="assistant-form" class="assistant-form">
+      <input id="assistant-input" type="text" placeholder="问状态、用法，或让我建议操作…" autocomplete="off" data-keep-enabled="1" />
+      <button type="submit" class="primary" id="assistant-send" data-keep-enabled="1">发送</button>
+    </form>
+  </section>
   <div id="auth-gate" class="auth-gate" hidden>
     <form id="auth-form" class="auth-card" autocomplete="current-password">
       <div class="auth-brand">ComputeDeck</div>

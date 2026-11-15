@@ -14,6 +14,7 @@
   let termStarted = false;
   let counted = false;
   let gpuTimer = 0;
+  let lbTimer = 0;
   const particleCtl = new Map();
 
   dotsRoot.innerHTML = slides
@@ -48,6 +49,8 @@
       startGpuShuffle();
       animateRing();
     } else stopGpuShuffle();
+    if (id === "s7") startLbDemo();
+    else stopLbDemo();
     if (id === "s9") runTerminal();
     syncParticles(id);
   };
@@ -201,6 +204,60 @@
   function stopGpuShuffle() {
     window.clearInterval(gpuTimer);
     gpuTimer = 0;
+  }
+
+  function stopLbDemo() {
+    window.clearInterval(lbTimer);
+    lbTimer = 0;
+  }
+
+  function startLbDemo() {
+    const stage = document.querySelector("#s7 .lb-stage");
+    if (!stage) return;
+    const nodes = [...stage.querySelectorAll(".lb-pool li")];
+    const beams = [...stage.querySelectorAll(".lb-beam")];
+    const caption = stage.querySelector(".lb-caption");
+    if (!nodes.length || !beams.length) return;
+    stopLbDemo();
+    let tick = 0;
+    const paint = () => {
+      const down = tick % 5 === 3 ? tick % nodes.length : -1;
+      const cool = tick % 5 === 4 ? (tick - 1) % nodes.length : -1;
+      let target = tick % nodes.length;
+      if (target === down || target === cool) {
+        target = (target + 1) % nodes.length;
+        if (target === down) target = (target + 1) % nodes.length;
+      }
+      nodes.forEach((node, i) => {
+        node.classList.remove("is-hot", "is-down", "is-cool", "is-ok");
+        const em = node.querySelector("em");
+        if (i === down) {
+          node.classList.add("is-down");
+          if (em) em.textContent = "cooldown";
+        } else if (i === cool) {
+          node.classList.add("is-cool");
+          if (em) em.textContent = "warming";
+        } else if (i === target) {
+          node.classList.add("is-hot", "is-ok");
+          if (em) em.textContent = "serving";
+        } else {
+          node.classList.add("is-ok");
+          if (em) em.textContent = "healthy";
+        }
+      });
+      beams.forEach((beam, i) => {
+        beam.classList.toggle("is-hot", i === target && i !== down);
+      });
+      if (caption) {
+        caption.innerHTML =
+          down >= 0
+            ? `<span class="lb-tag">failover</span> gpu-${down + 1} 冷却，流量切到 gpu-${target + 1}`
+            : `<span class="lb-tag">least-conn</span> 请求落到 gpu-${target + 1}`;
+      }
+      tick += 1;
+    };
+    paint();
+    if (!reduce) lbTimer = window.setInterval(paint, 1600);
   }
 
   const hero = document.getElementById("s1");

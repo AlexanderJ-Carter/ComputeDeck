@@ -38,3 +38,6 @@ resources.json
 
 # Temporary
 *.tmp
+
+# Agent scratch (do not commit)
+docs/superpowers/

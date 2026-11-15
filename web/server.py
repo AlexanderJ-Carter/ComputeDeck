@@ -20,6 +20,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
@@ -55,6 +56,11 @@ from jobs_util import (  # noqa: E402
 )
 from api_catalog import catalog_payload, openapi_payload  # noqa: E402
 from assistant_policy import policy_payload  # noqa: E402
+from assistant_chat import (  # noqa: E402
+    assistant_status,
+    compact_overview,
+    handle_chat,
+)
 from toolkits_util import catalog_payload as toolkits_catalog_payload  # noqa: E402
 from toolkits_util import load_toolkit_state  # noqa: E402
 from auth_util import (  # noqa: E402
@@ -62,12 +68,15 @@ from auth_util import (  # noqa: E402
     AuthPrincipal,
     auth_status_payload,
     authenticate_http,
+    clear_login_failures,
     extract_bearer,
     issue_session,
     load_auth_config,
+    login_rate_limited,
     oidc_config,
     parse_cookies,
     password_login_allowed,
+    record_login_failure,
     session_cookie_header,
     try_login,
     verify_api_token,
@@ -1406,6 +1415,19 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "same-origin")
         self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; "
+            "img-src 'self' data:; "
+            "style-src 'self' 'unsafe-inline'; "
+            "script-src 'self'; "
+            "connect-src 'self'; "
+            "font-src 'self' data:; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self'",
+        )
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
         if etag:
             self.send_header("ETag", etag)
         if extra_headers:
@@ -1760,6 +1782,11 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, policy_payload())
             return
 
+        if path == "/api/assistant/status":
+            cluster = _read_json(cluster_file(), {})
+            self._json(200, assistant_status(cluster))
+            return
+
         if path == "/api/exec/suggest":
             qs = parse_qs(parsed.query)
             q = (qs.get("q") or [""])[0]
@@ -1968,6 +1995,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/auth/login":
             cfg = load_auth_config()
+            client_key = self.client_address[0] if self.client_address else "unknown"
             if cfg.mode == "none":
                 self._json(200, {"ok": True, "auth": auth_status_payload(cfg=cfg)})
                 return
@@ -1981,12 +2009,24 @@ class Handler(BaseHTTPRequestHandler):
                     },
                 )
                 return
+            if login_rate_limited(client_key):
+                self._json(
+                    429,
+                    {
+                        "ok": False,
+                        "error": "登录失败次数过多，请稍后再试",
+                        "auth": auth_status_payload(cfg=cfg),
+                    },
+                )
+                return
             password = str(body.get("password") or "")
             principal = try_login(password, cfg=cfg)
             if not principal:
+                record_login_failure(client_key)
                 time.sleep(0.35)
                 self._json(401, {"ok": False, "error": "invalid password"})
                 return
+            clear_login_failures(client_key)
             token = issue_session(subject=principal.subject, cfg=cfg)
             self._json(
                 200,
@@ -2009,6 +2049,60 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path.startswith("/api") and not self._auth_gate(path, parsed.query):
+            return
+
+        if path == "/api/assistant/chat":
+            messages = body.get("messages")
+            if not isinstance(messages, list):
+                self._json(400, {"ok": False, "error": "messages 须为数组"})
+                return
+            cluster = _read_json(cluster_file(), {})
+            overview = build_overview(light=True)
+            jobs_payload = load_job_summaries()
+            if isinstance(jobs_payload, list):
+                jobs_list = jobs_payload
+            elif isinstance(jobs_payload, dict):
+                jobs_list = list(jobs_payload.get("jobs") or [])
+            else:
+                jobs_list = []
+
+            def _cli_json(args: list[str], timeout: int = 60) -> Any:
+                result = run_cli(args, timeout=timeout, log=False)
+                try:
+                    return json.loads(result.get("stdout") or "{}")
+                except json.JSONDecodeError:
+                    return {
+                        "rc": result.get("rc"),
+                        "stdout": result.get("stdout"),
+                        "stderr": result.get("stderr"),
+                    }
+
+            runners = {
+                "gc_overview": lambda args: build_overview(
+                    light=not bool((args or {}).get("refresh")),
+                    force=bool((args or {}).get("refresh")),
+                ),
+                "gc_doctor": lambda _args: _cli_json(["doctor", "--json"], timeout=30),
+                "gc_get_jobs": lambda _args: {"jobs": jobs_list},
+                "gc_api_catalog": lambda _args: catalog_payload(),
+                "gc_lease": lambda _args: _cli_json(["lease", "list", "--json"], timeout=30),
+                "gc_queue": lambda _args: _cli_json(["queue", "list", "--json"], timeout=30),
+                "gc_gateway": lambda _args: _cli_json(["gateway", "status", "--json"], timeout=30),
+            }
+            context = {
+                "cluster": cluster,
+                "overview": overview,
+                "overview_light": compact_overview(overview),
+                "jobs": jobs_list,
+            }
+            result = handle_chat(
+                messages=messages,
+                context=context,
+                runners=runners,
+                confirm=bool(body.get("confirm")),
+            )
+            code = 200 if result.get("ok", True) else 400
+            self._json(code, result)
             return
 
         if path == "/api/resources/refresh":

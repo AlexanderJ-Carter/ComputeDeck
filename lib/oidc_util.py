@@ -9,8 +9,10 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
+import os
 import secrets
 import time
 import urllib.error
@@ -64,6 +66,7 @@ def normalize_oidc(raw: dict | None, *, ui_base: str = "") -> dict[str, Any]:
         "allowed_groups": [str(x) for x in (raw.get("allowed_groups") or []) if x],
         "groups_claim": str(raw.get("groups_claim") or "groups"),
         "allow_password_fallback": bool(raw.get("allow_password_fallback", False)),
+        "require_userinfo": bool(raw.get("require_userinfo", True)),
         "authorization_endpoint": str(raw.get("authorization_endpoint") or "").strip(),
         "token_endpoint": str(raw.get("token_endpoint") or "").strip(),
         "userinfo_endpoint": str(raw.get("userinfo_endpoint") or "").strip(),
@@ -173,7 +176,13 @@ def finish_login(cfg: dict[str, Any], *, code: str, state: str) -> dict[str, Any
     if userinfo_url and access:
         claims = _http_json("GET", userinfo_url, bearer=str(access))
     elif token.get("id_token"):
-        claims = _unsafe_jwt_claims(str(token["id_token"]))
+        if cfg.get("require_userinfo", True):
+            raise OidcError(
+                "缺少 userinfo_endpoint/access_token；"
+                "默认 require_userinfo=true（避免仅解码未验签 id_token）。"
+                "仅在可信 IdP 且确认无 userinfo 时设 require_userinfo=false"
+            )
+        claims = _decode_id_token_claims(str(token["id_token"]), cfg=cfg)
     else:
         raise OidcError("无法取得用户信息（无 userinfo 且无 id_token）")
     subject = _pick_subject(cfg, claims)
@@ -252,9 +261,17 @@ def _assert_allowed(cfg: dict[str, Any], claims: dict[str, Any], subject: str) -
 
 def _save_pending(state: str, payload: dict[str, Any]) -> None:
     STATE_DIR_OIDC.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(STATE_DIR_OIDC, 0o700)
+    except OSError:
+        pass
     _purge_pending()
     path = STATE_DIR_OIDC / f"{state}.json"
     path.write_text(json.dumps(payload, ensure_ascii=False) + "\n", encoding="utf-8")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
 
 
 def _load_pending(state: str) -> dict[str, Any] | None:
@@ -326,8 +343,8 @@ def _http_json(
     return parsed
 
 
-def _unsafe_jwt_claims(token: str) -> dict[str, Any]:
-    """仅解码 JWT payload（不验签）；优先走 userinfo。"""
+def _decode_id_token_claims(token: str, *, cfg: dict[str, Any]) -> dict[str, Any]:
+    """解码 id_token payload 并校验 iss/aud/exp（仍不验签；优先 userinfo）。"""
     parts = token.split(".")
     if len(parts) < 2:
         raise OidcError("id_token 格式错误")
@@ -337,17 +354,27 @@ def _unsafe_jwt_claims(token: str) -> dict[str, Any]:
         raise OidcError("id_token payload 无法解码") from exc
     if not isinstance(payload, dict):
         raise OidcError("id_token payload 无效")
+    now = int(time.time())
+    exp = int(payload.get("exp") or 0)
+    if exp and exp < now - 30:
+        raise OidcError("id_token 已过期")
+    issuer = str(cfg.get("issuer") or "").rstrip("/")
+    token_iss = str(payload.get("iss") or "").rstrip("/")
+    if issuer and token_iss and token_iss != issuer:
+        raise OidcError("id_token iss 与配置 issuer 不一致")
+    aud = payload.get("aud")
+    client_id = str(cfg.get("client_id") or "")
+    if client_id and aud is not None:
+        audiences = aud if isinstance(aud, list) else [aud]
+        if client_id not in {str(a) for a in audiences}:
+            raise OidcError("id_token aud 不包含 client_id")
     return payload
 
 
 def _b64url(raw: bytes) -> str:
-    import base64
-
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
 def _b64url_decode(text: str) -> bytes:
-    import base64
-
     pad = "=" * (-len(text) % 4)
     return base64.urlsafe_b64decode(text + pad)

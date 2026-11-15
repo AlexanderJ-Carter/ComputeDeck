@@ -13,7 +13,9 @@
 
 ### Added
 
-- 智能助手设计与 P0/P1：`docs/superpowers/specs/2026-11-15-assistant-and-console-ux-design.md`；`lib/assistant_policy.py`；MCP 示例覆盖 Cursor / Claude Code / Codex / 通用；`GET /api/assistant/policy`；远程命令 `GET /api/exec/suggest` + UI 补全
+- 控制面小助手：`POST /api/assistant/chat` · `GET /api/assistant/status`（OpenAI 兼容上游；未配置则讲解+快捷动作）；远程命令补全 `GET /api/exec/suggest`
+- 多 Agent MCP 示例：Cursor / Claude Code / Codex / 通用；`lib/assistant_policy.py` 风险分级
+- 展板 Edge 故障转移 / least-conn 动效；窄屏标题与顶栏/终页布局修复
 - MCP 一等工具：`gc_queue` · `gc_lease` · `gc_diagnose` · `gc_gateway` · `gc_node`；`gc_deploy(force/…)` · `gc_models(pull)`；catalog↔MCP 同步测试
 - 发版：`scripts/release_notes.py` + tag `v*` 自动 GitHub Release；推送 GHCR 控制面镜像（暂不上传 PyPI）
 - 容器：`Dockerfile` · `docker-compose.yml` · `deploy/ssh/`；CI 构建冒烟
@@ -25,6 +27,11 @@
 - Job 推荐包：`gpu-control jobs install --recommended`、`POST /api/jobs/install-template`（`recommended=true`）、任务页一键安装；模板带分类与推荐标记
 - Job 最小契约校验（`validate_job_dict` / doctor / diagnose）；队列与租约状态机说明；state flock 契约文档
 - `diagnose` 租约漂移检测；`deploy --force` 覆盖异主租约
+
+### Security
+
+- OIDC 默认 `require_userinfo=true`（禁止仅解码未验签 `id_token`）；pending `0600`
+- 密码登录来源 IP 节流（过多失败 429）；响应 CSP / Permissions-Policy；doctor 检查密钥文件权限
 
 ### Changed
 
