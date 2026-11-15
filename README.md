@@ -1,4 +1,3 @@
-<!-- BEAUTIFIED -->
 <p align="center">
   <img src="docs/assets/logo.svg" alt="ComputeDeck" width="88" height="88" />
 </p>
@@ -12,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="#快速开始"><img src="https://img.shields.io/badge/快速开始-0D9488?style=for-the-badge" alt="快速开始" /></a>
+  <a href="https://github.com/AlexanderJ-Carter/gpu-control"><img src="https://img.shields.io/github/stars/AlexanderJ-Carter/gpu-control?style=for-the-badge" alt="GitHub stars" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-red?style=for-the-badge" alt="AGPL-3.0" /></a>
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-Keep%20a%20Changelog-blue?style=for-the-badge" alt="Changelog" /></a>
 </p>
@@ -25,7 +24,9 @@
 </p>
 
 <p align="center">
-  <code>gpu-control</code>
+  命令行 <code>gpu-control</code>
+  ·
+  <a href="https://github.com/AlexanderJ-Carter/gpu-control">GitHub</a>
   ·
   <a href="docs/index.md">文档</a>
   ·
@@ -36,24 +37,22 @@
 
 ---
 
-## 背景
+## 这是什么
 
-实验室和业务团队手里常有一批 SSH 就能登上的 GPU 机器。卡谁在用、进程在哪、能不能腾空，往往靠群聊和 `nvidia-smi`；微调、推理、Ray 各自一套启停脚本，换机器就要改路径和端口；想让 Cursor 这类 Agent 帮忙运维，又缺少统一的 HTTP / MCP 契约。就算接了 LiteLLM 或 nginx，也常和「现在到底哪几张卡在服」对不上。
+实验室和业务团队手里常有一批 SSH 就能登上的 GPU 机器。卡谁在用、进程在哪、能不能腾空，往往靠群聊和 `nvidia-smi`；微调、推理、Ray 各自一套启停脚本；想让 Cursor 这类 Agent 帮忙运维，又缺少统一的 HTTP / MCP 契约。
 
-**ComputeDeck**（命令行：`gpu-control`）把发现、租约、部署 Job、健康检查、统一入口和日志收成一套控制面。一台 Control 主机跑 Web UI、CLI 和 MCP，用 Ansible/SSH 编排 worker。
+**ComputeDeck**（仓库与 CLI：`gpu-control`）把发现、租约、Job 部署、健康检查、统一入口和日志收成一套控制面。一台 Control 主机跑 Web UI、CLI 和 MCP，用 Ansible/SSH 编排 worker。场景写在 `config/local/`，换集群主要改配置。
 
 ## 能力
 
 | 能力 | 说明 |
 |------|------|
-| 单屏看板 | 健康评分、GPU 池、Edge / TLS / Gateway、快捷运维 |
-| Job 插件 | JSON 描述启停；训练 / 推理 / Ray / Docker 从模板安装 |
+| 单屏看板 | 健康评分、GPU 池、Edge / TLS / Gateway 状态 |
+| Job 插件 | JSON 描述启停；`jobs install --recommended` 一键装推理 / 训练 / Ray / Docker 模板 |
 | 路径异构 | `defaults.paths`、节点覆盖、`${paths.*}` |
 | 统一入口 | 内置 Edge LB（重试、冷却、least-conn），可挂 nginx / LiteLLM |
-| Agent | 内置 OpenAPI 与 15 个 `gc_*` MCP 工具，和 CLI 同一能力面 |
-| 可靠性 | 状态原子写与 flock、watchdog、diagnose |
-
-场景写在 `config/local/`，换集群主要改配置。浏览器、CLI、MCP 共用能力目录；xterm 内置，内网也能开终端。
+| Agent | OpenAPI + `gc_*` MCP，与 CLI 同一能力面 |
+| 可靠性 | 状态 flock 原子写、watchdog、diagnose（含租约漂移提示） |
 
 ## 架构
 
@@ -61,23 +60,28 @@
   <img src="docs/assets/architecture-overview.svg" alt="ComputeDeck 架构：使用者、Control 主机与 GPU Workers" width="900" />
 </p>
 
-控制面在 Control（Web / CLI / MCP / Edge + `state/`）；Worker 跑 Job。编排走 Ansible/SSH，推理走 Edge 健康转发。
+控制面在 Control（Web / CLI / MCP / Edge + `state/`）；Worker 只跑 Job。编排走 Ansible/SSH，推理走 Edge 健康转发。
 
 ## 快速开始
 
 ```bash
+git clone https://github.com/AlexanderJ-Carter/gpu-control.git
+cd gpu-control
 uv venv .venv && uv pip install -r requirements.txt
 ./examples/quickstart.sh
 cp -n config/examples/cluster.example.json config/local/cluster.json
 cp -n config/examples/nodes.example.json   config/local/nodes.json
-# 按集群改 host、路径、GPU 数
+# 按集群改 host、路径、GPU 数与 scheduling.unit_gpus
 gpu-control node render
 gpu-control doctor
+gpu-control jobs install --recommended
 gpu-control auth set-password --generate --enable
 gpu-control auth issue-token
 gpu-control ui --background
 gpu-control watchdog --background
 ```
+
+本机看 UI（主控在远端时）：
 
 ```bash
 ssh -L 8787:127.0.0.1:8787 <control>
@@ -89,13 +93,13 @@ ssh -L 8787:127.0.0.1:8787 <control>
 ```bash
 gpu-control overview
 gpu-control free --node gpu-1 --wait 30 --cordon
-gpu-control jobs install train-job --name sft
+gpu-control jobs templates
 gpu-control deploy sft --nodes gpu-1,gpu-2 --gpus 16
 gpu-control gateway ensure
-curl -s http://127.0.0.1:8787/api
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8787/api
 ```
 
-文档：[手册](docs/手册.md) · [分布式](docs/分布式与推理.md) · [高可用](docs/高可用与负载均衡.md) · [AI/MCP](docs/ai-接入.md)
+文档：[手册](docs/手册.md) · [配置参考](docs/配置参考.md) · [分布式](docs/分布式与推理.md) · [高可用](docs/高可用与负载均衡.md) · [AI/MCP](docs/ai-接入.md)
 
 ## 环境与校验
 
@@ -110,8 +114,20 @@ curl -s http://127.0.0.1:8787/api
 gpu-control doctor
 ```
 
+## 仓库说明
+
+| 路径 | 用途 |
+|------|------|
+| `bin/gpu-control` | CLI 入口 |
+| `web/` | UI 与 HTTP API |
+| `mcp_server/` | MCP（`gc_*`） |
+| `config/examples/` | 可提交的示例配置与 Job 模板 |
+| `config/local/` | 本机场景（gitignore，勿提交） |
+| `jobs/` | 内置 `shell-job`；业务 Job 装到 `config/local/jobs/` |
+| `docs/` | 手册与 MkDocs 源 |
+
 ## 参与与许可
 
-[CONTRIBUTING](CONTRIBUTING.md) · [SECURITY](SECURITY.md) · [SUPPORT](SUPPORT.md)
+[CONTRIBUTING](CONTRIBUTING.md) · [SECURITY](SECURITY.md) · [SUPPORT](SUPPORT.md) · [Issues](https://github.com/AlexanderJ-Carter/gpu-control/issues)
 
-**AGPL-3.0**，见 [LICENSE](LICENSE) / [NOTICE](NOTICE)。版本 [`VERSION`](VERSION) · [CHANGELOG](CHANGELOG.md)
+**AGPL-3.0-only**，见 [LICENSE](LICENSE) / [NOTICE](NOTICE)。版本见 [`VERSION`](VERSION) · [CHANGELOG](CHANGELOG.md)。

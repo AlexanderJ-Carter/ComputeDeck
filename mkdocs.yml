@@ -1,7 +1,8 @@
 site_name: ComputeDeck
-site_description: ComputeDeck — 多节点 GPU 控制面文档
-site_url: ""
-repo_name: gpu-control
+site_description: ComputeDeck — 多节点 GPU 控制面（命令行 gpu-control）
+site_url: https://github.com/AlexanderJ-Carter/gpu-control
+repo_url: https://github.com/AlexanderJ-Carter/gpu-control
+repo_name: AlexanderJ-Carter/gpu-control
 docs_dir: docs
 site_dir: web/static/help
 strict: false
