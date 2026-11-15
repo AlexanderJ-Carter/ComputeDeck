@@ -266,6 +266,13 @@ textarea {
   align-items: center;
 }
 
+/* 工具栏里的下拉不要占满整行（表单字段仍保持 100%） */
+.btn-row>select,
+.panel-h select {
+  width: auto;
+  min-width: 140px;
+}
+
 .topbar-actions {
   flex-shrink: 0;
 }
@@ -274,6 +281,41 @@ textarea {
   height: 34px;
   padding: 0 12px;
   font-size: 12.5px;
+}
+
+.subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 0 12px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel-2) 72%, transparent);
+}
+
+.subnav-item {
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 14px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.subnav-item:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.subnav-item.active {
+  color: var(--accent-ink);
+  background: var(--accent);
 }
 
 .row.gap {
@@ -572,8 +614,39 @@ button.wide {
 
 .mosaic {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 10px;
+}
+
+.cluster-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin: 2px 0 12px;
+}
+
+.cluster-kpis > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+
+.cluster-kpis span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.cluster-kpis strong {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .node-dialog {
@@ -642,6 +715,10 @@ button.wide {
 
 .node-tile.state-cordoned::before {
   background: #7a8799;
+}
+
+.node-tile.state-unknown::before {
+  background: var(--line-strong);
 }
 
 .node-tile.state-cordoned {
@@ -2157,6 +2234,15 @@ summary:focus-visible,
   margin-bottom: 14px;
 }
 
+.trend-empty {
+  margin: 8px 0 0;
+  padding: 16px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  text-align: center;
+}
+
 .trend-kpis {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -2979,6 +3065,10 @@ summary:focus-visible,
 
 .gpu-seg.occupied {
   background: var(--warn);
+}
+
+.gpu-seg.unknown {
+  background: color-mix(in srgb, var(--muted) 22%, transparent);
 }
 
 .gpu-node-row.cordoned .gpu-seg {

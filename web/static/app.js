@@ -19,29 +19,53 @@ const state = {
 
 const VIEW_TITLE = {
   actions: "看板",
-  cluster: "节点矩阵",
-  nodes: "节点",
+  cluster: "节点",
   workloads: "任务",
-  models: "模型",
-  toolkits: "工具栈",
-  endpoints: "统一入口",
-  ops: "命令",
-  terminal: "终端",
-  guide: "指南",
+  endpoints: "入口与网关",
+  models: "模型与工具",
+  toolkits: "模型与工具",
+  ops: "终端与命令",
+  terminal: "终端与命令",
   config: "配置",
+};
+
+/** 顶层导航分组：子页共用同一个侧栏入口 */
+const VIEW_GROUPS = {
+  models: "models",
+  toolkits: "models",
+  ops: "ops",
+  terminal: "ops",
+};
+
+/** 子页签：模型/工具栈、批量命令/交互终端 */
+const VIEW_SUBNAV = {
+  models: [
+    { view: "models", label: "模型" },
+    { view: "toolkits", label: "工具栈" },
+  ],
+  ops: [
+    { view: "ops", label: "批量命令" },
+    { view: "terminal", label: "交互终端" },
+  ],
+};
+
+/** 旧 hash 别名 → 现行视图（及可选配置 Tab） */
+const VIEW_ALIASES = {
+  guide: { view: "config", tab: "docs" },
+  nodes: { view: "config", tab: "wizard" },
+  runtime: { view: "models" },
+  shell: { view: "ops" },
 };
 
 const VIEW_CLI = {
   actions: "gpu-control overview && gpu-control toolkits probe",
   cluster: "gpu-control get nodes",
-  nodes: "gpu-control node render",
   workloads: "gpu-control get jobs",
-  models: "gpu-control models deps && gpu-control models verify",
+  endpoints: "gpu-control gateway status",
+  models: "gpu-control models list && gpu-control models verify",
   toolkits: "gpu-control toolkits list && gpu-control toolkits probe",
-  endpoints: "gpu-control health",
   ops: "gpu-control exec --nodes all -- ...",
   terminal: "ssh <node>  # Web 内置 PTY",
-  guide: "gpu-control doctor",
   config: "gpu-control doctor",
 };
 
@@ -262,7 +286,9 @@ function setConsoleMeta(text) {
 
 function markConsoleUnread() {
   const badge = $("console-unread");
-  if (badge && !consoleVisible()) badge.hidden = false;
+  const wrap = $("batch-console-wrap");
+  const collapsed = wrap?.classList.contains("collapsed");
+  if (badge && (collapsed || !consoleVisible())) badge.hidden = false;
 }
 
 function writeConsoleHtml(html, { empty = false, meta = "", reveal = false } = {}) {
@@ -695,7 +721,7 @@ function renderGatewayTopo(lb, endpointsCatalog) {
   ];
   if (ai.model_name) bits.push(`model=${ai.model_name}`);
   if (ai.routing_strategy) bits.push(`route=${ai.routing_strategy}`);
-  if (proxy.port) bits.push(`AI Gateway :${proxy.port}`);
+  if (proxy.port) bits.push(`LiteLLM :${proxy.port}`);
   if (extra.port) bits.push(`extra :${extra.port}`);
   if (nginx.installed) bits.push("nginx 已装");
   else bits.push(nginx.status_label || "nginx 不必装（Edge）");
@@ -711,7 +737,7 @@ function renderPool(overview) {
   const mosaic = document.getElementById("api-mosaic");
   if (!endpoints.length) {
     mosaic.innerHTML =
-      '<div class="empty-state"><strong>暂无 API 端点</strong><p>先启动 Job 或刷新 GPU 快照，按当前 api.base_port 生成端点。</p></div>';
+      '<div class="empty-state"><strong>暂无上游推理端点</strong><p>先启动 Job 或刷新 GPU 快照，按当前 api.base_port 生成上游。</p></div>';
   } else {
     const groups = new Map();
     for (const ep of endpoints) {
@@ -778,7 +804,7 @@ function renderHostMetrics(overview) {
   document.getElementById("metrics-at").textContent = at ? `采集于 ${at}` : "尚未采集，点「刷新主机指标」";
   if (!nodes.length) {
     root.innerHTML =
-      '<div class="empty-state"><strong>暂无节点</strong><p>先在「节点」页添加节点，再刷新主机指标。</p></div>';
+      '<div class="empty-state"><strong>暂无节点</strong><p>先在「配置 → 配置向导 → 节点清单」添加节点，再刷新主机指标。</p></div>';
     return;
   }
   root.innerHTML = nodes
@@ -971,17 +997,41 @@ async function renderGatewayFiles() {
   }
 }
 
+const LITELLM_PHASES = {
+  running: { label: "运行中", tone: "ok" },
+  starting: { label: "启动中", tone: "warn" },
+  unmanaged: { label: "外部运行", tone: "warn" },
+  port_conflict: { label: "端口冲突", tone: "bad" },
+  failed: { label: "启动失败", tone: "bad" },
+  ready: { label: "就绪", tone: "warn" },
+  missing: { label: "未配", tone: "" },
+};
+
+function litellmPhaseMeta(ll) {
+  const phase = ll.phase || (ll.running ? "running" : ll.ready ? "ready" : "missing");
+  return { phase, ...(LITELLM_PHASES[phase] || LITELLM_PHASES.missing) };
+}
+
+function edgePhaseMeta(edge) {
+  if (edge.running && (edge.pid_owned || edge.pid)) return { label: "运行中", tone: "ok" };
+  if (edge.running) return { label: "端口可达", tone: "warn" };
+  if (edge.port_conflict) return { label: "端口冲突", tone: "bad" };
+  return { label: "未运行", tone: "warn" };
+}
+
 function renderIngressMeta(status) {
   const el = document.getElementById("ingress-meta");
   if (!el || !status) return;
   const edge = status.edge || {};
   const ll = status.litellm || {};
   const pool = (edge.status && edge.status.pool) || {};
+  const edgeMeta = edgePhaseMeta(edge);
+  const llMeta = litellmPhaseMeta(ll);
   el.textContent = [
     `主入口 ${status.preferred || "edge"}`,
-    edge.running ? "Edge 运行中" : "Edge 未运行",
+    `Edge ${edgeMeta.label}`,
     pool.upstream_count != null ? `上游 ${pool.available ?? "?"}/${pool.upstream_count}` : null,
-    ll.running ? "LiteLLM 运行中" : ll.ready ? "LiteLLM 就绪未启" : "LiteLLM 可选",
+    `LiteLLM ${llMeta.label}`,
     ll.configured ? "Master Key 已配" : "Master Key 未配",
   ]
     .filter(Boolean)
@@ -1005,11 +1055,8 @@ function renderIngressDuo(status) {
   const edgeOpen = publicUrl || "http://127.0.0.1:18080/";
   const edgeHealth = edge.healthz || `${String(edgeOpen).replace(/\/$/, "")}/_gpu_control/health`;
 
-  setChip(
-    document.getElementById("edge-card-state"),
-    edge.running ? "运行中" : "未运行",
-    edge.running ? "ok" : "warn"
-  );
+  const edgeMeta = edgePhaseMeta(edge);
+  setChip(document.getElementById("edge-card-state"), edgeMeta.label, edgeMeta.tone);
   const listenEl = document.getElementById("edge-card-listen");
   if (listenEl) listenEl.textContent = edgeListen;
   const urlEl = document.getElementById("edge-card-url");
@@ -1029,27 +1076,42 @@ function renderIngressDuo(status) {
   const healthEl = document.getElementById("edge-card-health");
   if (healthEl) healthEl.href = edgeHealth;
 
-  setChip(
-    document.getElementById("litellm-card-state"),
-    ll.running ? "运行中" : ll.ready ? "就绪" : "未配",
-    ll.running ? "ok" : ll.ready ? "warn" : ""
-  );
+  const llMeta = litellmPhaseMeta(ll);
+  setChip(document.getElementById("litellm-card-state"), llMeta.label, llMeta.tone);
   const llUrl = document.getElementById("litellm-card-url");
   if (llUrl) {
     llUrl.textContent = ll.url || "-";
     llUrl.href = ll.url || "#";
   }
+  const binEl = document.getElementById("litellm-card-bin");
+  if (binEl) {
+    binEl.textContent = ll.binary || (ll.mode === "script" ? ll.start_script || "script" : "-");
+  }
   const meta = document.getElementById("litellm-key-meta");
   if (meta) {
     meta.textContent = ll.configured
       ? `已配置${ll.login_hint ? " · 密码=Master Key" : ""}`
-      : "未配置（Admin UI 无法登录）";
+      : "未配置（Admin 无法登录）";
   }
   const link = document.getElementById("litellm-ui-link");
   if (link) {
     link.href =
       ll.ui_url ||
       (ll.url ? `${String(ll.url).replace(/\/$/, "")}/ui/` : "http://127.0.0.1:4000/ui/");
+  }
+  const reasons = document.getElementById("litellm-card-reasons");
+  if (reasons) {
+    const bits = [];
+    if (ll.mode) bits.push(`mode=${ll.mode}`);
+    if (ll.listen_ok != null) bits.push(ll.listen_ok ? "端口可达" : "端口未听");
+    if (ll.pid_owned != null) bits.push(ll.pid_owned ? "进程归属已确认" : "无本机 pidfile");
+    if (ll.last_start?.error) bits.push(`上次启动：${ll.last_start.error}`);
+    if (Array.isArray(ll.reasons) && ll.reasons.length) bits.push(ll.reasons.join("；"));
+    reasons.textContent = bits.join(" · ") || "无额外诊断";
+  }
+  const logTail = document.getElementById("litellm-log-tail");
+  if (logTail) {
+    logTail.textContent = ll.log_tail || "（无日志）";
   }
 }
 
@@ -1116,7 +1178,7 @@ async function startIngress() {
       method: "POST",
       body: JSON.stringify({ kind: "edge" }),
     });
-    toast(data.ok ? "统一入口已启动" : "启动失败");
+    toast(data.ok ? "Edge 已启动" : "Edge 启动失败");
     log(JSON.stringify(data.results || data, null, 2));
     await refreshIngressStatus();
   } catch (err) {
@@ -1131,9 +1193,9 @@ async function stopIngress() {
   try {
     const data = await api("/api/gateway/stop", {
       method: "POST",
-      body: JSON.stringify({ kind: "all" }),
+      body: JSON.stringify({ kind: "edge" }),
     });
-    toast("入口已停止");
+    toast("Edge 已停止");
     log(JSON.stringify(data.results || data, null, 2));
     await refreshIngressStatus();
   } catch (err) {
@@ -1148,25 +1210,33 @@ function renderNodes(nodes) {
   if (!root) return;
   if (!nodes?.length) {
     root.innerHTML =
-      '<div class="empty-state"><strong>暂无节点快照</strong><p>先在「集群 · 节点」添加节点并刷新 GPU。</p></div>';
-    renderNodeAdmin(nodes || []);
+      '<div class="empty-state"><strong>暂无节点快照</strong><p>先在「配置 → 配置向导 → 节点清单」添加节点，再刷新 GPU。</p></div>';
     renderDrawer();
     return;
   }
   root.innerHTML = nodes
     .map((node) => {
       const selected = state.selectedNode === node.name;
-      const rawState = node.state || (node.cordoned ? "cordoned" : node.used ? "busy" : "free");
-      const st = ["free", "busy", "cordoned"].includes(rawState) ? rawState : "free";
+      const hasSnapshot = Boolean(node.collected_at) || (node.gpus || []).length > 0;
+      const rawState = node.cordoned
+        ? "cordoned"
+        : hasSnapshot
+          ? node.used
+            ? "busy"
+            : "free"
+          : "unknown";
+      const st = ["free", "busy", "cordoned", "unknown"].includes(rawState) ? rawState : "free";
       const name = escapeHtml(node.name);
       const leaseJob = node.lease && node.lease.job ? escapeHtml(node.lease.job) : "";
       const badge = node.cordoned
         ? `<span class="chip warn">已隔离</span>`
         : leaseJob
           ? `<span class="chip warn">${leaseJob}</span>`
-          : node.used
-            ? `<span class="chip warn">占用中</span>`
-            : `<span class="chip ok">空闲</span>`;
+          : !hasSnapshot
+            ? `<span class="chip chip--neutral">无快照</span>`
+            : node.used
+              ? `<span class="chip warn">占用中</span>`
+              : `<span class="chip ok">空闲</span>`;
       const bars = (node.gpus || [])
         .map((g) => {
           const cls = g.status === "free" ? "free" : "occupied";
@@ -1177,11 +1247,12 @@ function renderNodes(nodes) {
           return `<i class="bar ${cls}" title="${escapeHtml(title)}"></i>`;
         })
         .join("");
+      const freeText = hasSnapshot ? node.free : "—";
       return `<button type="button" class="node-tile ${selected ? "selected" : ""} state-${st}"
           data-select="${name}" aria-pressed="${selected ? "true" : "false"}">
         <span class="name">${name}</span>
         <span class="host">${escapeHtml(node.host || "-")}</span>
-        <span class="stats"><span class="meta">空闲 ${node.free}/${node.total}</span>${badge}</span>
+        <span class="stats"><span class="meta">空闲 ${freeText}/${node.total ?? "—"}</span>${badge}</span>
         <span class="meta node-usage">CPU ${node.cpu_percent ?? "-"}% · 负载 ${node.load1 ?? "-"} · 内存 ${node.mem_used_mb != null ? Math.round(node.mem_used_mb / 1024) + "G" : "-"
         }</span>
         <span class="bars">${bars || '<span class="meta">暂无快照</span>'}</span>
@@ -1191,27 +1262,7 @@ function renderNodes(nodes) {
   root.querySelectorAll("[data-select]").forEach((el) => {
     el.addEventListener("click", () => selectNode(el.dataset.select));
   });
-  renderNodeAdmin(nodes);
   renderDrawer();
-}
-
-function renderNodeAdmin(nodes) {
-  const root = $("node-admin");
-  if (!root) return;
-  if (!nodes?.length) {
-    root.innerHTML =
-      '<div class="empty-state compact"><strong>尚未登记节点</strong><p>在上方表单填写主机后添加，再执行 node render。</p></div>';
-    return;
-  }
-  root.innerHTML = nodes
-    .map(
-      (n) => `<div class="item">
-        <div><strong>${escapeHtml(n.name)}</strong><div class="meta">${escapeHtml(n.host || "-")} · ${escapeHtml((n.labels || []).join(",") || "-")}</div></div>
-        <button data-remove="${escapeHtml(n.name)}" class="danger tiny">移除</button>
-      </div>`
-    )
-    .join("");
-  bindRemoveButtons(document.getElementById("node-admin"));
 }
 
 function closeNodeDrawer() {
@@ -1947,13 +1998,45 @@ function applyOverview(data) {
   }
 }
 
+function renderClusterKpis(summary) {
+  const root = $("cluster-kpis");
+  if (!root) return;
+  const nodes = state.overview?.nodes || [];
+  const nodeTotal = nodes.reduce((sum, node) => sum + Number(node.total || 0), 0);
+  const nodeFree = nodes.reduce((sum, node) => sum + Number(node.free || 0), 0);
+  const nodeUsed = nodes.reduce((sum, node) => sum + Number(node.used || 0), 0);
+  const used = Number(summary.gpus_used || nodeUsed || 0);
+  const free = Number(summary.gpus_free || nodeFree || 0);
+  const total = Number(summary.gpus_total || nodeTotal || used + free) || 0;
+  const busy = summary.busy_nodes ?? nodes.filter((node) => Number(node.used || 0) > 0).length;
+  const idle = summary.free_nodes ?? nodes.filter((node) => Number(node.used || 0) === 0).length;
+  const hasSnapshot = nodes.some(
+    (node) => Boolean(node.collected_at) || (node.gpus || []).length > 0
+  );
+  const items = [
+    ["节点", summary.nodes ?? nodes.length],
+    ["GPU", total ? (hasSnapshot ? `${used}/${total}` : `—/${total}`) : "-"],
+    ["空闲 GPU", total ? (hasSnapshot ? free : "—") : "-"],
+    ["忙 / 闲", hasSnapshot ? `${busy} / ${idle}` : "— / —"],
+    ["隔离", summary.cordoned ?? 0],
+    ["队列", summary.queue_pending ?? 0],
+  ];
+  root.innerHTML = items
+    .map(
+      ([label, value]) =>
+        `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong></div>`
+    )
+    .join("");
+}
+
 /* Render only the active view; hidden pages are filled when switched to. */
 function renderView(name) {
   const data = state.overview;
   if (!data) return;
   if (name === "actions") {
     renderDashboard(data);
-  } else if (name === "cluster" || name === "nodes") {
+  } else if (name === "cluster") {
+    renderClusterKpis(data.summary || {});
     renderNodes(data.nodes || []);
   } else if (name === "workloads") {
     renderQueue(data.queue || []);
@@ -2087,9 +2170,9 @@ function renderAccessStatus(data) {
     severity === "error" ? "bad" : severity === "warn" ? "warn" : severity === "ok" ? "ok" : "neutral";
   const viewOf = (c) => (c.id === "tls" ? "config" : "endpoints");
   const companionLabel = {
-    edge: "统一入口",
+    edge: "入口与网关",
     nginx: "nginx",
-    litellm: "AI Gateway",
+    litellm: "LiteLLM",
     tls: "HTTPS / TLS",
   };
   const enrich = (c) => {
@@ -2137,7 +2220,7 @@ function renderAccessStatus(data) {
     // Older payloads: keep a useful fallback rather than an empty panel.
     rows.push(
       {
-        label: "统一入口",
+        label: "入口与网关",
         value: edge.running ? "运行中" : ingress.ingress && ingress.ingress.enabled === false ? "未启用" : "未运行",
         hint: edge.listen || ingress.public_base_url || "未配置监听",
         tone: edge.running ? "ok" : "neutral",
@@ -2234,18 +2317,26 @@ function renderGpuPool(data) {
         const name = escapeHtml(node.name);
         const totalGpus = Number(node.total || (node.gpus || []).length) || 0;
         const usedGpus = Number(node.used || 0);
-        const cls = node.cordoned ? "cordoned" : usedGpus ? "busy" : "free";
+        const hasSnapshot = Boolean(node.collected_at) || (node.gpus || []).length > 0;
+        const cls = node.cordoned
+          ? "cordoned"
+          : hasSnapshot
+            ? usedGpus
+              ? "busy"
+              : "free"
+            : "unknown";
         const leaseJob = node.lease && node.lease.job ? escapeHtml(node.lease.job) : "";
         const gpus =
           (node.gpus || []).length > 0
             ? node.gpus
             : Array.from({ length: totalGpus }, (_, i) => ({
               index: i,
-              status: i < usedGpus ? "occupied" : "free",
+              status: hasSnapshot ? (i < usedGpus ? "occupied" : "free") : "unknown",
             }));
         const segs = gpus
           .map((g) => {
-            const status = g.status === "free" ? "free" : "occupied";
+            const status =
+              g.status === "free" ? "free" : g.status === "unknown" ? "unknown" : "occupied";
             const util = g.utilization_percent != null ? `${g.utilization_percent}%` : "-";
             const mem =
               g.memory_used_mib != null ? `${Math.round(g.memory_used_mib / 1024)}G` : "-";
@@ -2256,7 +2347,7 @@ function renderGpuPool(data) {
             title="${escapeHtml(node.host || "")}${leaseJob ? " · " + leaseJob : ""}">
           <span class="gpu-node-name">${name}${leaseJob ? `<span class="meta"> · ${leaseJob}</span>` : ""}</span>
           <span class="gpu-segments" aria-hidden="true">${segs}</span>
-          <span class="gpu-node-count">${usedGpus}/${totalGpus || "-"}</span>
+          <span class="gpu-node-count">${hasSnapshot ? usedGpus : "—"}/${totalGpus || "-"}</span>
         </button>`;
       })
       .join("") || '<p class="meta">暂无节点快照</p>';
@@ -2382,7 +2473,7 @@ function renderDashGateway(status) {
       if (c.id === "edge") {
         if (publicUrl) links.push({ href: publicUrl, label: publicUrl });
         if (healthz) links.push({ href: healthz, label: "health" });
-      } else if (c.id === "litellm" && ll.url && ll.running) {
+      } else if (c.id === "litellm" && ll.url && (ll.running || ll.available)) {
         links.push({ href: ll.url, label: ll.url });
       }
       let detail = c.detail || "";
@@ -2923,13 +3014,9 @@ const VIEW_ORDER = [
   "actions",
   "cluster",
   "workloads",
-  "models",
-  "toolkits",
-  "nodes",
   "endpoints",
+  "models",
   "ops",
-  "terminal",
-  "guide",
   "config",
 ];
 
@@ -2945,17 +3032,49 @@ function setConfigTab(name, { updateHash = false } = {}) {
   }
 }
 
+function resolveViewName(name) {
+  const alias = VIEW_ALIASES[name];
+  if (alias) return alias;
+  if (VIEW_TITLE[name]) return { view: name, tab: "" };
+  return { view: "actions", tab: "" };
+}
+
 function currentRoute() {
   const raw = (location.hash || "").replace(/^#\/?/, "");
-  const [view, tab] = raw.split("/");
-  return { view: VIEW_TITLE[view] ? view : "actions", tab: tab || "" };
+  const [viewRaw, tabRaw] = raw.split("/");
+  const resolved = resolveViewName(viewRaw || "actions");
+  return {
+    view: resolved.view,
+    tab: tabRaw || resolved.tab || "",
+  };
+}
+
+function renderSubnav(name) {
+  const root = $("view-subnav");
+  if (!root) return;
+  const group = VIEW_GROUPS[name] || name;
+  const items = VIEW_SUBNAV[group];
+  if (!items) {
+    root.hidden = true;
+    root.innerHTML = "";
+    return;
+  }
+  root.hidden = false;
+  root.innerHTML = items
+    .map(
+      (item) => `<button type="button" class="subnav-item${item.view === name ? " active" : ""}"
+        data-subview="${item.view}" role="tab" aria-selected="${item.view === name}">${escapeHtml(item.label)}</button>`
+    )
+    .join("");
 }
 
 function setView(name, { updateHash = true } = {}) {
-  if (!VIEW_TITLE[name]) name = "actions";
+  const resolved = resolveViewName(name);
+  name = resolved.view;
   state.view = name;
+  const navKey = VIEW_GROUPS[name] || name;
   document.querySelectorAll(".nav-item").forEach((n) => {
-    const active = n.dataset.view === name;
+    const active = n.dataset.view === navKey;
     n.classList.toggle("active", active);
     n.setAttribute("aria-current", active ? "page" : "false");
   });
@@ -2964,14 +3083,21 @@ function setView(name, { updateHash = true } = {}) {
   });
   const title = $("view-title");
   if (title) title.textContent = VIEW_TITLE[name] || name;
+  const sub = VIEW_SUBNAV[navKey]?.find((item) => item.view === name);
+  document.title = `ComputeDeck · ${sub ? `${VIEW_TITLE[navKey]} / ${sub.label}` : VIEW_TITLE[name] || name}`;
+  renderSubnav(name);
   const hint = $("cli-hint-code");
   if (hint) hint.textContent = VIEW_CLI[name] || "gpu-control --help";
   if (updateHash) {
-    const hash = `#/${name}`;
+    const hash =
+      name === "config" && resolved.tab ? `#/config/${resolved.tab}` : `#/${name}`;
     if (location.hash !== hash) history.pushState(null, "", hash);
   }
+  if (name === "config" && resolved.tab) {
+    setConfigTab(resolved.tab, { updateHash: false });
+  }
   renderView(name);
-  if ((name === "guide" || name === "config") && !stateSetup.data) {
+  if (name === "config" && !stateSetup.data) {
     loadSetup().catch((err) => actionError("加载配置", err));
   }
   if (name === "models") {
@@ -2983,6 +3109,8 @@ function setView(name, { updateHash = true } = {}) {
   if (name === "actions") {
     if (!state.quality) loadQuality().catch(() => { });
     refreshRunlog().catch(() => { });
+  }
+  if (name === "actions" || name === "endpoints") {
     refreshIngressStatus().catch(() => { });
   }
   if (name === "terminal") {
@@ -3814,6 +3942,10 @@ async function boot() {
   document.querySelectorAll(".nav-item").forEach((btn) => {
     btn.addEventListener("click", () => setView(btn.dataset.view));
   });
+  $("view-subnav")?.addEventListener("click", (ev) => {
+    const btn = ev.target && ev.target.closest ? ev.target.closest("[data-subview]") : null;
+    if (btn) setView(btn.dataset.subview);
+  });
   const nodeDrawerClose = document.getElementById("node-drawer-close");
   const nodeDrawer = document.getElementById("node-drawer");
   if (nodeDrawerClose) nodeDrawerClose.addEventListener("click", () => closeNodeDrawer());
@@ -3891,11 +4023,7 @@ async function boot() {
   });
   document.getElementById("btn-doctor").addEventListener("click", runDoctor);
   document.getElementById("btn-doctor-2").addEventListener("click", runDoctor);
-  document.getElementById("btn-goto-setup").addEventListener("click", () => {
-    setView("config");
-    setConfigTab("wizard");
-  });
-  document.getElementById("btn-goto-config").addEventListener("click", () => {
+  document.getElementById("btn-goto-config")?.addEventListener("click", () => {
     setView("config");
     setConfigTab("wizard");
   });
@@ -3927,6 +4055,7 @@ async function boot() {
     if (!wrap) return;
     const collapsed = wrap.classList.toggle("collapsed");
     $("btn-console-toggle").textContent = collapsed ? "展开" : "收起";
+    if (!collapsed) hideConsoleUnread();
   });
   document.querySelectorAll("[data-oneclick]").forEach((btn) => {
     btn.addEventListener("click", () => runOneclick(btn.dataset.oneclick));
@@ -3968,28 +4097,50 @@ async function boot() {
   document.getElementById("btn-litellm-key-clear")?.addEventListener("click", async () => {
     const ok = await confirmDialog({
       title: "清除 LiteLLM Master Key",
-      message: "清除后 Admin UI 将无法登录，并会重启 LiteLLM。",
+      message: "清除后 Admin 将无法登录，并会重启 LiteLLM。",
       confirmText: "清除",
       tone: "danger",
     });
     if (ok) saveLitellmMasterKey({ clear: true });
   });
-  document.getElementById("btn-litellm-restart")?.addEventListener("click", async () => {
+  async function litellmLifecycle(action) {
     setBusy(true);
     try {
-      await api("/api/gateway/stop", { method: "POST", body: JSON.stringify({ kind: "litellm" }) });
-      const data = await api("/api/gateway/start", {
-        method: "POST",
-        body: JSON.stringify({ kind: "litellm" }),
-      });
-      toast(data.ok ? "LiteLLM 已重启" : "LiteLLM 重启失败");
-      await refreshIngressStatus();
+      if (action === "stop" || action === "restart") {
+        await api("/api/gateway/stop", { method: "POST", body: JSON.stringify({ kind: "litellm" }) });
+      }
+      if (action === "start" || action === "restart") {
+        const data = await api("/api/gateway/start", {
+          method: "POST",
+          body: JSON.stringify({ kind: "litellm" }),
+        });
+        const row = (data.results || []).find((item) => item.name === "litellm") || {};
+        const label = {
+          running: action === "restart" ? "LiteLLM 已重启" : "LiteLLM 已启动",
+          starting: "LiteLLM 启动中，稍后刷新状态",
+          unmanaged: "端口已有 LiteLLM（外部运行，非本工具管理）",
+          port_conflict: "端口被其它进程占用，LiteLLM 未启动",
+          failed: "LiteLLM 启动失败，详见执行输出",
+          missing: "未找到 litellm 二进制 / 启动脚本",
+        }[row.phase];
+        await refreshIngressStatus();
+        toast(label || (data.ok ? "LiteLLM 已启动" : "LiteLLM 启动未完成"), {
+          tone: data.ok ? undefined : "warn",
+        });
+        log(JSON.stringify(data, null, 2));
+      } else {
+        await refreshIngressStatus();
+        toast("LiteLLM 已停止");
+      }
     } catch (err) {
       toast(String(err.message || err));
     } finally {
       setBusy(false);
     }
-  });
+  }
+  document.getElementById("btn-litellm-start")?.addEventListener("click", () => litellmLifecycle("start"));
+  document.getElementById("btn-litellm-stop")?.addEventListener("click", () => litellmLifecycle("stop"));
+  document.getElementById("btn-litellm-restart")?.addEventListener("click", () => litellmLifecycle("restart"));
   document.getElementById("btn-save-ssh").addEventListener("click", saveSsh);
   document.getElementById("btn-test-ssh").addEventListener("click", testSsh);
   document.getElementById("btn-render").addEventListener("click", async () => {
@@ -4363,33 +4514,6 @@ async function boot() {
     }
   });
 
-  document.getElementById("btn-add-node").addEventListener("click", async () => {
-    const name = document.getElementById("add-name").value.trim();
-    const host = document.getElementById("add-host").value.trim();
-    const gpus = Number(document.getElementById("add-gpus").value || 4);
-    const labels = document.getElementById("add-labels").value.trim();
-    if (!name || !host) return log("请填写名称和地址");
-    setBusy(true);
-    try {
-      const data = await api("/api/node/add", {
-        method: "POST",
-        body: JSON.stringify({ name, host, gpus, labels }),
-      });
-      log(data.result.stdout || "已添加");
-      document.getElementById("add-name").value = "";
-      document.getElementById("add-host").value = "";
-      $("add-labels").value = "";
-      stateSetup.data = null;
-      toastOk(`已添加节点 ${name}`);
-      await refresh(false);
-      setView("nodes", { updateHash: false });
-    } catch (err) {
-      actionError("添加节点", err);
-    } finally {
-      setBusy(false);
-    }
-  });
-
   document.getElementById("btn-clear-console").addEventListener("click", () => {
     writeConsoleText("已清空。点「一键连通」或上方运维卡片可再次产生输出。", {
       empty: true,
@@ -4407,21 +4531,8 @@ async function boot() {
     if (target && (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable)) {
       return;
     }
-    const map = {
-      1: "actions",
-      2: "cluster",
-      3: "workloads",
-      4: "models",
-      5: "toolkits",
-      6: "nodes",
-      7: "endpoints",
-      8: "ops",
-      9: "terminal",
-      g: "guide",
-      G: "guide",
-      c: "config",
-      C: "config",
-    };
+    const map = Object.fromEntries(VIEW_ORDER.map((view, index) => [String(index + 1), view]));
+    Object.assign(map, { g: "guide", G: "guide", c: "config", C: "config" });
     if (map[ev.key]) {
       ev.preventDefault();
       setView(map[ev.key]);
@@ -4541,6 +4652,20 @@ function fmtPct(v) {
 
 function renderTrends(payload) {
   const points = (payload && payload.points) || [];
+  const charts = $("trend-charts");
+  const empty = $("trend-empty");
+  const seriesKeys = [
+    "api_ok_pct",
+    "gpu_sm_util_pct",
+    "gpu_mem_util_pct",
+    "gpu_alloc_pct",
+    "cpu_avg_pct",
+  ];
+  const enough = seriesKeys.some(
+    (key) => points.filter((point) => point && point[key] != null).length >= 2
+  );
+  if (charts) charts.hidden = !enough;
+  if (empty) empty.hidden = enough;
   const note = $("dash-trends-note");
   if (note) {
     const retainMin = Math.round(Number(payload?.retain_sec || 3600) / 60);

@@ -24,6 +24,7 @@ from paths import (  # noqa: E402
     cluster_file,
     nodes_file,
 )
+from process_util import pid_alive  # noqa: E402
 from runlog_util import append_runlog  # noqa: E402
 from state_util import read_json  # noqa: E402
 
@@ -35,7 +36,7 @@ def _pid_alive(pid_file: Path) -> bool | None:
     text = pid_file.read_text(encoding="utf-8").strip().splitlines()
     if not text or not text[0].isdigit():
         return False
-    return (Path("/proc") / text[0]).exists()
+    return pid_alive(int(text[0]))
 
 
 def collect_findings() -> list[dict[str, Any]]:
@@ -158,7 +159,17 @@ def collect_findings() -> list[dict[str, Any]]:
     ingress = (cluster.get("gateway") or {}).get("ingress") or {}
     ingress_kind = str(ingress.get("kind") or "edge").lower()
     if bool(ingress.get("enabled", True)) and ingress_kind in {"edge", "both", "all"}:
-        if _pid_alive(STATE_DIR / "ingress-edge.pid") is not True:
+        edge_up = _pid_alive(STATE_DIR / "ingress-edge.pid") is True
+        if not edge_up:
+            # 与 gateway status 共用身份探测：容器 / SSH 隧道下 pidfile 可能不可见。
+            try:
+                from gateway_ops import _edge_runtime, _ingress_cfg
+
+                gateway = cluster.get("gateway") or {}
+                edge_up = _edge_runtime(_ingress_cfg(gateway))[0]
+            except (ImportError, OSError, ValueError):
+                edge_up = False
+        if not edge_up:
             add(
                 "edge-down",
                 severity="error",

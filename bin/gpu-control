@@ -30,6 +30,7 @@ from paths import (  # noqa: E402
     nodes_file,
 )
 from node_paths import group_nodes_by_job, load_nodes_data, resolve_job  # noqa: E402
+from process_util import pid_alive, pid_cmdline  # noqa: E402
 from state_util import (  # noqa: E402
     atomic_write_json as _atomic_write_json,
     read_json as _read_json_state,
@@ -900,21 +901,14 @@ def cmd_exec(args: argparse.Namespace) -> int:
     return code
 
 
-def _pid_cmdline(pid: int) -> str:
-    try:
-        return Path(f"/proc/{pid}/cmdline").read_bytes().decode("utf-8", "replace").replace("\x00", " ")
-    except OSError:
-        return ""
-
-
 def _pid_looks_like_ui(pid: int) -> bool:
     """根据 cmdline 判断 PID 是否仍是 UI，避免 PID 复用误判。"""
-    text = _pid_cmdline(pid)
+    text = pid_cmdline(pid)
     return "web/server.py" in text or "gpu-control" in text and " ui" in text
 
 
 def _pid_looks_like_watchdog(pid: int) -> bool:
-    return "watchdog.py" in _pid_cmdline(pid)
+    return "watchdog.py" in pid_cmdline(pid)
 
 
 def cmd_ui(args: argparse.Namespace) -> int:
@@ -938,7 +932,7 @@ def cmd_ui(args: argparse.Namespace) -> int:
         log_file = STATE_DIR / "ui.log"
         if pid_file.is_file():
             old = pid_file.read_text().strip()
-            if old.isdigit() and (Path("/proc") / old).exists() and _pid_looks_like_ui(int(old)):
+            if old.isdigit() and pid_alive(int(old)) and _pid_looks_like_ui(int(old)):
                 print(f"UI already running pid={old} log={log_file}")
                 print(f"Open {url} (or SSH tunnel to localhost:{port})")
                 return 0
@@ -1565,7 +1559,7 @@ def cmd_watchdog(args: argparse.Namespace) -> int:
         pid_file = STATE_DIR / "watchdog.pid"
         if pid_file.is_file():
             old = pid_file.read_text(encoding="utf-8").strip()
-            if old.isdigit() and (Path("/proc") / old).exists() and _pid_looks_like_watchdog(int(old)):
+            if old.isdigit() and pid_alive(int(old)) and _pid_looks_like_watchdog(int(old)):
                 print(f"Watchdog already running pid={old} log={log_path}")
                 return 0
             pid_file.unlink(missing_ok=True)

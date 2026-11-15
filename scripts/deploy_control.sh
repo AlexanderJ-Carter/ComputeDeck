@@ -2,13 +2,18 @@
 # 把当前工作树同步到 control 主机并重启 UI（不改 config/local / state）。
 #
 # 用法::
-#   CONTROL_HOST=codelab-617722461 ./scripts/deploy_control.sh
+#   CONTROL_HOST=control.example.com ./scripts/deploy_control.sh
 #   CONTROL_HOST=user@host CONTROL_DIR=/opt/ComputeDeck ./scripts/deploy_control.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HOST="${CONTROL_HOST:?请设置 CONTROL_HOST，例如 codelab-617722461}"
-DIR="${CONTROL_DIR:-/home/sankuai/gpu-control}"
+HOST="${CONTROL_HOST:?请设置 CONTROL_HOST，例如 control.example.com}"
+DIR="${CONTROL_DIR:-}"
+if [[ -z "$DIR" ]]; then
+  # 默认沿用远端家目录下的 gpu-control；不在仓库里写死某台机器的绝对路径。
+  DIR="$(ssh -o BatchMode=yes "$HOST" 'cd "$HOME/gpu-control" 2>/dev/null && pwd || printf "%s" "$HOME/gpu-control"')"
+fi
+[[ -n "$DIR" ]] || { echo "无法确定远端目录，请设置 CONTROL_DIR" >&2; exit 1; }
 
 cd "$ROOT"
 echo "== sync → ${HOST}:${DIR} =="
@@ -35,6 +40,14 @@ tar \
   --exclude='**/._*' \
   . \
 | ssh -o BatchMode=yes "$HOST" "mkdir -p '$DIR' && cd '$DIR' && tar xf - && find . -name '._*' -type f -delete"
+
+# 文档站是构建产物，主工作树同步时排除；控制机没有 MkDocs 时单独带上。
+if [[ -f web/static/help/index.html ]]; then
+  echo "== sync docs → ${HOST}:${DIR}/web/static/help =="
+  tar "${TAR_FLAGS[@]}" --exclude='._*' -C web/static/help . \
+    | ssh -o BatchMode=yes "$HOST" \
+      "mkdir -p '$DIR/web/static/help' && tar xf - -C '$DIR/web/static/help' && find '$DIR/web/static/help' -name '._*' -type f -delete"
+fi
 
 echo "== restart UI =="
 ssh -o BatchMode=yes "$HOST" "bash -s" <<REMOTE

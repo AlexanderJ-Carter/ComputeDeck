@@ -84,8 +84,9 @@
     "openai_api_base_path": "/v1",
     "routing_strategy": "least-busy",
     "openai_proxy_port": 4000,
-    "openai_proxy_dir": "${GPU_CONTROL_GATEWAY_DIR}",
-    "openai_proxy_role": "optional AI Gateway (LiteLLM)；装好/配置好后 gateway ensure 自动随入口启动",
+    "litellm_bin": "",
+    "openai_proxy_dir": "",
+    "openai_proxy_role": "optional LiteLLM（OpenAI 层）；优先 litellm_bin / PATH / ~/.local/bin，装好后 gateway ensure 可随入口启动",
     "extra_http_port": 8080,
     "extra_http_role": "optional extra HTTP service",
     "nginx_listen": 18080

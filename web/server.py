@@ -22,7 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 import urllib.error
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 from paths import (  # noqa: E402
@@ -48,6 +48,8 @@ from paths import (  # noqa: E402
 
 from node_paths import default_paths, node_paths  # noqa: E402
 from state_util import atomic_write_json as state_atomic_write_json, read_json as state_read_json  # noqa: E402
+from process_util import pid_alive  # noqa: E402
+from static_util import resolve_help_target  # noqa: E402
 from jobs_util import (  # noqa: E402
     default_job_name,
     install_job_template,
@@ -631,7 +633,7 @@ def watchdog_status() -> dict:
     if pid_file.is_file():
         try:
             candidate = int(pid_file.read_text(encoding="utf-8").strip().splitlines()[0])
-            if (Path("/proc") / str(candidate)).exists():
+            if pid_alive(candidate):
                 pid = candidate
         except (OSError, ValueError, IndexError):
             pid = None
@@ -1727,7 +1729,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path.startswith("/static/"):
-            rel = path[len("/static/"):]
+            rel = unquote(path[len("/static/"):])
             root = STATIC_DIR.resolve()
             target = (STATIC_DIR / rel).resolve()
             if not target.is_relative_to(root) or not target.is_file():
@@ -1781,12 +1783,8 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path in {"/help", "/help/"} or path.startswith("/help/"):
-            help_root = (STATIC_DIR / "help").resolve()
-            rel = path[len("/help"):].lstrip("/") or "index.html"
-            if rel.endswith("/"):
-                rel = rel + "index.html"
-            target = (help_root / rel).resolve()
-            if help_root.is_dir() and target.is_relative_to(help_root) and target.is_file():
+            target = resolve_help_target(STATIC_DIR, path)
+            if target is not None:
                 content_type = {
                     ".html": "text/html; charset=utf-8",
                     ".css": "text/css; charset=utf-8",

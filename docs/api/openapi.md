@@ -10,7 +10,7 @@
 | `/docs` | 同上别名 |
 | `/api/openapi.json` | OpenAPI 3.0.3 |
 
-在 UI「指南 → API / MCP 文档」也可打开。
+在 UI「配置 → 文档与 API」也可打开。
 
 ## 安全方案（OpenAPI components）
 

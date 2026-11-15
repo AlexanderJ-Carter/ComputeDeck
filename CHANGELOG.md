@@ -15,11 +15,30 @@
 
 - Edge `:18080` 根路径兜底页：浏览器打开不再反代出上游 401 JSON；说明这是内置 Edge（不是 nginx）
 - 控制面可生成/保存 LiteLLM Master Key（`config/local/secrets/litellm_master_key`），保存后重启代理供 Admin UI 登录
+- LiteLLM 状态字段 `phase` / `listen_ok` / `log_tail` / `binary`；入口与网关卡支持启动 / 停止 / 重启与诊断折叠
+- 可选配置 `gateway.litellm_bin`；解析顺序覆盖 `~/.local/bin` 与当前 Python 同目录 CLI
+- 跨平台进程工具 `lib/process_util.py`：gateway / diagnose / UI / watchdog 统一 pid 判活与命令行身份校验
+- 节点页 KPI 摘要：节点数、GPU 占用、空闲、忙闲、隔离、队列
 
 ### Changed
 
-- 「API 端点」收成「统一入口」一页：Edge（集群反代）与 LiteLLM（OpenAI 层）并排说明，减少重复入口概念
+- 「API 端点」收成「入口与网关」一页：Edge（集群反代）与 LiteLLM（OpenAI 层）并排说明，减少重复入口概念
+- 侧栏收成 7 项；「模型 + 工具栈」并入「模型与工具」子页签，「批量命令 + 交互终端」并入「终端与命令」子页签
+- 执行输出默认收起；AI 解读改为折叠，避免每页被大块日志/文本占满
 - 看板趋势指标语义：拆成 **GPU 算力 / 显存（nvidia-smi 实测）** 与 **槽位占用（occupied 占比）**；只保留最近约 1 小时短窗，不再堆长期历史
+- LiteLLM 启动优先直接 exec 已解析二进制 + runtime yaml，不再因瘦 PATH 掉进外部 `start_litellm.sh` 隐式 pip
+- `scripts/deploy_control.sh` 同步已构建的 `web/static/help`，避免无 MkDocs 的控制机文档站长期停留在旧版本
+
+### Fixed
+
+- 端口监听者身份校验：SSH 隧道 / 陌生进程不再被当成 Edge / LiteLLM；返回 `port_conflict` / `unmanaged` 并提示占用者
+- Edge 运行判定改为 pidfile 或 `/_gpu_control/health` 身份校验，`gateway ensure` 不会因端口被占用而误判已启动
+- PID 复用误杀：stop / restart 前校验命令行身份，不匹配时只清理 pidfile，不 kill 陌生进程/进程组
+- macOS 上 `/proc` 判活失效：`ui --background`、watchdog、gateway stop、diagnose 统一改用 `os.kill(pid, 0)` + `ps`
+- LiteLLM 日志尾只读最后 64KB，避免看板轮询整文件读入内存
+- 直接打开「入口与网关」时状态一直显示“加载中”，现在切页即刷新
+- 文档站中文路径（如 `/help/手册/`）未做 URL 解码，浏览器访问会落到「文档未构建」兜底页；现按解码后的安全路径解析
+- 宣传展板终页「快速开始」代码框被 grid 拉伸，顶部出现大块黑色空白；改为按内容高度垂直居中
 
 ---
 

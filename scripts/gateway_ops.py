@@ -13,15 +13,16 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import secrets
 import shutil
-import signal
 import subprocess
 import time
 from pathlib import Path
 
 import _bootstrap  # noqa: F401
 from paths import LOCAL_DIR, PROJECT_DIR, SCRIPTS_DIR, STATE_DIR, VENV_PYTHON, cluster_file, expand_path
+from process_util import pid_alive, pid_matches, terminate_pid
 from render_gateway import build_payload, write_artifacts
 
 import sys
@@ -35,6 +36,7 @@ EDGE_STATUS = STATE_DIR / "ingress_edge.json"
 LITELLM_PID = STATE_DIR / "ingress-litellm.pid"
 LITELLM_LOG = STATE_DIR / "ingress-litellm.log"
 LITELLM_RUNTIME = STATE_DIR / "gateway" / "litellm-runtime.yaml"
+LITELLM_START_STATE = STATE_DIR / "gateway" / "litellm-start.json"
 OUT_DIR = STATE_DIR / "gateway"
 LITELLM_MASTER_KEY_FILE = LOCAL_DIR / "secrets" / "litellm_master_key"
 
@@ -103,8 +105,9 @@ def _ingress_cfg(gateway: dict | None = None) -> dict:
     return normalize_ingress(raw, gateway=gateway)
 
 
-def _pid_alive(pid: int) -> bool:
-    return (Path("/proc") / str(pid)).exists()
+def _pid_alive(pid: int | None) -> bool:
+    """保留内部名字，实际走跨平台实现（Linux / macOS）。"""
+    return pid_alive(pid)
 
 
 def _read_pid(path: Path) -> int | None:
@@ -163,8 +166,55 @@ def _port_open(bind: str, port: int, timeout: float = 0.4) -> bool:
     return False
 
 
+def _edge_health_at(host: str, port: int, tls: bool) -> bool:
+    """探测单个主机上的 Edge 健康身份。"""
+    import http.client
+    import ssl
+
+    conn = None
+    try:
+        if tls:
+            context = ssl.create_default_context()
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+            conn = http.client.HTTPSConnection(host, port, timeout=0.8, context=context)
+        else:
+            conn = http.client.HTTPConnection(host, port, timeout=0.8)
+        conn.request("GET", "/_gpu_control/health")
+        response = conn.getresponse()
+        body = response.read(8192)
+        if response.status != 200:
+            return False
+        data = json.loads(body.decode("utf-8", "replace"))
+        return data.get("service") == "gpu-control-edge"
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except OSError:
+                pass
+
+
+def _edge_health_ok(ingress: dict) -> bool:
+    """端口监听者是否真的是内置 Edge（避免 SSH 隧道 / 其它服务冒充）。"""
+    port = int(ingress["port"])
+    tls = bool((ingress.get("tls") or {}).get("enabled"))
+    hosts = ["127.0.0.1"]
+    bind = str(ingress.get("bind") or "").strip()
+    if bind and bind not in {"0.0.0.0", "::", ""}:
+        hosts.append(bind)
+    return any(_edge_health_at(host, port, tls) for host in dict.fromkeys(hosts))
+
+
 def _edge_runtime(ingress: dict) -> tuple[bool, int | None, dict]:
-    """综合 pid / 状态文件 / 端口判断 Edge 是否在跑（兼容容器 /proc 不可见）。"""
+    """综合 pid / 状态文件 / 健康身份判断 Edge 是否在跑。
+
+    端口监听本身只说明“有东西在听”，可能是 SSH 隧道或别的服务；
+    只有 pid/状态文件命中，或 ``/_gpu_control/health`` 返回 Edge 身份，
+    才认为 Edge 在运行。``edge_status["port_conflict"]`` 会保留给上层提示。
+    """
     edge_status: dict = {}
     if EDGE_STATUS.is_file():
         try:
@@ -172,33 +222,153 @@ def _edge_runtime(ingress: dict) -> tuple[bool, int | None, dict]:
         except (OSError, json.JSONDecodeError):
             edge_status = {}
     pid = _read_pid(EDGE_PID)
-    if pid:
-        return True, pid, edge_status
+    if pid and _pid_alive(pid) and pid_matches(pid, ("ingress_edge.py",)):
+        return True, pid, {**edge_status, "pid_owned": True}
     status_pid = edge_status.get("pid") if isinstance(edge_status.get("pid"), int) else None
-    if status_pid and _pid_alive(status_pid):
+    if status_pid and _pid_alive(status_pid) and pid_matches(status_pid, ("ingress_edge.py",)):
         return True, status_pid, edge_status
-    if _port_open(str(ingress.get("bind") or "0.0.0.0"), int(ingress["port"])):
-        # 端口已监听：视为运行中（即使当前环境看不到 /proc）
-        return True, status_pid or pid, edge_status
+    bind = str(ingress.get("bind") or "0.0.0.0")
+    if _port_open(bind, int(ingress["port"])):
+        if _edge_health_ok(ingress):
+            # 端口身份通过，但没有本机存活 pidfile：可能是容器 / SSH 隧道。
+            return True, None, {**edge_status, "port_verified": True}
+        return False, None, {**edge_status, "port_conflict": True}
     return False, None, edge_status
 
 
-def _stop_pidfile(path: Path, name: str) -> dict:
+def _stop_pidfile(path: Path, name: str, *, expected: tuple[str, ...] = ()) -> dict:
+    """按 pidfile 停止进程；pid 身份不匹配时只清理文件，绝不误杀。"""
     pid = _read_pid(path)
     if pid is None:
         if path.is_file():
             path.unlink()
         return {"ok": True, "name": name, "stopped": False, "reason": "not running"}
-    os.kill(pid, signal.SIGTERM)
-    for _ in range(30):
-        if not _pid_alive(pid):
-            break
-        time.sleep(0.1)
-    if _pid_alive(pid):
-        os.kill(pid, signal.SIGKILL)
-    if path.is_file():
+    result = terminate_pid(pid, expected=expected, group=True)
+    # 身份不匹配说明 pidfile 过期，可以清理；权限不足 / 杀不掉时保留文件，
+    # 避免进程仍在跑却失去追踪。
+    if path.is_file() and (result.get("ok") or result.get("stale")):
         path.unlink()
-    return {"ok": True, "name": name, "stopped": True, "pid": pid}
+    return {"ok": bool(result.get("ok")), "name": name, **result}
+
+
+def _log_tail(path: Path, n: int = 40, max_bytes: int = 64 * 1024) -> str:
+    """只读取日志尾部固定窗口，避免看板轮询时整文件读入内存。"""
+    if not path.is_file():
+        return ""
+    try:
+        size = path.stat().st_size
+        with path.open("rb") as handle:
+            if size > max_bytes:
+                handle.seek(-max_bytes, os.SEEK_END)
+            raw = handle.read(max_bytes)
+    except OSError:
+        return ""
+    text = raw.decode("utf-8", "replace")
+    text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)
+    lines = text.splitlines()
+    if size > max_bytes and lines:
+        # 第一行很可能是被截断的半行，丢掉。
+        lines = lines[1:]
+    return "\n".join(lines[-n:])
+
+
+def _resolve_litellm_bin(gateway: dict | None = None) -> str | None:
+    """在瘦 PATH 下也能找到已安装的 litellm CLI（禁止靠启动脚本隐式 pip）。"""
+    gateway = gateway if gateway is not None else {}
+    configured = str(gateway.get("litellm_bin") or "").strip()
+    candidates: list[Path] = []
+    if configured:
+        candidates.append(Path(expand_path(configured)))
+    which = shutil.which("litellm")
+    if which:
+        candidates.append(Path(which))
+    home_local = Path.home() / ".local" / "bin" / "litellm"
+    candidates.append(home_local)
+    candidates.append(PROJECT_DIR / ".venv" / "bin" / "litellm")
+    candidates.append(Path(sys.executable).resolve().parent / "litellm")
+    seen: set[str] = set()
+    for path in candidates:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            if path.is_file() and os.access(path, os.X_OK):
+                return str(path)
+        except OSError:
+            continue
+    return None
+
+
+def _litellm_path_env(base: dict | None = None) -> dict:
+    """为兜底脚本补上 ~/.local/bin 与当前解释器 bin，避免 command -v 再次失败。"""
+    env = dict(base if base is not None else os.environ)
+    extras = [
+        str(Path.home() / ".local" / "bin"),
+        str(Path(sys.executable).resolve().parent),
+        str(PROJECT_DIR / ".venv" / "bin"),
+    ]
+    old = env.get("PATH") or ""
+    parts = [p for p in extras if p and Path(p).is_dir()]
+    env["PATH"] = os.pathsep.join(parts + ([old] if old else []))
+    return env
+
+
+def _litellm_phase(
+    *,
+    probe: dict,
+    pid: int | None,
+    listen_ok: bool,
+    pid_owned: bool = False,
+) -> str:
+    """LiteLLM 运行阶段。
+
+    ``running`` 只表示“本工具启动且端口在听”；端口有服务但没有 pidfile
+    归属时返回 ``unmanaged``，端口被非 LiteLLM 占用时返回
+    ``port_conflict``，避免把 SSH 隧道或别的服务当成 LiteLLM。
+    """
+    if pid and pid_owned:
+        return "running" if listen_ok else "starting"
+    if listen_ok:
+        return "unmanaged" if probe.get("ready") else "port_conflict"
+    if not probe.get("ready"):
+        return "missing"
+    return "ready"
+
+
+def _litellm_start_state() -> dict:
+    """最近一次启动尝试（用于把失败原因保留到 status）。"""
+    if not LITELLM_START_STATE.is_file():
+        return {}
+    try:
+        data = json.loads(LITELLM_START_STATE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _record_litellm_start(result: dict) -> dict:
+    """落盘最近一次启动结果；失败信息可在看板诊断里直接看到。"""
+    payload = {
+        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "ok": bool(result.get("ok")),
+        "phase": result.get("phase"),
+        "error": result.get("error"),
+        "hint": result.get("hint"),
+        "pid": result.get("pid"),
+        "port": result.get("port"),
+        "mode": result.get("mode"),
+        "binary": result.get("binary"),
+    }
+    LITELLM_START_STATE.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        LITELLM_START_STATE.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+    return payload
 
 
 def cmd_render(args: argparse.Namespace) -> int:
@@ -216,13 +386,12 @@ def cmd_render(args: argparse.Namespace) -> int:
 
 
 def _litellm_probe(gateway: dict) -> dict:
-    """探测 LiteLLM / openai_proxy_dir 是否可用（不启动进程）。"""
+    """探测 LiteLLM 是否可启动（不启子进程；不触发 pip）。"""
     proxy_dir_raw = gateway.get("openai_proxy_dir") or gateway.get("litellm_dir")
     proxy_dir = Path(expand_path(str(proxy_dir_raw))) if proxy_dir_raw else None
-    litellm_bin = shutil.which("litellm")
+    litellm_bin = _resolve_litellm_bin(gateway)
     start_sh = proxy_dir / "start_litellm.sh" if proxy_dir else None
     env_file = proxy_dir / ".env" if proxy_dir else None
-    cfg_file = proxy_dir / "litellm_config.yaml" if proxy_dir else None
     reasons: list[str] = []
     if litellm_bin:
         ready = True
@@ -234,12 +403,11 @@ def _litellm_probe(gateway: dict) -> dict:
             reasons.append("缺 .env（复制 .env.example）")
         else:
             ready = True
-        if cfg_file and not cfg_file.is_file():
-            reasons.append("缺 litellm_config.yaml")
+            reasons.append("将走外部 start 脚本（已补 PATH；请勿依赖脚本内 pip install）")
     else:
         ready = False
         mode = "missing"
-        reasons.append("无 litellm 二进制且无 start_litellm.sh")
+        reasons.append("无 litellm 二进制（which / ~/.local/bin / venv）且无 start_litellm.sh")
     return {
         "ready": ready,
         "mode": mode,
@@ -255,9 +423,14 @@ def _companions(
     *,
     ingress: dict,
     edge_pid: int | None,
+    edge_port_open: bool,
+    edge_port_conflict: bool,
+    edge_port_verified: bool,
     litellm_pid: int | None,
     litellm_port: int,
     litellm_probe: dict,
+    litellm_phase: str,
+    litellm_start: dict,
     nginx_bin: str | None,
     artifact: Path,
 ) -> list[dict]:
@@ -268,11 +441,21 @@ def _companions(
     rows: list[dict] = []
 
     if edge_pid:
-        edge_state, edge_label, edge_ok = "running", "运行中", True
+        edge_state, edge_label, edge_ok, edge_sev = "running", "运行中", True, "ok"
+    elif edge_port_verified:
+        edge_state, edge_label, edge_ok, edge_sev = "running", "端口可达", True, "warn"
+    elif edge_port_conflict:
+        edge_state, edge_label, edge_ok, edge_sev = "port_conflict", "端口被占用", False, "error"
     elif edge_primary:
-        edge_state, edge_label, edge_ok = "stopped", "应启动", False
+        edge_state, edge_label, edge_ok, edge_sev = "stopped", "应启动", False, "error"
     else:
-        edge_state, edge_label, edge_ok = "idle", "备用", True
+        edge_state, edge_label, edge_ok, edge_sev = "idle", "备用", True, "ok"
+    if edge_port_verified and not edge_pid:
+        detail = f"健康检查通过（{ingress['bind']}:{ingress['port']}），但没有本机 pidfile（可能经 SSH 隧道 / 容器）"
+    elif edge_port_conflict:
+        detail = f"端口 {ingress['bind']}:{ingress['port']} 被其它进程占用，非内置 Edge"
+    else:
+        detail = f"内置反代 · {ingress['bind']}:{ingress['port']}"
     rows.append(
         {
             "id": "edge",
@@ -282,9 +465,13 @@ def _companions(
             "state": edge_state,
             "label": edge_label,
             "ok": edge_ok,
-            "severity": "error" if not edge_ok else "ok",
-            "detail": f"内置反代 · {ingress['bind']}:{ingress['port']}",
-            "action": None if edge_pid else "gpu-control gateway ensure",
+            "severity": edge_sev,
+            "detail": detail,
+            "action": (
+                f"lsof -nP -iTCP:{ingress['port']} -sTCP:LISTEN"
+                if edge_port_conflict
+                else (None if edge_ok else "gpu-control gateway ensure")
+            ),
         }
     )
 
@@ -321,28 +508,54 @@ def _companions(
     rows.append(nginx_row)
 
     dir_bit = litellm_probe.get("dir") or ""
+    bin_bit = litellm_probe.get("binary") or ""
     master_ok = bool(read_litellm_master_key())
-    if litellm_pid:
+    if litellm_phase == "running":
         ll_state, ll_label, ll_ok, sev = "running", "运行中", True, "ok"
-        detail = f"LiteLLM :{litellm_port}" + (f" · {dir_bit}" if dir_bit else "")
+        detail = f"LiteLLM :{litellm_port}" + (f" · {bin_bit}" if bin_bit else "")
         if not master_ok:
             detail += " · 未配 Master Key（Admin UI 不可登录）"
             sev = "warn"
+    elif litellm_phase == "starting":
+        ll_state, ll_label, ll_ok, sev = "starting", "启动中", True, "warn"
+        detail = f"进程 {litellm_pid} 尚未监听 :{litellm_port}"
+    elif litellm_phase == "unmanaged":
+        ll_state, ll_label, ll_ok, sev = "running", "外部运行", True, "warn"
+        detail = f"端口 :{litellm_port} 有服务，但没有 gpu-control pidfile 归属"
+        if not master_ok:
+            detail += " · 未配 Master Key"
+    elif litellm_phase == "port_conflict":
+        ll_state, ll_label, ll_ok = "port_conflict", "端口冲突", not ll_wanted
+        sev = "error" if ll_wanted else "warn"
+        detail = f"端口 :{litellm_port} 被其它进程占用，且不像已安装的 LiteLLM"
+    elif litellm_phase == "failed":
+        ll_state, ll_label, ll_ok = "failed", "启动失败", not ll_wanted
+        sev = "warn" if ll_wanted else "info"
+        detail = str(litellm_start.get("error") or "上次启动失败，详见执行输出 / 日志")
     elif litellm_probe.get("ready"):
         ll_state = "ready"
         ll_label = "就绪未启" if ll_wanted else "就绪"
         ll_ok, sev = True, "ok"
-        detail = f"LiteLLM :{litellm_port} 可启动" + (f" · {dir_bit}" if dir_bit else "")
+        detail = f"LiteLLM :{litellm_port} 可启动"
+        if bin_bit:
+            detail += f" · {bin_bit}"
+        elif dir_bit:
+            detail += f" · {dir_bit}"
     else:
         ll_state = "blocked"
         ll_label = "缺依赖" if ll_wanted else "可选·未配"
         ll_ok = not ll_wanted
         sev = "warn" if ll_wanted else "info"
         detail = "；".join(litellm_probe.get("reasons") or ["未安装 / 未配置"])
+    action = None
+    if litellm_phase in {"ready", "failed", "port_conflict"} and litellm_probe.get("ready"):
+        action = "gpu-control gateway start --kind litellm"
+    if litellm_phase == "unmanaged":
+        action = f"lsof -nP -iTCP:{litellm_port} -sTCP:LISTEN"
     rows.append(
         {
             "id": "litellm",
-            "name": "AI Gateway",
+            "name": "LiteLLM",
             "role": "optional",
             "required": ll_wanted,
             "state": ll_state,
@@ -350,15 +563,7 @@ def _companions(
             "ok": ll_ok,
             "severity": sev,
             "detail": detail,
-            "action": (
-                None
-                if litellm_pid
-                else (
-                    "gpu-control gateway start --kind litellm"
-                    if litellm_probe.get("ready")
-                    else None
-                )
-            ),
+            "action": action,
         }
     )
     return rows
@@ -394,8 +599,11 @@ def status_payload() -> dict:
     gateway = _gateway_cfg(cluster)
     ingress = _ingress_cfg(gateway)
     edge_running, edge_pid, edge_status = _edge_runtime(ingress)
+    edge_port_open = _port_open(str(ingress.get("bind") or "0.0.0.0"), int(ingress["port"]))
+    edge_port_conflict = bool(edge_status.get("port_conflict"))
     litellm_pid = _read_pid(LITELLM_PID)
-    if not edge_running and EDGE_STATUS.is_file():
+    litellm_pid_owned = bool(litellm_pid and pid_matches(litellm_pid, ("litellm",)))
+    if not edge_running and not edge_port_open and EDGE_STATUS.is_file():
         EDGE_STATUS.unlink(missing_ok=True)
         edge_status = {}
     control = cluster.get("control") or {}
@@ -412,26 +620,49 @@ def status_payload() -> dict:
     nginx_bin = shutil.which("nginx")
     artifact = OUT_DIR / "nginx-inference-pool.conf"
     ll_probe = _litellm_probe(gateway)
+    litellm_listen_ok = _port_open("127.0.0.1", litellm_port)
+    litellm_phase = _litellm_phase(
+        probe=ll_probe,
+        pid=litellm_pid,
+        listen_ok=litellm_listen_ok,
+        pid_owned=litellm_pid_owned,
+    )
+    litellm_start = _litellm_start_state()
+    if (
+        litellm_phase == "ready"
+        and litellm_start.get("ok") is False
+        and litellm_start.get("phase") == "failed"
+    ):
+        litellm_phase = "failed"
     companions = _companions(
         ingress=ingress,
         edge_pid=edge_pid if edge_running else None,
+        edge_port_open=edge_port_open,
+        edge_port_conflict=edge_port_conflict,
+        edge_port_verified=bool(edge_status.get("port_verified")),
         litellm_pid=litellm_pid,
         litellm_port=litellm_port,
         litellm_probe=ll_probe,
+        litellm_phase=litellm_phase,
+        litellm_start=litellm_start,
         nginx_bin=nginx_bin,
         artifact=artifact,
     )
     companions.append(_tls_companion(tls_status, ingress))
     if edge_running:
+        scheme = "https" if tls_status.get("ready") else "http"
         for row in companions:
             if row["id"] == "edge":
                 row["state"] = "running"
-                row["label"] = "运行中"
+                row["label"] = "运行中" if edge_pid else "端口可达"
                 row["ok"] = True
-                row["severity"] = "ok"
+                row["severity"] = "ok" if edge_pid else "warn"
                 row["action"] = None
-                scheme = "https" if tls_status.get("ready") else "http"
-                row["detail"] = f"{scheme} · {ingress['bind']}:{ingress['port']}"
+                row["detail"] = (
+                    f"{scheme} · {ingress['bind']}:{ingress['port']}"
+                    if edge_pid
+                    else f"{scheme} · 健康检查通过，无本机 pidfile（SSH 隧道 / 容器）"
+                )
     healthy = all(c.get("ok") for c in companions if c.get("required"))
     kind = (ingress.get("kind") or "edge").lower()
     on_control = _on_control_host(cluster)
@@ -448,6 +679,10 @@ def status_payload() -> dict:
         "edge": {
             "running": edge_running,
             "pid": edge_pid,
+            "pid_owned": bool(edge_status.get("pid_owned")),
+            "port_open": edge_port_open,
+            "port_conflict": edge_port_conflict,
+            "port_verified": bool(edge_status.get("port_verified")),
             "listen": f"{ingress['bind']}:{ingress['port']}",
             "status": edge_status,
             "log": str(EDGE_LOG),
@@ -457,19 +692,26 @@ def status_payload() -> dict:
             "scheme": "https" if tls_status.get("ready") else "http",
         },
         "litellm": {
-            "running": bool(litellm_pid),
+            "running": litellm_phase == "running",
+            "available": litellm_listen_ok,
+            "phase": litellm_phase,
+            "listen_ok": litellm_listen_ok,
             "pid": litellm_pid,
+            "pid_owned": litellm_pid_owned,
             "port": litellm_port,
             "url": litellm_public or f"http://127.0.0.1:{litellm_port}",
             "ui_url": f"{(litellm_public or f'http://127.0.0.1:{litellm_port}').rstrip('/')}/ui",
             "dir": ll_probe.get("dir"),
             "ready": ll_probe.get("ready"),
             "mode": ll_probe.get("mode"),
+            "binary": ll_probe.get("binary"),
             "start_script": ll_probe.get("start_script"),
             "env_ok": ll_probe.get("env_ok"),
             "reasons": ll_probe.get("reasons") or [],
             "runtime_config": str(LITELLM_RUNTIME),
             "log": str(LITELLM_LOG),
+            "log_tail": _log_tail(LITELLM_LOG),
+            "last_start": litellm_start,
             "role": "optional",
             **litellm_master_key_status(),
         },
@@ -584,12 +826,20 @@ def _start_edge(ingress: dict) -> dict:
             "error": f"当前主机不是 Control（{control_host}）",
             "hint": "请在 Control 启动 Edge；GPU_CONTROL_ALLOW_EDGE_ANYWHERE=1 可绕过",
         }
-    running, existing, _ = _edge_runtime(ingress)
+    running, existing, edge_status = _edge_runtime(ingress)
     if running and existing:
         EDGE_PID.write_text(f"{existing}\n", encoding="utf-8")
         return {"ok": True, "name": "edge", "already": True, "pid": existing}
     if running:
-        return {"ok": True, "name": "edge", "already": True, "pid": existing, "via": "port"}
+        return {"ok": True, "name": "edge", "already": True, "pid": existing, "via": "health"}
+    if edge_status.get("port_conflict"):
+        port = ingress["port"]
+        return {
+            "ok": False,
+            "name": "edge",
+            "error": f"端口 {ingress['bind']}:{port} 已被其它进程占用（不是内置 Edge）",
+            "hint": f"lsof -nP -iTCP:{port} -sTCP:LISTEN",
+        }
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     cmd = [
         str(VENV_PYTHON),
@@ -638,55 +888,106 @@ def _write_litellm_runtime(gateway: dict) -> Path:
 
 
 def _start_litellm(gateway: dict) -> dict:
+    port = int(gateway.get("openai_proxy_port") or gateway.get("litellm_port") or 4000)
     existing = _read_pid(LITELLM_PID)
-    if existing:
-        return {
-            "ok": True,
-            "name": "litellm",
-            "already": True,
-            "pid": existing,
-            "master_key_configured": bool(read_litellm_master_key()),
-        }
+    existing_owned = bool(existing and pid_matches(existing, ("litellm",)))
+    listen_before = _port_open("127.0.0.1", port)
+    probe = _litellm_probe(gateway)
+    master_ok = bool(read_litellm_master_key())
+
+    def finish(result: dict) -> dict:
+        _record_litellm_start(result)
+        return result
+
+    if existing and existing_owned and listen_before:
+        return finish(
+            {
+                "ok": True,
+                "name": "litellm",
+                "already": True,
+                "pid": existing,
+                "port": port,
+                "phase": "running",
+                "listen_ok": True,
+                "pid_owned": True,
+                "master_key_configured": master_ok,
+            }
+        )
+    if existing and not existing_owned:
+        # pidfile 残留 / PID 复用：只清理文件，绝不 kill 陌生进程。
+        if LITELLM_PID.is_file():
+            LITELLM_PID.unlink()
+    elif existing and existing_owned and not listen_before:
+        # 半截启动（例如外部脚本卡在 pip）：清掉再起，避免假 already。
+        terminate_pid(existing, expected=("litellm",), group=True)
+        if LITELLM_PID.is_file():
+            LITELLM_PID.unlink()
+
+    if listen_before:
+        # 端口已有服务，但不是本工具 pidfile 里记录的进程：不要重复拉起。
+        phase = "unmanaged" if probe.get("ready") else "port_conflict"
+        return finish(
+            {
+                "ok": phase == "unmanaged",
+                "name": "litellm",
+                "already": True,
+                "port": port,
+                "phase": phase,
+                "listen_ok": True,
+                "pid_owned": False,
+                "error": None
+                if phase == "unmanaged"
+                else f"端口 :{port} 已被其它进程占用，未启动 LiteLLM",
+                "hint": f"lsof -nP -iTCP:{port} -sTCP:LISTEN 查看占用者",
+            }
+        )
 
     # Ensure fragments exist.
     if not (OUT_DIR / "litellm-model-list.yaml").is_file():
         write_artifacts(build_payload())
     runtime = _write_litellm_runtime(gateway)
-    port = int(gateway.get("openai_proxy_port") or gateway.get("litellm_port") or 4000)
     proxy_dir_raw = gateway.get("openai_proxy_dir") or gateway.get("litellm_dir")
     proxy_dir = Path(expand_path(str(proxy_dir_raw))) if proxy_dir_raw else None
 
-    litellm_bin = shutil.which("litellm")
+    # 有二进制则永远直接拉起；有 openai_proxy_dir 不再优先外部自装脚本。
+    litellm_bin = _resolve_litellm_bin(gateway)
     start_sh = proxy_dir / "start_litellm.sh" if proxy_dir else None
 
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    env = os.environ.copy()
+    env = _litellm_path_env(os.environ)
     master_key = read_litellm_master_key()
     if master_key:
         env["LITELLM_MASTER_KEY"] = master_key
+    mode = "binary"
     if litellm_bin:
         cmd = [litellm_bin, "--config", str(runtime), "--port", str(port), "--host", "0.0.0.0"]
         cwd = PROJECT_DIR
     elif start_sh and start_sh.is_file():
-        # Prefer generated runtime config via env if script supports it; else copy fragment beside.
-        frag_dst = proxy_dir / "gpu-control-model-list.yaml"
-        shutil.copy2(OUT_DIR / "litellm-model-list.yaml", frag_dst)
+        mode = "script"
+        if proxy_dir is not None:
+            frag_dst = proxy_dir / "gpu-control-model-list.yaml"
+            shutil.copy2(OUT_DIR / "litellm-model-list.yaml", frag_dst)
         cmd = ["bash", str(start_sh)]
-        cwd = proxy_dir
-        # Support both common conventions used by custom start scripts.
+        cwd = proxy_dir or PROJECT_DIR
         env["LITELLM_CONFIG"] = str(runtime)
         env["LITELLM_CONFIG_PATH"] = str(runtime)
         env["LITELLM_PORT"] = str(port)
     else:
-        return {
-            "ok": False,
-            "name": "litellm",
-            "error": "litellm not installed and openai_proxy_dir/start_litellm.sh missing",
-            "hint": "pip install 'litellm[proxy]' 或配置 gateway.openai_proxy_dir",
-            "runtime_config": str(runtime),
-        }
+        return finish(
+            {
+                "ok": False,
+                "name": "litellm",
+                "error": "litellm not installed and openai_proxy_dir/start_litellm.sh missing",
+                "hint": "安装 litellm[proxy] 到 PATH/~/.local/bin，或设 gateway.litellm_bin；勿依赖启停路径 pip",
+                "runtime_config": str(runtime),
+                "phase": "missing",
+                "port": port,
+                "mode": "missing",
+            }
+        )
 
     with LITELLM_LOG.open("a", encoding="utf-8") as log:
+        log.write(f"\n# gpu-control start mode={mode} bin={litellm_bin or start_sh}\n")
         proc = subprocess.Popen(
             cmd,
             cwd=cwd,
@@ -696,27 +997,42 @@ def _start_litellm(gateway: dict) -> dict:
             env=env,
         )
     LITELLM_PID.write_text(f"{proc.pid}\n", encoding="utf-8")
-    time.sleep(0.6)
+    # 给进程一点时间绑定端口；仍可能 starting。
+    listen_ok = False
+    for _ in range(15):
+        time.sleep(0.2)
+        if not _pid_alive(proc.pid):
+            break
+        if _port_open("127.0.0.1", port):
+            listen_ok = True
+            break
     alive = _pid_alive(proc.pid)
-    return {
-        "ok": alive,
+    phase = "running" if listen_ok else ("starting" if alive else "failed")
+    result = {
+        "ok": alive or listen_ok,
         "name": "litellm",
         "pid": proc.pid,
         "port": port,
+        "mode": mode,
+        "binary": litellm_bin,
+        "phase": phase,
+        "listen_ok": listen_ok,
+        "pid_owned": alive,
         "config": str(runtime),
         "log": str(LITELLM_LOG),
         "master_key_configured": bool(master_key),
-        "error": None if alive else "process exited — see ingress-litellm.log",
+        "error": None if (alive or listen_ok) else "process exited — see ingress-litellm.log",
         "hint": None
         if master_key
-        else "未配置 Master Key：控制面「API 端点」可生成；Admin UI 需 Master Key 才能登录",
+        else "未配置 Master Key：统一入口页可生成；Admin UI 需 Master Key 才能登录",
     }
+    return finish(result)
 
 
 def restart_litellm(gateway: dict | None = None) -> dict:
     """停掉再拉起 LiteLLM，使新 Master Key 生效。"""
     gateway = gateway if gateway is not None else _gateway_cfg()
-    stopped = _stop_pidfile(LITELLM_PID, "litellm")
+    stopped = _stop_pidfile(LITELLM_PID, "litellm", expected=("litellm",))
     started = _start_litellm(gateway)
     return {"ok": bool(started.get("ok")), "stopped": stopped, "started": started}
 
@@ -742,11 +1058,11 @@ def cmd_stop(args: argparse.Namespace) -> int:
     kind = (args.kind or "all").lower()
     results = []
     if kind in {"edge", "both", "all"}:
-        results.append(_stop_pidfile(EDGE_PID, "edge"))
+        results.append(_stop_pidfile(EDGE_PID, "edge", expected=("ingress_edge.py",)))
         if EDGE_STATUS.is_file():
             EDGE_STATUS.unlink()
     if kind in {"litellm", "both", "all"}:
-        results.append(_stop_pidfile(LITELLM_PID, "litellm"))
+        results.append(_stop_pidfile(LITELLM_PID, "litellm", expected=("litellm",)))
     print(json.dumps({"ok": True, "results": results}, ensure_ascii=False, indent=2))
     return 0
 

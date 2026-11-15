@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
 import jobs_util  # noqa: E402
+import paths  # noqa: E402
 
 
 class JobInstallTests(unittest.TestCase):
@@ -18,7 +19,12 @@ class JobInstallTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.local_jobs = Path(self.tmp.name) / "jobs"
         self.local_jobs.mkdir(parents=True)
-        self.patches = [mock.patch.object(jobs_util, "LOCAL_JOBS_DIR", self.local_jobs)]
+        # list_job_files() 读 paths.LOCAL_JOBS_DIR，两处都要隔离，
+        # 否则主控上已有的业务 Job 会让“推荐模板安装”测试误判为已安装。
+        self.patches = [
+            mock.patch.object(jobs_util, "LOCAL_JOBS_DIR", self.local_jobs),
+            mock.patch.object(paths, "LOCAL_JOBS_DIR", self.local_jobs),
+        ]
         for item in self.patches:
             item.start()
 
@@ -88,8 +94,6 @@ class JobInstallTests(unittest.TestCase):
         )
 
     def test_list_job_files_skips_appledouble(self) -> None:
-        import paths
-
         builtin = Path(self.tmp.name) / "builtin"
         builtin.mkdir()
         (builtin / "shell-job.json").write_text(
