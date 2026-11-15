@@ -1,6 +1,8 @@
 # 贡献指南
 
-gpu-control 是**通用**多节点 GPU 控制面：配置驱动，不绑定特定 IP、机型、业务 Job 或公司内网路径。
+**ComputeDeck**（仓库 / CLI：`gpu-control`）是通用多节点 GPU 控制面：配置驱动，不绑定特定 IP、机型、业务 Job 或公司内网路径。
+
+参与前请阅读 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) 与 [GOVERNANCE.md](GOVERNANCE.md)。
 
 ## 开发环境
 
@@ -24,8 +26,15 @@ UI 冒烟（需 UI 已启动且有 token）：
 4. **目录归档**：共享逻辑进 `lib/`，CLI 胶水进 `scripts/`，场景只进 `config/local/`；见 [`docs/develop/layout.md`](docs/develop/layout.md)。
 5. **不要向后兼容堆料**：删掉的 API 记入 `CHANGELOG.md`，不在代码里留冗余 fallback。
 6. **变更用户可见行为**时更新 `CHANGELOG.md` 的 `[Unreleased]`。
+7. **许可证**：贡献默认按 **AGPL-3.0** 授权给项目（见 [LICENSE](LICENSE) / [NOTICE](NOTICE)）。
 
-提交信息用常规 Conventional Commits（`feat` / `fix` / `docs` / `chore` / `style` / `refactor` / `test`）。版本号用 annotated tag `vX.Y.Z` 标记，**不要**把每条提交都写成 `release:`。
+提交信息用 Conventional Commits（`feat` / `fix` / `docs` / `chore` / `style` / `refactor` / `test`）。版本号用 annotated tag `vX.Y.Z` 标记。
+
+## Pull Request
+
+1. 使用 `.github/PULL_REQUEST_TEMPLATE.md`。
+2. 确保 `./scripts/check.sh` 通过。
+3. 大改动先开 Issue 讨论（尤其是破坏性 API / 重命名 CLI）。
 
 ## 发版
 

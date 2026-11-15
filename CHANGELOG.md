@@ -11,13 +11,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- 完整开源套件：`CODE_OF_CONDUCT` · `AUTHORS` · `NOTICE` · `SUPPORT` · `GOVERNANCE` · Issue/PR 模板
+- 产品品牌名 **ComputeDeck**（CLI / 包名仍为 `gpu-control`）
+
 ### Changed
 
-- Docstring 统一为中文 Sphinx 冒号字段（`:param:` / `:returns:` / `:raises:`）；CLI 报错中文化
+- 许可证由 MIT 改为 **AGPL-3.0-only**（网络提供修改版须提供源码）
+- README 重写：背景、优势、架构图、徽章与快速开始
+- Docstring 统一为中文 Sphinx 冒号字段；CLI 报错中文化
 - `state_util` 去掉 Windows flock 回落，明确仅 POSIX
-- 辅助文件：`CONTRIBUTING.md` · `SECURITY.md`；LICENSE 版权署名为黄皓宇
 - 新增 GitHub Actions CI、`docs/develop/ci.md`、`docs/develop/layout.md`
-- 提交习惯改为 Conventional Commits；版本用 tag `vX.Y.Z` 标记（不再每条写成 `release:`）
+- 提交习惯改为 Conventional Commits；版本用 tag `vX.Y.Z` 标记
 
 ## [0.21.0] - 2026-11-14
 

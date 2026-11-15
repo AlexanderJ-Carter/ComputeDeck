@@ -1,13 +1,14 @@
 [project]
 name = "gpu-control"
 version = "0.21.0"
-description = "General multi-node GPU control plane (Core) with optional inference/models modules"
+description = "ComputeDeck — multi-node GPU control plane (Web / CLI / MCP)"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = { text = "AGPL-3.0-only" }
 authors = [
   { name = "黄皓宇", email = "2253940186@qq.com" },
 ]
+keywords = ["gpu", "cluster", "ansible", "mcp", "vllm", "ray", "control-plane"]
 dependencies = [
   "ansible>=9.0.0",
   "paramiko>=3.0.0",
@@ -19,9 +20,10 @@ docs = ["mkdocs>=1.6.0", "mkdocs-material>=9.5.0", "pymdown-extensions>=10.0.0"]
 models-worker = ["huggingface_hub[cli]>=0.24.0", "modelscope>=1.18.0"]
 
 [project.urls]
+Homepage = "README.md"
 Changelog = "CHANGELOG.md"
 Documentation = "docs/index.md"
-Issues = "SECURITY.md"
+Security = "SECURITY.md"
 
 [tool.uv]
 package = false

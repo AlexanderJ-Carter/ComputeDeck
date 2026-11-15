@@ -1,5 +1,5 @@
-site_name: gpu-control
-site_description: 多节点 GPU 通用控制面文档
+site_name: ComputeDeck
+site_description: ComputeDeck（gpu-control）— 多节点 GPU 通用控制面文档
 site_url: ""
 repo_name: gpu-control
 docs_dir: docs

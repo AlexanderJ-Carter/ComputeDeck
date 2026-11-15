@@ -1,6 +1,6 @@
 # 仓库布局
 
-通用控制面仓库：可提交内容保持中性；场景数据只进 `config/local/`。
+**ComputeDeck**（目录名 `gpu-control`）通用控制面仓库：可提交内容保持中性；场景数据只进 `config/local/`。
 
 ## 顶层
 
@@ -27,7 +27,9 @@
 | `README.md` | 上手入口 |
 | `CHANGELOG.md` | Keep a Changelog |
 | `VERSION` · `pyproject.toml` | 版本（须同步） |
-| `LICENSE` · `CONTRIBUTING.md` · `SECURITY.md` | 许可与协作 |
+| `LICENSE`（AGPL-3.0）· `NOTICE` · `AUTHORS` | 许可与版权 |
+| `CONTRIBUTING` · `CODE_OF_CONDUCT` · `GOVERNANCE` · `SUPPORT` · `SECURITY` | 协作与安全 |
+| `.github/` | CI、Issue / PR 模板 |
 | `requirements*.txt` | 主控 / MCP / docs / worker 分层依赖 |
 | `ansible.cfg` · `mkdocs.yml` | Ansible / 文档站 |
 | `.github/workflows/ci.yml` | CI |

@@ -1,0 +1,59 @@
+name: Bug 报告
+description: 功能异常或行为与文档不符
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提交前请查阅 [SUPPORT.md](../../SUPPORT.md) 与 [故障排查](../../docs/故障排查.md)。
+        安全漏洞请按 [SECURITY.md](../../SECURITY.md) 私下报告。
+  - type: textarea
+    id: summary
+    attributes:
+      label: 简述
+      description: 一句话说明出了什么问题
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: `VERSION` 文件或 `git describe`
+      placeholder: "0.21.0"
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤
+      description: 尽量可复制的命令 / 操作路径
+      placeholder: |
+        1. gpu-control ui --background
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: doctor / 日志（请打码 IP 与密钥）
+      description: `gpu-control doctor` 或相关 runlog 片段
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 检查项
+      options:
+        - label: 我已确认问题可在干净 `config/examples` → `config/local` 复现（或说明依赖本机场景）
+        - label: 报告中不含真实密钥 / Token / 密码

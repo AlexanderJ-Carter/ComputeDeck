@@ -1,7 +1,7 @@
-# gpu-control 文档
+# ComputeDeck 文档
 
-多节点 GPU **通用控制面**（Web + CLI + MCP，SSH/Ansible）。  
-不绑定具体模型、业务 API 或集群；场景配置只放 `config/local/`。
+**ComputeDeck**（技术仓库 / CLI：`gpu-control`）是多节点 GPU **通用控制面**（Web + CLI + MCP，SSH/Ansible）。  
+不绑定具体模型、业务 API 或集群；场景配置只放 `config/local/`。许可：**AGPL-3.0**。
 
 | 入口 | 说明 |
 |------|------|

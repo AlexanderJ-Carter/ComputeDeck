@@ -1,0 +1,35 @@
+name: 功能建议
+description: 新能力或体验改进（保持通用、可复用）
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ComputeDeck 是**通用**控制面：请避免绑定特定公司 IP、机型或业务 Job。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 要解决的问题
+      description: 当前痛点是什么？谁会受益？
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 提议方案
+      description: 期望的行为、API / CLI / UI 触点
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 备选方案
+      description: 考虑过的其他做法（可留空）
+  - type: checkboxes
+    id: generic
+    attributes:
+      label: 通用性
+      options:
+        - label: 该能力可通过配置 / Job 模板表达，不需要硬编码某一集群
+          required: true
