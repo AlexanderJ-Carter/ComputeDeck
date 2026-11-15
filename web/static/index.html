@@ -8,7 +8,7 @@
   <link rel="icon" href="/static/logo.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/vendor/xterm/xterm-6.1.0.css" />
   <link rel="stylesheet" href="/static/tokens.css?v=__UI_VERSION__" />
-  <link rel="stylesheet" href="/static/style.css?v=__UI_VERSION__" />
+  <link rel="stylesheet" href="/static/style.css?v=__UI_VERSION__.dash3" />
   <script>
     (function () {
       var mode = localStorage.getItem("gpu-control-theme") || "auto";
@@ -142,16 +142,17 @@
         </div>
 
         <section class="panel dash-actions" aria-label="快捷操作">
-          <div class="toolbar dash-toolbar">
+          <div class="toolbar dash-ops">
             <button id="btn-full-sync" class="primary" data-action="1">全量同步</button>
             <button class="ghost" data-oneclick="diagnose" data-action="1">一键检测</button>
             <button class="ghost" data-oneclick="repair" data-action="1">一键修复</button>
             <button id="btn-quick-refresh" class="ghost" data-action="1">刷新 GPU</button>
             <button id="btn-quick-health" class="ghost" data-action="1">探测 API</button>
-            <span class="toolbar-sep" aria-hidden="true"></span>
+          </div>
+          <div class="dash-deploy">
             <div class="quick-deploy">
               <select id="quick-job" aria-label="快捷部署任务"></select>
-              <input id="quick-gpus" type="number" min="1" step="1" value="4" aria-label="快捷部署 GPU 数" />
+              <input id="quick-gpus" type="number" min="1" step="1" value="4" aria-label="快捷部署 GPU 数" title="GPU 数" />
               <button class="primary" data-oneclick="deploy" data-action="1">启动 Job</button>
             </div>
             <button class="ghost" data-view-jump="config" data-action="1">配置向导</button>

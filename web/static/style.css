@@ -204,8 +204,8 @@ button, input, select, textarea {
 }
 
 .main {
-  padding: 18px 24px 28px;
-  max-width: 1280px;
+  padding: 16px 22px 24px;
+  max-width: 1340px;
   animation: rise-in 0.35s ease both;
 }
 
@@ -1430,16 +1430,17 @@ code {
 
 .quality-kpis {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
   margin-top: 10px;
 }
 
 .quality-kpis div {
-  padding: 6px 8px;
-  border-radius: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
   background: var(--panel-2);
   border: 1px solid var(--line);
+  min-width: 0;
 }
 
 .quality-kpis span {
@@ -1453,9 +1454,10 @@ code {
 
 .quality-kpis strong {
   display: block;
-  margin-top: 2px;
+  margin-top: 3px;
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1.2;
 }
 
 
@@ -2005,21 +2007,23 @@ button:focus-visible, a:focus-visible, summary:focus-visible, .node-tile:focus-v
 /* ——— single-screen dashboard ——— */
 .dash-top {
   display: grid;
-  grid-template-columns: minmax(250px, 0.95fr) minmax(0, 1.1fr) minmax(0, 1.2fr);
-  gap: var(--sp-4);
-  margin-bottom: var(--sp-4);
+  grid-template-columns: minmax(260px, 1fr) minmax(0, 1.15fr) minmax(240px, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
   align-items: stretch;
 }
 
 .dash-top > .panel {
   margin-bottom: 0;
   min-width: 0;
+  padding: 14px 16px;
+  min-height: 220px;
 }
 
 .dash-health {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: var(--sp-5);
+  gap: 14px;
   align-items: center;
 }
 
@@ -2028,13 +2032,13 @@ button:focus-visible, a:focus-visible, summary:focus-visible, .node-tile:focus-v
 }
 
 .health-copy .panel-h {
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .health-ring {
   position: relative;
-  width: 116px;
-  height: 116px;
+  width: 104px;
+  height: 104px;
   flex: 0 0 auto;
 }
 
@@ -2090,20 +2094,16 @@ button:focus-visible, a:focus-visible, summary:focus-visible, .node-tile:focus-v
 
 .ring-label strong {
   font-family: var(--mono);
-  font-size: 28px;
+  font-size: 26px;
   line-height: 1;
   letter-spacing: -0.04em;
 }
 
 .ring-label span {
-  margin-top: 4px;
+  margin-top: 3px;
   color: var(--muted);
   font-size: 11px;
   font-weight: 600;
-}
-
-.quality-kpis {
-  margin-top: 8px;
 }
 
 .dash-gpu {
@@ -2131,7 +2131,7 @@ button:focus-visible, a:focus-visible, summary:focus-visible, .node-tile:focus-v
 
 .gpu-numbers strong {
   font-family: var(--mono);
-  font-size: 30px;
+  font-size: 28px;
   line-height: 1;
   letter-spacing: -0.04em;
 }
@@ -2173,19 +2173,20 @@ button:focus-visible, a:focus-visible, summary:focus-visible, .node-tile:focus-v
 .dash-node-strip {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  max-height: 188px;
+  gap: 2px;
+  max-height: 148px;
   overflow: auto;
   margin-top: 2px;
+  flex: 1 1 auto;
 }
 
 .gpu-node-row {
   display: grid;
-  grid-template-columns: minmax(84px, 1fr) minmax(70px, 1.5fr) auto;
+  grid-template-columns: minmax(88px, 1fr) minmax(72px, 1.4fr) auto;
   gap: 8px;
   align-items: center;
   width: 100%;
-  padding: 5px 6px;
+  padding: 6px 8px;
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
@@ -2257,20 +2258,23 @@ button:focus-visible, a:focus-visible, summary:focus-visible, .node-tile:focus-v
 }
 
 .dash-access .panel-h {
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .status-list {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
+  flex: 1 1 auto;
+  overflow: auto;
+  max-height: 176px;
 }
 
 .status-row {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 6px 7px;
+  gap: 8px;
+  padding: 5px 8px;
   border-radius: 8px;
   border: 1px solid transparent;
   min-width: 0;
@@ -2324,14 +2328,14 @@ button:focus-visible, a:focus-visible, summary:focus-visible, .node-tile:focus-v
 }
 
 .status-label {
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1.25;
 }
 
 .status-hint {
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2339,53 +2343,92 @@ button:focus-visible, a:focus-visible, summary:focus-visible, .node-tile:focus-v
 
 .status-row .chip {
   flex: 0 0 auto;
+  font-size: 11px;
 }
 
 .dash-actions {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  margin-bottom: var(--sp-4);
+  gap: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+
+.dash-ops {
+  gap: 8px;
+}
+
+.dash-deploy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
 }
 
 .quick-deploy {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
-.quick-deploy select, .quick-deploy input[type="number"] {
+.quick-deploy select,
+.quick-deploy input[type="number"] {
   width: auto;
-  min-width: 118px;
   height: var(--control-h);
   padding: 0 10px;
 }
 
 .quick-deploy select:first-child {
-  min-width: 190px;
+  flex: 1 1 220px;
+  min-width: 180px;
+  max-width: 360px;
 }
 
 .quick-deploy input[type="number"] {
-  width: 92px;
-  min-width: 92px;
+  width: 72px;
+  min-width: 72px;
+  flex: 0 0 auto;
+}
+
+.quick-deploy .primary {
+  flex: 0 0 auto;
+  min-width: 104px;
 }
 
 .dash-action-hint {
   margin: 0;
-  min-height: 17px;
+  min-height: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.dash-action-hint:empty {
+  display: none;
+}
+
 .dash-grid-2.dash-secondary {
-  margin-bottom: var(--sp-4);
+  margin-bottom: 12px;
+  gap: 12px;
 }
 
 .dash-secondary .panel {
   margin-bottom: 0;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dash-secondary .runlog-list,
+.dash-secondary .dash-lease-list {
+  flex: 1 1 auto;
+  max-height: 180px;
 }
 
 .dash-more-grid {
@@ -2454,7 +2497,11 @@ button:focus-visible, a:focus-visible, summary:focus-visible, .node-tile:focus-v
 /* ——— responsive dashboard ——— */
 @media (max-width: 1240px) {
   .dash-top {
-    grid-template-columns: minmax(240px, 0.9fr) minmax(0, 1.1fr);
+    grid-template-columns: minmax(240px, 1fr) minmax(0, 1.2fr);
+  }
+
+  .dash-top > .panel {
+    min-height: 0;
   }
 
   .dash-access {
@@ -2464,6 +2511,7 @@ button:focus-visible, a:focus-visible, summary:focus-visible, .node-tile:focus-v
   .status-list {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-height: none;
   }
 }
 
@@ -2575,17 +2623,18 @@ button:focus-visible, a:focus-visible, summary:focus-visible, .node-tile:focus-v
     grid-template-columns: 1fr;
   }
 
-  .toolbar-sep {
-    display: none;
+  .dash-deploy {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .quick-deploy {
     width: 100%;
   }
 
-  .quick-deploy select {
-    flex: 1 1 90px;
-    min-width: 0;
+  .quick-deploy select:first-child {
+    flex: 1 1 100%;
+    max-width: none;
   }
 
   .quick-deploy button {
