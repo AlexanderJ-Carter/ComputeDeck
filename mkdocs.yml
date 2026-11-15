@@ -70,6 +70,7 @@ nav:
   - 分布式与推理: 分布式与推理.md
   - 高可用与负载均衡: 高可用与负载均衡.md
   - AI / MCP 接入: ai-接入.md
+  - 宣传站自定义域名: 自定义域名.md
   - HTTP API:
       - 概览: api/index.md
       - OpenAPI / Swagger: api/openapi.md

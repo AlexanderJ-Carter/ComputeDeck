@@ -3,7 +3,7 @@
 **ComputeDeck**（命令行 / MCP：`gpu-control`）给 Cursor 或其他 Agent 调配置、启停 Job、腾空节点、排队占卡时，按本页接入。
 
 权威机器契约：`GET /api` · `GET /api/openapi.json` · 浏览器 `/api/docs`。  
-仓库约定：根目录 [`AGENTS.md`](../AGENTS.md)；Cursor Skill：[`.cursor/skills/gpu-control/SKILL.md`](../.cursor/skills/gpu-control/SKILL.md)。
+仓库约定：[AGENTS.md](https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/AGENTS.md)；Cursor Skill：[gpu-control/SKILL.md](https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/.cursor/skills/gpu-control/SKILL.md)。
 
 ## 鉴权
 
