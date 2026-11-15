@@ -44,8 +44,10 @@
     }
     const id = slides[index]?.id;
     if (id === "s1") runCounters();
-    if (id === "s4") startGpuShuffle();
-    else stopGpuShuffle();
+    if (id === "s4") {
+      startGpuShuffle();
+      animateRing();
+    } else stopGpuShuffle();
     if (id === "s9") runTerminal();
     syncParticles(id);
   };
@@ -150,6 +152,30 @@
     window.setTimeout(() => {
       if (!userStopped && !document.hidden) startAuto();
     }, 900);
+  }
+
+  function animateRing() {
+    const ring = document.querySelector("#s4 .ring i");
+    const label = document.querySelector("#s4 .ring b");
+    if (!ring || !label) return;
+    const target = 78;
+    if (reduce) {
+      ring.style.setProperty("--p", String(target));
+      label.textContent = String(target);
+      return;
+    }
+    const start = performance.now();
+    const dur = 900;
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / dur);
+      const eased = 1 - Math.pow(1 - t, 3);
+      const val = Math.round(target * eased);
+      ring.style.setProperty("--p", String(val));
+      label.textContent = String(val);
+      if (t < 1) requestAnimationFrame(tick);
+    };
+    ring.style.setProperty("--p", "0");
+    requestAnimationFrame(tick);
   }
 
   function startGpuShuffle() {

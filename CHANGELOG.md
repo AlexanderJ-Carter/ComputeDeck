@@ -31,6 +31,7 @@
 - Agent 面：Skill / `docs/ai-接入.md` / MCP instructions / OpenAPI 标题对齐 ComputeDeck；补 queue·lease 工作流与 catalog CLI 摘要
 - 宣传展板：默认自动播放、更自然文案、流体字阶与响应式；字体异步、配图懒加载、可见页才跑粒子/GPU 动效
 - 宣传展板视觉：重做「为什么」对照页；能力轨 / 模型步骤 / 代码窗壳；全页节奏统一
+- 宣传展板动效：气泡入场、桥接脉冲、能力轨侧线、健康环计数、背景极光与进度扫光
 - 公开仓库地址写入 README / SUPPORT / `pyproject.toml` / MkDocs
 - UI 品牌展示改为 ComputeDeck + logo（原文字 `gc`）；看板收敛为总览，部署/网关操作下沉到任务/端点页
 - Docstring 统一为中文 Sphinx 冒号字段；CLI 报错中文化
