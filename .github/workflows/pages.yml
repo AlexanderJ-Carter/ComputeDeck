@@ -13,9 +13,11 @@ permissions:
   pages: write
   id-token: write
 
+# 排队部署，勿中途取消：cancel 会导致半成品 artifact，
+# 再 rerun 同 run 时出现多个 github-pages artifact 使 deploy-pages 失败。
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:

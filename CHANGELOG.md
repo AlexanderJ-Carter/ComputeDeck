@@ -11,6 +11,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- GitHub Pages：`cancel-in-progress: false`，避免并发取消留下半成品 artifact、rerun 时 `deploy-pages` 因多个 `github-pages` 失败
+
 ---
 
 ## [0.23.1] - 2026-11-15
