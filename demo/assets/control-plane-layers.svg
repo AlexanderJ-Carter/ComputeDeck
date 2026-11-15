@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="420" viewBox="0 0 960 420" role="img">
+  <title>Control plane layers</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f8fafc"/><stop offset="100%" stop-color="#f1f5f9"/>
+    </linearGradient>
+    <filter id="shadow" x="-6%" y="-6%" width="112%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.1"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#64748b"/>
+    </marker>
+  </defs>
+  <rect width="960" height="420" rx="16" fill="url(#bg)"/>
+  <text x="32" y="40" font-family="system-ui,-apple-system,sans-serif" font-size="18" font-weight="700" fill="#0f172a">Control plane layers</text>
+  <text x="32" y="62" font-family="system-ui,-apple-system,sans-serif" font-size="12" fill="#64748b">Shared catalog; orchestration vs data plane</text>
+  <g filter="url(#shadow)"><rect x="80" y="96" width="160" height="64" rx="12" fill="#fff" stroke="#cbd5e1"/></g>
+  <text x="160" y="124" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="14" font-weight="700" fill="#334155">Web UI</text>
+  <text x="160" y="144" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#64748b">:8787</text>
+  <g filter="url(#shadow)"><rect x="280" y="96" width="160" height="64" rx="12" fill="#fff" stroke="#cbd5e1"/></g>
+  <text x="360" y="124" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="14" font-weight="700" fill="#334155">CLI</text>
+  <text x="360" y="144" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#64748b">gpu-control</text>
+  <g filter="url(#shadow)"><rect x="480" y="96" width="160" height="64" rx="12" fill="#fff" stroke="#cbd5e1"/></g>
+  <text x="560" y="124" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="14" font-weight="700" fill="#334155">MCP</text>
+  <text x="560" y="144" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#64748b">gc_*</text>
+  <g filter="url(#shadow)"><rect x="680" y="96" width="200" height="64" rx="12" fill="#fff" stroke="#cbd5e1"/></g>
+  <text x="780" y="124" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="14" font-weight="700" fill="#334155">HTTP API</text>
+  <text x="780" y="144" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#64748b">/api · OpenAPI</text>
+  <path d="M160 160 V196" stroke="#64748b" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+  <path d="M360 160 V196" stroke="#64748b" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+  <path d="M560 160 V196" stroke="#64748b" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+  <path d="M780 160 V196" stroke="#64748b" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+  <g filter="url(#shadow)"><rect x="80" y="204" width="800" height="72" rx="14" fill="#0d9488"/></g>
+  <text x="480" y="236" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="15" font-weight="700" fill="#fff">Core</text>
+  <text x="480" y="258" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="12" fill="#ccfbf1">nodes · GPU · exec · lease · cordon · free / procs</text>
+  <path d="M280 276 V312" stroke="#64748b" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+  <path d="M680 276 V312" stroke="#64748b" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+  <g filter="url(#shadow)"><rect x="80" y="320" width="380" height="72" rx="14" fill="#fff" stroke="#5eead4"/></g>
+  <text x="270" y="352" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="14" font-weight="700" fill="#115e59">Workloads</text>
+  <text x="270" y="374" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="12" fill="#0f766e">Jobs · templates · deploy · logs · watchdog</text>
+  <g filter="url(#shadow)"><rect x="500" y="320" width="380" height="72" rx="14" fill="#fff" stroke="#fdba74"/></g>
+  <text x="690" y="352" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="14" font-weight="700" fill="#9a3412">Modules</text>
+  <text x="690" y="374" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="12" fill="#c2410c">inference / Edge · models · docker · toolkits</text>
+</svg>

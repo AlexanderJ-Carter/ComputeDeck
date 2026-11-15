@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="520" viewBox="0 0 960 520" role="img">
+  <title>ComputeDeck architecture</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#eef6f5"/>
+    </linearGradient>
+    <linearGradient id="ctrl" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0f766e"/>
+      <stop offset="100%" stop-color="#0d9488"/>
+    </linearGradient>
+    <filter id="shadow" x="-8%" y="-8%" width="116%" height="124%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#64748b"/>
+    </marker>
+  </defs>
+  <rect width="960" height="520" rx="16" fill="url(#bg)"/>
+  <text x="32" y="42" font-family="system-ui,-apple-system,sans-serif" font-size="20" font-weight="700" fill="#0f172a">ComputeDeck Architecture</text>
+  <text x="32" y="66" font-family="system-ui,-apple-system,sans-serif" font-size="13" fill="#64748b">Control host runs UI / CLI / MCP / Edge; workers only run Jobs</text>
+
+  <g filter="url(#shadow)"><rect x="32" y="100" width="200" height="300" rx="14" fill="#fff" stroke="#e2e8f0"/></g>
+  <text x="132" y="132" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="14" font-weight="700" fill="#334155">Users</text>
+  <rect x="52" y="156" width="160" height="72" rx="10" fill="#f1f5f9" stroke="#cbd5e1"/>
+  <text x="132" y="186" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="13" font-weight="600" fill="#0f172a">Human</text>
+  <text x="132" y="208" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="12" fill="#64748b">Browser · CLI</text>
+  <rect x="52" y="248" width="160" height="72" rx="10" fill="#f1f5f9" stroke="#cbd5e1"/>
+  <text x="132" y="278" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="13" font-weight="600" fill="#0f172a">Agent</text>
+  <text x="132" y="300" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="12" fill="#64748b">MCP · HTTP</text>
+  <text x="132" y="360" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="11" fill="#94a3b8">shared capability catalog</text>
+
+  <g filter="url(#shadow)"><rect x="300" y="100" width="320" height="300" rx="14" fill="#fff" stroke="#99f6e4"/></g>
+  <rect x="300" y="100" width="320" height="40" rx="14" fill="url(#ctrl)"/>
+  <rect x="300" y="120" width="320" height="20" fill="url(#ctrl)"/>
+  <text x="460" y="126" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="14" font-weight="700" fill="#fff">Control Host</text>
+
+  <rect x="320" y="160" width="130" height="56" rx="10" fill="#ecfdf5" stroke="#5eead4"/>
+  <text x="385" y="184" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="13" font-weight="600" fill="#115e59">Web UI</text>
+  <text x="385" y="202" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#0f766e">:8787</text>
+  <rect x="470" y="160" width="130" height="56" rx="10" fill="#ecfdf5" stroke="#5eead4"/>
+  <text x="535" y="184" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="13" font-weight="600" fill="#115e59">CLI</text>
+  <text x="535" y="202" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#0f766e">gpu-control</text>
+  <rect x="320" y="232" width="130" height="56" rx="10" fill="#ecfdf5" stroke="#5eead4"/>
+  <text x="385" y="256" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="13" font-weight="600" fill="#115e59">MCP</text>
+  <text x="385" y="274" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#0f766e">stdio · gc_*</text>
+  <rect x="470" y="232" width="130" height="56" rx="10" fill="#ecfdf5" stroke="#5eead4"/>
+  <text x="535" y="256" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="13" font-weight="600" fill="#115e59">Edge LB</text>
+  <text x="535" y="274" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="11" fill="#0f766e">:18080</text>
+  <rect x="320" y="304" width="280" height="56" rx="10" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="460" y="328" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="13" font-weight="600" fill="#334155">state/ · atomic write + flock</text>
+  <text x="460" y="346" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="11" fill="#64748b">leases · queue · endpoint health · runlog</text>
+
+  <g filter="url(#shadow)"><rect x="700" y="100" width="228" height="300" rx="14" fill="#fff" stroke="#e2e8f0"/></g>
+  <text x="814" y="132" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="14" font-weight="700" fill="#334155">GPU Workers</text>
+  <rect x="720" y="156" width="188" height="52" rx="10" fill="#fff7ed" stroke="#fdba74"/>
+  <text x="814" y="178" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="13" font-weight="600" fill="#9a3412">gpu-1</text>
+  <text x="814" y="196" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="11" fill="#c2410c">Job · train / serve</text>
+  <rect x="720" y="222" width="188" height="52" rx="10" fill="#fff7ed" stroke="#fdba74"/>
+  <text x="814" y="244" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="13" font-weight="600" fill="#9a3412">gpu-2</text>
+  <text x="814" y="262" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="11" fill="#c2410c">Job · train / serve</text>
+  <rect x="720" y="288" width="188" height="52" rx="10" fill="#fff7ed" stroke="#fdba74"/>
+  <text x="814" y="310" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="13" font-weight="600" fill="#9a3412">gpu-N</text>
+  <text x="814" y="328" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="11" fill="#c2410c">Job · train / serve</text>
+  <text x="814" y="372" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="11" fill="#94a3b8">no control plane on workers</text>
+
+  <path d="M232 192 H292" stroke="#64748b" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+  <path d="M232 284 H292" stroke="#64748b" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+  <path d="M620 188 H692" stroke="#0d9488" stroke-width="2.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M620 260 H692" stroke="#f97316" stroke-width="2.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="656" y="178" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="10" font-weight="600" fill="#0f766e">Ansible / SSH</text>
+  <text x="656" y="250" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="10" font-weight="600" fill="#c2410c">health-aware</text>
+
+  <rect x="32" y="430" width="896" height="64" rx="12" fill="#fff" stroke="#e2e8f0"/>
+  <circle cx="64" cy="462" r="6" fill="#0d9488"/>
+  <text x="78" y="466" font-family="system-ui,-apple-system,sans-serif" font-size="12" fill="#334155">Orchestration: UI / CLI / MCP write state, then Ansible starts/stops Jobs</text>
+  <circle cx="520" cy="462" r="6" fill="#f97316"/>
+  <text x="534" y="466" font-family="system-ui,-apple-system,sans-serif" font-size="12" fill="#334155">Data plane: client → Edge → healthy endpoint pool (optional LiteLLM)</text>
+</svg>

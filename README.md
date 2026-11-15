@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/AlexanderJ-Carter/gpu-control"><img src="https://img.shields.io/github/stars/AlexanderJ-Carter/gpu-control?style=for-the-badge" alt="GitHub stars" /></a>
+  <a href="https://github.com/AlexanderJ-Carter/ComputeDeck"><img src="https://img.shields.io/github/stars/AlexanderJ-Carter/ComputeDeck?style=for-the-badge" alt="GitHub stars" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-red?style=for-the-badge" alt="AGPL-3.0" /></a>
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Changelog-Keep%20a%20Changelog-blue?style=for-the-badge" alt="Changelog" /></a>
 </p>
@@ -26,7 +26,9 @@
 <p align="center">
   命令行 <code>gpu-control</code>
   ·
-  <a href="https://github.com/AlexanderJ-Carter/gpu-control">GitHub</a>
+  <a href="https://github.com/AlexanderJ-Carter/ComputeDeck">GitHub</a>
+  ·
+  <a href="https://alexanderj-carter.github.io/ComputeDeck/">宣传展板</a>
   ·
   <a href="docs/index.md">文档</a>
   ·
@@ -41,7 +43,7 @@
 
 实验室和业务团队手里常有一批 SSH 就能登上的 GPU 机器。卡谁在用、进程在哪、能不能腾空，往往靠群聊和 `nvidia-smi`；微调、推理、Ray 各自一套启停脚本；想让 Cursor 这类 Agent 帮忙运维，又缺少统一的 HTTP / MCP 契约。
 
-**ComputeDeck**（仓库与 CLI：`gpu-control`）把发现、租约、Job 部署、健康检查、统一入口和日志收成一套控制面。一台 Control 主机跑 Web UI、CLI 和 MCP，用 Ansible/SSH 编排 worker。场景写在 `config/local/`，换集群主要改配置。
+**ComputeDeck**（命令行仍为 `gpu-control`）把发现、租约、Job 部署、健康检查、统一入口和日志收成一套控制面。一台 Control 主机跑 Web UI、CLI 和 MCP，用 Ansible/SSH 编排 worker。场景写在 `config/local/`，换集群主要改配置。宣传展板见 [`demo/`](demo/)（GitHub Pages）。
 
 ## 能力
 
@@ -65,7 +67,7 @@
 ## 快速开始
 
 ```bash
-git clone https://github.com/AlexanderJ-Carter/gpu-control.git
+git clone https://github.com/AlexanderJ-Carter/ComputeDeck.git
 cd gpu-control
 uv venv .venv && uv pip install -r requirements.txt
 ./examples/quickstart.sh
@@ -128,6 +130,6 @@ gpu-control doctor
 
 ## 参与与许可
 
-[CONTRIBUTING](CONTRIBUTING.md) · [SECURITY](SECURITY.md) · [SUPPORT](SUPPORT.md) · [Issues](https://github.com/AlexanderJ-Carter/gpu-control/issues)
+[CONTRIBUTING](CONTRIBUTING.md) · [SECURITY](SECURITY.md) · [SUPPORT](SUPPORT.md) · [Issues](https://github.com/AlexanderJ-Carter/ComputeDeck/issues)
 
 **AGPL-3.0-only**，见 [LICENSE](LICENSE) / [NOTICE](NOTICE)。版本见 [`VERSION`](VERSION) · [CHANGELOG](CHANGELOG.md)。

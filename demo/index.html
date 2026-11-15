@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ComputeDeck — 多节点 GPU 控制面</title>
+  <meta name="description" content="ComputeDeck：把分散的 GPU 机器收成一套可调度、可观测、可交给 Agent 的控制面。" />
+  <meta property="og:title" content="ComputeDeck" />
+  <meta property="og:description" content="多节点 GPU 控制面 · Web · CLI · MCP" />
+  <meta property="og:image" content="assets/logo.svg" />
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <a class="skip" href="#deck">跳到内容</a>
+
+  <header class="top">
+    <a class="brand" href="#s1">
+      <img src="assets/logo.svg" width="36" height="36" alt="" />
+      <span>ComputeDeck</span>
+    </a>
+    <nav class="top-nav" aria-label="快捷">
+      <a href="https://github.com/AlexanderJ-Carter/ComputeDeck">GitHub</a>
+      <a class="cta" href="https://github.com/AlexanderJ-Carter/ComputeDeck#快速开始">开始使用</a>
+    </nav>
+  </header>
+
+  <nav class="dots" aria-label="展板导航">
+    <button type="button" data-go="s1" class="is-on" aria-label="开场" aria-current="true"></button>
+    <button type="button" data-go="s2" aria-label="痛点"></button>
+    <button type="button" data-go="s3" aria-label="看板"></button>
+    <button type="button" data-go="s4" aria-label="任务"></button>
+    <button type="button" data-go="s5" aria-label="入口"></button>
+    <button type="button" data-go="s6" aria-label="Agent"></button>
+    <button type="button" data-go="s7" aria-label="可靠"></button>
+    <button type="button" data-go="s8" aria-label="开始"></button>
+  </nav>
+
+  <main id="deck" class="deck">
+    <section class="slide hero" id="s1" data-index="0">
+      <div class="slide-bg hero-bg" aria-hidden="true"></div>
+      <div class="slide-inner">
+        <img class="hero-logo reveal" src="assets/logo.svg" width="96" height="96" alt="ComputeDeck" />
+        <p class="eyebrow reveal d1">多节点 GPU 控制面</p>
+        <h1 class="reveal d2">ComputeDeck</h1>
+        <p class="lede reveal d3">把发现、租约、部署、健康检查与统一入口，收成一台 Control 就能管住的甲板。</p>
+        <p class="hint reveal d4">向下滚动 · 或按 ↓</p>
+      </div>
+    </section>
+
+    <section class="slide" id="s2" data-index="1">
+      <div class="slide-bg mesh-a" aria-hidden="true"></div>
+      <div class="slide-inner split">
+        <div>
+          <p class="eyebrow reveal">现状</p>
+          <h2 class="reveal d1">卡在谁手里，不该靠群聊</h2>
+          <p class="body reveal d2"><code>nvidia-smi</code>、私聊、各写各的启停脚本——换机器就改路径和端口。想让 Agent 帮忙运维，也缺少统一契约。</p>
+        </div>
+        <ul class="pain-list reveal d3">
+          <li>占用靠口头同步</li>
+          <li>训练 / 推理 / Ray 各一套脚本</li>
+          <li>入口和「哪几张卡在服」对不上</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="slide" id="s3" data-index="2">
+      <div class="slide-bg mesh-b" aria-hidden="true"></div>
+      <div class="slide-inner split">
+        <div>
+          <p class="eyebrow reveal">单屏看板</p>
+          <h2 class="reveal d1">一眼看清池子与入口</h2>
+          <p class="body reveal d2">健康评分、GPU 池、Edge / TLS / Gateway 状态。看板只做总览；部署与网关操作落在任务页、端点页。</p>
+        </div>
+        <figure class="viz reveal d3">
+          <img src="assets/architecture-overview.svg" alt="控制面、使用者与 GPU Workers 关系" />
+        </figure>
+      </div>
+    </section>
+
+    <section class="slide" id="s4" data-index="3">
+      <div class="slide-bg mesh-a" aria-hidden="true"></div>
+      <div class="slide-inner split">
+        <div>
+          <p class="eyebrow reveal">Job 插件</p>
+          <h2 class="reveal d1">一份 JSON，管启停</h2>
+          <p class="body reveal d2">内置通用壳；推理、微调、Ray、Docker 从模板一键安装。路径用 <code>${paths.*}</code>，换集群主要改配置。</p>
+          <p class="cmd reveal d3"><code>gpu-control jobs install --recommended</code></p>
+        </div>
+        <figure class="viz reveal d3">
+          <img src="assets/control-plane-layers.svg" alt="控制面分层：配置、编排与 Job" />
+        </figure>
+      </div>
+    </section>
+
+    <section class="slide" id="s5" data-index="4">
+      <div class="slide-bg mesh-b" aria-hidden="true"></div>
+      <div class="slide-inner split">
+        <div>
+          <p class="eyebrow reveal">统一入口</p>
+          <h2 class="reveal d1">健康上游，自动换路</h2>
+          <p class="body reveal d2">内置 Edge：重试、冷却、least-conn。需要时再挂 nginx 或 LiteLLM——入口策略与集群标签分开，不再混为一谈。</p>
+        </div>
+        <figure class="viz reveal d3">
+          <img src="assets/edge-ingress.svg" alt="客户端经 Edge 到健康端点池" />
+        </figure>
+      </div>
+    </section>
+
+    <section class="slide" id="s6" data-index="5">
+      <div class="slide-bg mesh-a" aria-hidden="true"></div>
+      <div class="slide-inner">
+        <p class="eyebrow reveal">Agent 友好</p>
+        <h2 class="reveal d1">同一套能力，三种入口</h2>
+        <p class="body narrow reveal d2">浏览器、CLI、MCP 共用能力目录。OpenAPI 可试调；Cursor 等 Agent 走 <code>gc_*</code> 工具，和人用同一条运维语义。</p>
+        <div class="trio reveal d3">
+          <div><strong>Web</strong><span>看板与任务台</span></div>
+          <div><strong>CLI</strong><span>gpu-control</span></div>
+          <div><strong>MCP</strong><span>gc_* 工具</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="s7" data-index="6">
+      <div class="slide-bg mesh-b" aria-hidden="true"></div>
+      <div class="slide-inner">
+        <p class="eyebrow reveal">可靠运维</p>
+        <h2 class="reveal d1">记账可讲清，漂移看得见</h2>
+        <p class="body narrow reveal d2">租约与队列经 flock 串行写入；watchdog 保活；diagnose 提示「有租约但 GPU 已空闲」。异主租约部署默认拒绝，需要时再强制覆盖。</p>
+        <ul class="chip-row reveal d3">
+          <li>state flock</li>
+          <li>watchdog</li>
+          <li>diagnose</li>
+          <li>deploy --force</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="slide finale" id="s8" data-index="7">
+      <div class="slide-bg hero-bg" aria-hidden="true"></div>
+      <div class="slide-inner">
+        <p class="eyebrow reveal">开源 · AGPL-3.0</p>
+        <h2 class="reveal d1">把甲板铺开</h2>
+        <p class="body narrow reveal d2">克隆仓库，写好 <code>config/local</code>，就能在自己的集群上跑起来。</p>
+        <div class="cta-row reveal d3">
+          <a class="btn primary" href="https://github.com/AlexanderJ-Carter/ComputeDeck">打开 GitHub</a>
+          <a class="btn ghost" href="https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/docs/手册.md">阅读手册</a>
+        </div>
+        <p class="foot reveal d4">产品名 ComputeDeck · 命令行 gpu-control</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

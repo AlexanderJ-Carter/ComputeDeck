@@ -25,7 +25,8 @@
 
 - 许可证由 MIT 改为 **AGPL-3.0-only**（网络提供修改版须提供源码）
 - README / 用户文档定稿：自然表述、架构图；不做无产品依据的伪性能对标
-- 公开仓库地址写入 README / SUPPORT / `pyproject.toml` / MkDocs（`AlexanderJ-Carter/gpu-control`）
+- 公开仓库改名为 **ComputeDeck**；宣传展板 `demo/` + GitHub Pages 工作流
+- 公开仓库地址写入 README / SUPPORT / `pyproject.toml` / MkDocs
 - UI 品牌展示改为 ComputeDeck + logo（原文字 `gc`）；看板收敛为总览，部署/网关操作下沉到任务/端点页
 - Docstring 统一为中文 Sphinx 冒号字段；CLI 报错中文化
 - `state_util` 明确仅 POSIX flock；`queue` / `lease release --id` 统一走 `update_json`

@@ -29,12 +29,12 @@ docs = ["mkdocs>=1.6.0", "mkdocs-material>=9.5.0", "pymdown-extensions>=10.0.0"]
 models-worker = ["huggingface_hub[cli]>=0.24.0", "modelscope>=1.18.0"]
 
 [project.urls]
-Homepage = "https://github.com/AlexanderJ-Carter/gpu-control"
-Repository = "https://github.com/AlexanderJ-Carter/gpu-control"
-Issues = "https://github.com/AlexanderJ-Carter/gpu-control/issues"
-Changelog = "https://github.com/AlexanderJ-Carter/gpu-control/blob/main/CHANGELOG.md"
-Documentation = "https://github.com/AlexanderJ-Carter/gpu-control/tree/main/docs"
-Security = "https://github.com/AlexanderJ-Carter/gpu-control/blob/main/SECURITY.md"
+Homepage = "https://github.com/AlexanderJ-Carter/ComputeDeck"
+Repository = "https://github.com/AlexanderJ-Carter/ComputeDeck"
+Issues = "https://github.com/AlexanderJ-Carter/ComputeDeck/issues"
+Changelog = "https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/AlexanderJ-Carter/ComputeDeck/tree/main/docs"
+Security = "https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/SECURITY.md"
 
 [tool.uv]
 package = false
