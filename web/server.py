@@ -4208,9 +4208,15 @@ def _auto_ops_tick(cluster: dict, cfg: dict, state: dict) -> dict:
         }
         actions.append("api")
 
+    overview = build_overview(light=True)
+    summary = overview.get("summary") or {}
+    # GPU 快照新鲜度以 liveness 的逐节点视角为准（resources.json 的 mtime 会被别的命令改写）。
+    gpu_stale = bool(summary.get("stale_nodes")) or bool(summary.get("nodes_stale"))
     gpu_age = _age_sec(RESOURCES_FILE)
+    if gpu_age is not None and gpu_age > cfg["gpu_stale_sec"]:
+        gpu_stale = True
     last_gpu = (state.get("last_gpu") or {}).get("at_epoch") or 0
-    if (gpu_age is None or gpu_age > cfg["gpu_stale_sec"]) and now_epoch - last_gpu > cfg["gpu_min_interval_sec"]:
+    if gpu_stale and now_epoch - last_gpu > cfg["gpu_min_interval_sec"]:
         result = run_cli(["gpu", "refresh", "--quiet"], timeout=180)
         state["last_gpu"] = {
             "at": stamp,
@@ -4220,9 +4226,9 @@ def _auto_ops_tick(cluster: dict, cfg: dict, state: dict) -> dict:
         }
         invalidate_overview_cache()
         actions.append("gpu")
+        overview = build_overview(light=True)
+        summary = overview.get("summary") or {}
 
-    overview = build_overview(light=True)
-    summary = overview.get("summary") or {}
     anomalies = bool(
         actions
         or summary.get("nodes_offline")
