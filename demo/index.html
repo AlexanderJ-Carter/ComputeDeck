@@ -139,9 +139,9 @@ GPU 3  76%  PID  9921  ???</pre>
         <div>
           <p class="eyebrow reveal">看得见</p>
           <h2 class="reveal d1">池子、占用、入口一眼排开</h2>
-          <p class="body reveal d2">看板先看总览；趋势把 API 连通、GPU 算力/显存、槽位、节点在线率与队列等待放在同一条时间线上。</p>
+          <p class="body reveal d2">看板先看总览；趋势把 API 连通、GPU 算力/显存、槽位、节点在线率与队列等待放在同一条时间线上。没有曲线时会直接说明是无端点、GPU 快照过期，还是等待采样。</p>
           <ul class="bullet reveal d3">
-            <li>60 分钟曲线 · 三列排布 · 时间轴与末值</li>
+            <li>60 分钟曲线 · 两列排布 · 时间轴与末值</li>
             <li><code>free</code>：停 Job、清进程、释租约</li>
             <li><code>cordon</code>：隔离调度，部署会躲开</li>
           </ul>
@@ -283,7 +283,7 @@ GPU 3  76%  PID  9921  ???</pre>
       <div class="slide-inner">
         <p class="eyebrow reveal">AI · Agent</p>
         <h2 class="reveal d1">AI 自动巡检，配置也能一步一步带你</h2>
-        <p class="body narrow reveal d2">AI 能读最近一小时趋势，解释 GPU 负载、队列积压与入口异常；写操作先出行内确认卡，破坏性操作二次确认。SSH / 主机 / API / 互通 / GPU 在过期前自动采集，「配置就绪」逐步检查并让 AI 指导下一步；Cursor / Claude Code 仍走同一 <code>bin/gpu-control-mcp</code>。</p>
+        <p class="body narrow reveal d2">AI 能读最近一小时趋势，解释 GPU 负载、队列积压与入口异常；写操作先出行内确认卡，破坏性操作二次确认，完成后确认卡收起、只留参数与结果记录。SSH / 主机 / API / 互通 / GPU 在过期前自动采集，「配置就绪」逐步检查并让 AI 指导下一步；Cursor / Claude Code 仍走同一 <code>bin/gpu-control-mcp</code>。</p>
         <div class="ai-stage reveal d3" aria-hidden="true">
           <div class="ai-demo">
             <article class="ai-card glow">
