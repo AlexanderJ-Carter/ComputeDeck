@@ -1,6 +1,6 @@
 [project]
 name = "gpu-control"
-version = "1.0.0-beta.3"
+version = "1.0.0-beta.4"
 description = "ComputeDeck — multi-node GPU control plane (Web / CLI / MCP)"
 readme = "README.md"
 requires-python = ">=3.11"

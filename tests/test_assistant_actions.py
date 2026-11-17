@@ -96,6 +96,26 @@ class AssistantLoopTests(unittest.TestCase):
         self.assertEqual(result["tool_traces"][0]["risk"], "read")
         self.assertEqual(result["history"][-1], {"role": "assistant", "content": "队列为空。"})
 
+    def test_read_only_exec_preset_auto_executes(self) -> None:
+        seen = []
+
+        def runner(args):
+            seen.append(args)
+            return {"ok": True, "preset": args["preset"], "results": [{"ok": True}]}
+
+        result, _ = self._chat(
+            [
+                _tool_reply("gc_exec_preset", {"node": "a", "preset": "nvidia-smi"}),
+                _text_reply("已读取 GPU 信息。"),
+            ],
+            runners={"gc_exec_preset": runner},
+            messages=[{"role": "user", "content": "在 a 上跑 nvidia-smi"}],
+        )
+        self.assertTrue(result["ok"])
+        self.assertEqual(seen, [{"node": "a", "preset": "nvidia-smi"}])
+        self.assertEqual(result["pending_actions"], [])
+        self.assertEqual(result["tool_traces"][0]["risk"], "read")
+
     def test_write_tool_creates_pending_action(self) -> None:
         result, _ = self._chat(
             [

@@ -500,6 +500,10 @@ def _system_prompt(context: dict[str, Any], liveness_view: dict[str, Any] | None
         "gpu-control liveness status|check；gpu-control overview；gpu-control deploy <job>；"
         "gpu-control free --node <n>；gpu-control gateway status；gpu-control diagnose check；"
         "gpu-control remote status|plan|up|down。\n"
+        "7. 不要在回复里展示 action_id / conversation_id 等内部 ID；确认卡已经由界面展示，"
+        "用「已生成确认卡，请确认后执行」即可。\n"
+        "8. 只读诊断（nvidia-smi / GPU 利用率 / 进程 / 端口 / 磁盘 / 日志尾等）优先用 "
+        "gc_exec_preset，会自动执行且无需确认；只有它不支持的任意命令才用 gc_exec（需二次确认）。\n"
         f"当前快照：{json.dumps(snap, ensure_ascii=False)}"
     )
 

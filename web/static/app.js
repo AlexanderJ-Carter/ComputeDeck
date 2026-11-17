@@ -4933,22 +4933,23 @@ function sparklinePath(values, width, height, pad = 4, domain = null) {
   const nums = values.map((v) => (v == null || Number.isNaN(Number(v)) ? null : Number(v)));
   const solid = nums.filter((v) => v != null);
   if (solid.length < 2) return { line: "", area: "" };
+  const padX = 30;
+  const padY = 6;
   let min = Math.min(...solid);
   let max = Math.max(...solid);
   if (domain && Number.isFinite(domain.min) && Number.isFinite(domain.max) && domain.max > domain.min) {
     min = domain.min;
     max = domain.max;
   } else if (max === min) {
-    // 全常数时 (v-min)/span=0 会贴底，看起来像没画。
     if (min === 0) {
       max = 1;
     } else if (min > 0) {
       max = min * 1.25;
       min = 0;
     } else {
-      const padY = Math.abs(min) || 1;
-      min -= padY;
-      max += padY;
+      const padYValue = Math.abs(min) || 1;
+      min -= padYValue;
+      max += padYValue;
     }
   }
   const span = max - min || 1;
@@ -4956,14 +4957,14 @@ function sparklinePath(values, width, height, pad = 4, domain = null) {
   const pts = [];
   nums.forEach((v, i) => {
     if (v == null) return;
-    const x = pad + (i / Math.max(1, n - 1)) * (width - pad * 2);
+    const x = padX + (i / Math.max(1, n - 1)) * (width - padX - 4);
     const clamped = Math.min(max, Math.max(min, v));
-    const y = height - pad - ((clamped - min) / span) * (height - pad * 2);
+    const y = height - padY - ((clamped - min) / span) * (height - padY * 2);
     pts.push([x, y]);
   });
   if (pts.length < 2) return { line: "", area: "" };
   const line = pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
-  const area = `${line} L${pts[pts.length - 1][0].toFixed(1)},${height - pad} L${pts[0][0].toFixed(1)},${height - pad} Z`;
+  const area = `${line} L${pts[pts.length - 1][0].toFixed(1)},${height - padY} L${pts[0][0].toFixed(1)},${height - padY} Z`;
   return { line, area };
 }
 
@@ -4972,21 +4973,27 @@ function paintSpark(svgId, values, { altValues = null, domain = null, altDomain 
   if (!svg) return;
   const w = 320;
   const h = 72;
-  const pad = 4;
-  const main = sparklinePath(values, w, h, pad, domain);
+  const padX = 30;
+  const padY = 6;
+  const main = sparklinePath(values, w, h, 4, domain);
+  const alt = altValues ? sparklinePath(altValues, w, h, 4, altDomain) : { line: "", area: "" };
   let html = "";
-  // 参考线：顶 / 中 / 底，避免满刻度常数曲线「看不见」
-  html += `<path class="guide" d="M${pad},${pad} H${w - pad}"></path>`;
-  html += `<path class="guide" d="M${pad},${(h / 2).toFixed(1)} H${w - pad}"></path>`;
-  html += `<path class="guide" d="M${pad},${h - pad} H${w - pad}"></path>`;
+  html += `<text class="axis" x="2" y="${padY + 8}">100%</text>`;
+  html += `<text class="axis" x="2" y="${(h / 2 + 3).toFixed(1)}">50%</text>`;
+  html += `<text class="axis" x="2" y="${h - 2}">0%</text>`;
+  html += `<path class="guide" d="M${padX},${padY} H${w - 4}"></path>`;
+  html += `<path class="guide" d="M${padX},${(h / 2).toFixed(1)} H${w - 4}"></path>`;
+  html += `<path class="guide" d="M${padX},${h - padY} H${w - 4}"></path>`;
   if (main.area) html += `<path class="area" d="${main.area}"></path>`;
   if (main.line) html += `<path class="line" d="${main.line}"></path>`;
-  if (altValues) {
-    const alt = sparklinePath(altValues, w, h, pad, altDomain);
-    if (alt.line) html += `<path class="line alt" d="${alt.line}"></path>`;
+  if (alt.line) html += `<path class="line alt" d="${alt.line}"></path>`;
+  const solid = (values || []).filter((v) => v != null && !Number.isNaN(Number(v)));
+  const last = solid.length ? Number(solid[solid.length - 1]) : null;
+  if (last != null) {
+    html += `<text class="last" x="${w - 4}" y="${padY + 9}" text-anchor="end">${fmtPct(last)}</text>`;
   }
-  if (!main.line && !(altValues && sparklinePath(altValues, w, h, pad, altDomain).line)) {
-    html += `<text x="12" y="40" fill="currentColor" font-size="12">采样不足，刷新总览稍后可见</text>`;
+  if (!main.line && !alt.line) {
+    html += `<text class="empty" x="${padX + 4}" y="40">采样不足，刷新总览稍后可见</text>`;
   }
   svg.innerHTML = html;
 }

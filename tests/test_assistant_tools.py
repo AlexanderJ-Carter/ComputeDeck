@@ -40,6 +40,7 @@ class RiskTests(unittest.TestCase):
         self.assertEqual(risk_for_call("gc_liveness", {"action": "check"}), "read")
         self.assertEqual(risk_for_call("gc_free_node", {"node": "a"}), "destructive")
         self.assertEqual(risk_for_call("gc_exec", {"command": "uptime", "node": "a"}), "destructive")
+        self.assertEqual(risk_for_call("gc_exec_preset", {"node": "a", "preset": "nvidia-smi"}), "read")
 
 
 class RouteTests(unittest.TestCase):
@@ -103,6 +104,35 @@ class ValidationTests(unittest.TestCase):
         )
         self.assertTrue(out["ok"])
         self.assertEqual(out["risk"], "write")
+
+    def test_exec_preset_validates_node_and_preset(self) -> None:
+        out = validate_call(
+            "gc_exec_preset",
+            {"node": "a", "preset": "nvidia-smi"},
+            nodes=NODES,
+            jobs=JOBS,
+            liveness_view=LIVE,
+        )
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["risk"], "read")
+        out = validate_call(
+            "gc_exec_preset",
+            {"node": "b", "preset": "nvidia-smi"},
+            nodes=NODES,
+            jobs=JOBS,
+            liveness_view=LIVE,
+        )
+        self.assertFalse(out["ok"])
+        self.assertEqual(out["error"], "offline_target")
+        out = validate_call(
+            "gc_exec_preset",
+            {"node": "a", "preset": "rm -rf"},
+            nodes=NODES,
+            jobs=JOBS,
+            liveness_view=LIVE,
+        )
+        self.assertFalse(out["ok"])
+        self.assertEqual(out["error"], "bad_preset")
 
     def test_exec_requires_single_node(self) -> None:
         out = validate_call(

@@ -766,7 +766,8 @@ def mcp_tools_summary() -> list[dict[str, str]]:
         {"name": "gc_node", "summary": "节点 render/cordon/uncordon/add/remove"},
         {"name": "gc_liveness", "summary": "节点存活与快照新鲜度 status/check"},
         {"name": "gc_remote", "summary": "远程接入 Tailscale / Cloudflare status/plan/up/down"},
-        {"name": "gc_exec", "summary": "远程执行命令"},
+        {"name": "gc_exec_preset", "summary": "单节点只读诊断预设（nvidia-smi / 进程 / 端口）"},
+        {"name": "gc_exec", "summary": "远程执行任意命令（需确认）"},
         {"name": "gc_cli", "summary": "任意子命令逃生舱"},
     ]
 

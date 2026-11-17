@@ -4609,3 +4609,68 @@ body {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+/* 助手面板：确认卡不再被压缩到只剩按钮 */
+.assistant-chat-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.assistant-quick {
+  flex: 0 0 auto;
+  max-height: 104px;
+  overflow: auto;
+}
+
+.assistant-thread {
+  min-height: 96px;
+}
+
+.assistant-pending {
+  flex: 0 0 auto;
+  max-height: 38%;
+  overflow: auto;
+}
+
+.assistant-form {
+  flex: 0 0 auto;
+}
+
+.assistant-msg.markdown code {
+  font-size: 0.9em;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.assistant-action {
+  max-height: 100%;
+}
+
+.assistant-action pre {
+  max-height: 140px;
+}
+
+/* 趋势曲线：左侧百分比刻度 + 最近值 */
+.trend-chart svg .axis {
+  fill: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.trend-chart svg .last {
+  fill: var(--ink);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.trend-chart svg .empty {
+  fill: var(--muted);
+  font-size: 11px;
+}

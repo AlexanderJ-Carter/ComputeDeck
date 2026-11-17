@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT / "lib"))
 from api_catalog import catalog_payload  # noqa: E402
 from assistant_policy import TEACHING_SUMMARY  # noqa: E402
 from paths import CLI, PROJECT_DIR, VENV_PYTHON  # noqa: E402
+from exec_presets import EXEC_PRESETS  # noqa: E402
 
 try:
     from mcp.server.mcpserver import MCPServer
@@ -760,6 +761,36 @@ def gc_remote(
     if confirm:
         args.append("--confirm")
     return _cli_json(args, timeout=60)
+
+
+@mcp.tool()
+def gc_exec_preset(node: str, preset: str) -> dict:
+    """在单个节点运行只读诊断预设（nvidia-smi / GPU 利用率 / 进程 / 端口 / 磁盘等）。
+
+    :param node: 节点名。
+    :param preset: 预设 id，见 gc_api_catalog 或 EXEC_PRESETS。
+    """
+    preset = str(preset or "").strip()
+    meta = EXEC_PRESETS.get(preset)
+    if not meta:
+        return {
+            "ok": False,
+            "error": f"未知预设：{preset}",
+            "presets": sorted(EXEC_PRESETS),
+        }
+    if not node:
+        return {"ok": False, "error": "需要 node"}
+    if _prefer_http():
+        return _http_json_safe("POST", "/api/exec", {"preset": preset, "node": node}, timeout=180)
+    result = _cli(["exec", "--quiet", "--node", node, "--", meta["command"]], timeout=180)
+    return {
+        "ok": result["rc"] == 0,
+        "node": node,
+        "preset": preset,
+        "label": meta.get("label"),
+        "command": meta.get("command"),
+        "result": result,
+    }
 
 
 @mcp.tool()

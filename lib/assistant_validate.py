@@ -6,6 +6,7 @@ import hashlib
 import json
 from typing import Any
 
+from exec_presets import EXEC_PRESETS
 from assistant_tools import (
     confirm_level,
     risk_for_call,
@@ -146,6 +147,8 @@ def validate_call(
         required = [("name", "Job 名")]
     elif name == "gc_free_node":
         required = [("node", "节点名")]
+    elif name == "gc_exec_preset":
+        required = [("node", "节点名"), ("preset", "只读诊断预设")]
     elif name == "gc_exec":
         required = [("command", "命令"), ("node", "节点名")]
     elif name == "gc_put_config":
@@ -181,7 +184,7 @@ def validate_call(
     target_nodes: list[str] = []
     if name in {"gc_deploy", "gc_job_action", "gc_models", "gc_toolkits", "gc_queue"}:
         target_nodes += _split_nodes(args.get("nodes"))
-    if name in {"gc_free_node", "gc_procs", "gc_exec"}:
+    if name in {"gc_free_node", "gc_procs", "gc_exec", "gc_exec_preset"}:
         target_nodes += _split_nodes(args.get("node"))
     if name == "gc_node" and action in {"cordon", "uncordon", "remove", "add"}:
         if args.get("name"):
@@ -227,7 +230,7 @@ def validate_call(
     ]
     if offline and not dry_run and name != "gc_node":
         warnings.append(f"目标节点离线：{', '.join(offline)}；操作可能失败。")
-        if name in {"gc_free_node", "gc_exec", "gc_procs", "gc_deploy", "gc_job_action"}:
+        if name in {"gc_free_node", "gc_exec", "gc_exec_preset", "gc_procs", "gc_deploy", "gc_job_action"}:
             return _error(
                 "offline_target",
                 f"目标节点离线：{', '.join(offline)}。请先恢复节点，或只做 cordon / dry-run。",
@@ -235,6 +238,17 @@ def validate_call(
             )
     if name == "gc_node" and action == "remove" and offline:
         warnings.append(f"节点离线：{', '.join(offline)}；删除配置不会影响机器本身。")
+
+    if name == "gc_exec_preset":
+        preset = str(args.get("preset") or "").strip()
+        if preset not in EXEC_PRESETS:
+            return _error(
+                "bad_preset",
+                f"未知只读预设：{preset}；可用：{', '.join(sorted(EXEC_PRESETS))}",
+                args,
+            )
+        args["preset"] = preset
+        destructive = False
 
     if name == "gc_exec":
         if str(args.get("nodes") or "").strip().lower() == "all":

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from exec_presets import EXEC_PRESETS
+
 Risk = str
 Route = Callable[[dict[str, Any]], dict[str, Any] | None]
 
@@ -547,8 +549,22 @@ _SPECS: list[dict[str, Any]] = [
         target={"nodes": "node"},
     ),
     _spec(
+        "gc_exec_preset",
+        "在单个在线节点运行只读诊断预设（nvidia-smi / GPU 利用率 / 进程 / 端口 / 磁盘等），自动执行、无需确认。",
+        parameters=_obj(
+            node={"type": "string", "description": "节点名"},
+            preset={
+                "type": "string",
+                "enum": sorted(EXEC_PRESETS.keys()),
+                "description": "只读诊断预设",
+            },
+        ),
+        risk="read",
+        target={"nodes": "node"},
+    ),
+    _spec(
         "gc_exec",
-        "在单个工作节点执行 shell 命令（破坏性）。必须指定 node，禁止 all。",
+        "在单个工作节点执行任意 shell 命令（破坏性，需二次确认）。只读诊断请优先用 gc_exec_preset；必须指定 node，禁止 all。",
         parameters=_obj(
             command={"type": "string"},
             node={"type": "string"},
@@ -777,6 +793,10 @@ def summary_for(name: str, args: dict[str, Any], target: dict[str, Any] | None =
     elif name == "gc_procs":
         label = f"结束 GPU 进程 @ {node_text or args.get('node')}"
         summary = "将结束匹配的 GPU 计算进程；请核对 PID / 匹配规则。"
+    elif name == "gc_exec_preset":
+        preset = str(args.get("preset") or "")
+        label = f"运行只读诊断：{EXEC_PRESETS.get(preset, {}).get('label', preset)} @ {node_text or args.get('node')}"
+        summary = f"预设命令：{EXEC_PRESETS.get(preset, {}).get('command', preset)}（只读，自动执行）"
     elif name == "gc_exec":
         label = f"在 {node_text or args.get('node')} 执行命令"
         summary = f"command: {args.get('command')}"

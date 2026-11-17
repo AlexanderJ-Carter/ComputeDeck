@@ -172,11 +172,12 @@ Cursor 片段示例：
 教学与风险：MCP `instructions` 与 `GET /api/assistant/policy` 同源（`lib/assistant_policy.py`）。  
 UI 小助手：设置面板填 Base URL / 模型 / Key（`POST /api/assistant/config`，可 `POST /api/assistant/models` 下拉）；`POST /api/assistant/chat` 调 OpenAI 兼容上游；未配则引导去设置。
 
-一等工具（22）：`gc_api_catalog` · `gc_auth_status` · `gc_doctor` · `gc_overview` · `gc_get_jobs` · `gc_job_action` · `gc_get_config` · `gc_put_config` · `gc_models` · `gc_toolkits` · `gc_procs` · `gc_free_node` · `gc_deploy` · `gc_queue` · `gc_lease` · `gc_diagnose` · `gc_gateway` · `gc_node` · `gc_liveness` · `gc_remote` · `gc_exec` · `gc_cli`。
+一等工具（23）：`gc_api_catalog` · `gc_auth_status` · `gc_doctor` · `gc_overview` · `gc_get_jobs` · `gc_job_action` · `gc_get_config` · `gc_put_config` · `gc_models` · `gc_toolkits` · `gc_procs` · `gc_free_node` · `gc_deploy` · `gc_queue` · `gc_lease` · `gc_diagnose` · `gc_gateway` · `gc_node` · `gc_liveness` · `gc_remote` · `gc_exec_preset` · `gc_exec` · `gc_cli`。
 
 说明：
 
 - `gc_deploy` 的 `gpus` 可省略（读 `cluster.scheduling.unit_gpus`）；异主租约用 `force=true`。
+- `gc_exec_preset(node, preset)` 运行只读诊断（`nvidia-smi` / `gpu-util` / `gpu-procs` / `ports` 等），自动执行；任意命令仍用 `gc_exec` 并确认。
 - `gc_models(action="pull", name="org/model")` 可拉权重；可选 `register`。
 - `gc_node(action="render")` 替代昔日 `gc_cli(["node","render"])`。
 
