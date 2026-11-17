@@ -78,6 +78,13 @@ def main() -> int:
             f"{name} ansible_host={host} gpus_per_node={gpus} "
             f"ports_per_node={len(ports)} base_port={base_port} node_role={role}"
         )
+        # 每节点 SSH 覆盖（新机器可能换了 IP / SSH 端口，而其它节点仍用旧端口）
+        for key in ("ansible_port", "ansible_user", "ansible_ssh_private_key_file"):
+            value = (meta or {}).get(key)
+            if value not in (None, ""):
+                if key == "ansible_ssh_private_key_file":
+                    value = expand_path(str(value))
+                line = f"{line} {key}={value}"
         if path_kv:
             line = f"{line} {path_kv}"
         lines.append(line)
@@ -124,14 +131,19 @@ def main() -> int:
         for name, meta in sorted(nodes.items()):
             if (meta or {}).get("role") == "control":
                 continue
+            node_user = str((meta or {}).get("ansible_user") or user)
+            node_port = (meta or {}).get("ansible_port") or port
+            node_key = expand_path(
+                str((meta or {}).get("ansible_ssh_private_key_file") or key)
+            )
             blocks.append(
                 "\n".join(
                     [
                         f"Host {name}",
                         f"    HostName {meta.get('ansible_host')}",
-                        f"    User {user}",
-                        f"    Port {port}",
-                        f"    IdentityFile {key}",
+                        f"    User {node_user}",
+                        f"    Port {node_port}",
+                        f"    IdentityFile {node_key}",
                     ]
                 )
             )

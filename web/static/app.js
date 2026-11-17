@@ -1120,16 +1120,24 @@ function renderGatewayTopo(lb, endpointsCatalog) {
   const nginx = local.nginx || {};
   const proxy = local.openai_compat_proxy || local.litellm_gateway || {};
   const extra = local.extra_http || {};
-  const bits = [
-    nodeBits.length ? `按节点 ${nodeBits.join(" · ")}` : `默认端口 ${(pool.port_range || []).join("-") || "-"}`,
-  ];
-  if (ai.model_name) bits.push(`model=${ai.model_name}`);
-  if (ai.routing_strategy) bits.push(`route=${ai.routing_strategy}`);
-  if (proxy.port) bits.push(`LiteLLM :${proxy.port}`);
-  if (extra.port) bits.push(`extra :${extra.port}`);
-  if (nginx.installed) bits.push("nginx 已装");
-  else bits.push(nginx.status_label || "nginx 不必装（Edge）");
-  el.textContent = bits.join(" · ");
+  const upBits = nodeBits.length
+    ? nodeBits
+    : [`默认端口 ${(pool.port_range || []).join("-") || "-"}`];
+  const gwBits = [];
+  if (ai.model_name) gwBits.push(`model=${ai.model_name}`);
+  if (ai.routing_strategy) gwBits.push(`route=${ai.routing_strategy}`);
+  if (proxy.port) gwBits.push(`LiteLLM :${proxy.port}`);
+  if (extra.port) gwBits.push(`extra :${extra.port}`);
+  if (nginx.installed) gwBits.push("nginx 已装");
+  else gwBits.push(nginx.status_label || "nginx 不必装（Edge）");
+  el.innerHTML = "";
+  const line1 = document.createElement("div");
+  line1.className = "topo-line";
+  line1.textContent = `上游：${upBits.join(" · ")}`;
+  const line2 = document.createElement("div");
+  line2.className = "topo-line";
+  line2.textContent = `网关：${gwBits.join(" · ")}`;
+  el.append(line1, line2);
 }
 
 function renderPool(overview) {
@@ -3598,18 +3606,19 @@ function readCardFields(card) {
   const name = (card.querySelector('[data-nc="name"]')?.value || "").trim();
   const host = (card.querySelector('[data-nc="host"]')?.value || "").trim();
   const gpusRaw = (card.querySelector('[data-nc="gpus"]')?.value || "").trim();
+  const portRaw = (card.querySelector('[data-nc="port"]')?.value || "").trim();
   const labels = (card.querySelector('[data-nc="labels"]')?.value || "")
     .split(",")
     .map((x) => x.trim())
     .filter(Boolean);
   const note = (card.querySelector('[data-nc="note"]')?.value || "").trim();
-  return { name, host, gpusRaw, labels, note };
+  return { name, host, gpusRaw, portRaw, labels, note };
 }
 
 function commitCardToDraft(card) {
   const draft = ensureNodesDraft(stateSetup.nodesDraft);
   const oldKey = card.dataset.nodeCard;
-  const { name, host, gpusRaw, labels, note } = readCardFields(card);
+  const { name, host, gpusRaw, portRaw, labels, note } = readCardFields(card);
   if (!oldKey) return;
   if (!name) return;
   const prev = draft.nodes[oldKey] || draft.nodes[name] || {};
@@ -3618,6 +3627,8 @@ function commitCardToDraft(card) {
   if (!node.role) node.role = draft.defaults.role || "serving";
   if (gpusRaw && /^\d+$/.test(gpusRaw)) node.gpus_per_node = Number(gpusRaw);
   else if (!gpusRaw && "gpus_per_node" in node) delete node.gpus_per_node;
+  if (portRaw && /^\d+$/.test(portRaw)) node.ansible_port = Number(portRaw);
+  else if (!portRaw && "ansible_port" in node) delete node.ansible_port;
   if (labels.length) node.labels = labels;
   else if ("labels" in node) delete node.labels;
   if (note) node.note = note;
@@ -3697,6 +3708,7 @@ function renderNodesCards(doc) {
             <label class="field"><span>名称</span><input data-nc="name" value="${escapeHtml(name)}" /></label>
             <label class="field"><span>地址</span><input data-nc="host" value="${escapeHtml(meta.ansible_host || "")}" /></label>
             <label class="field"><span>GPU</span><input data-nc="gpus" type="number" value="${escapeHtml(meta.gpus_per_node ?? "")}" /></label>
+            <label class="field"><span>SSH 端口</span><input data-nc="port" type="number" placeholder="默认" value="${escapeHtml(meta.ansible_port ?? "")}" /></label>
             <label class="field"><span>标签</span><input data-nc="labels" value="${escapeHtml(labels)}" /></label>
             <div class="node-card-actions">
               <button type="button" class="ghost tiny" data-toggle-node-extra data-keep-enabled="1">备注</button>
@@ -3711,6 +3723,7 @@ function renderNodesCards(doc) {
           <label class="field"><span>名称</span><input data-nc="name" value="${escapeHtml(name)}" /></label>
           <label class="field"><span>地址</span><input data-nc="host" value="${escapeHtml(meta.ansible_host || "")}" /></label>
           <label class="field"><span>GPU</span><input data-nc="gpus" type="number" value="${escapeHtml(meta.gpus_per_node ?? "")}" /></label>
+          <label class="field"><span>SSH 端口（可选）</span><input data-nc="port" type="number" placeholder="默认端口" value="${escapeHtml(meta.ansible_port ?? "")}" /></label>
         </div>
         <label class="field"><span>标签（逗号）</span><input data-nc="labels" value="${escapeHtml(labels)}" /></label>
         <label class="field"><span>备注</span><input data-nc="note" value="${escapeHtml(meta.note || "")}" /></label>

@@ -4690,3 +4690,78 @@ body {
 .cli-hint-clickable:hover {
   color: var(--accent-hot);
 }
+
+/* 入口页高级区：拓扑分行、片段选择器靠右成组 */
+#pool-meta,
+#gateway-topo,
+#ingress-meta,
+#lb-meta {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.topo-line {
+  display: block;
+  line-height: 1.6;
+}
+
+.topo-line + .topo-line {
+  margin-top: 2px;
+}
+
+.snippet-h {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 12px;
+}
+
+.snippet-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.snippet-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.snippet-controls select {
+  width: auto;
+  min-width: 150px;
+  max-width: 100%;
+}
+
+@media (max-width: 767px) {
+  .snippet-controls {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+
+  .snippet-controls select {
+    flex: 1 1 140px;
+    min-width: 0;
+  }
+}
+
+/* 节点卡片：SSH 端口列 */
+.node-card.is-compact .field-row {
+  grid-template-columns: minmax(84px, 0.9fr) minmax(110px, 1.1fr) 64px 84px minmax(80px, 1fr) auto;
+}
+
+@media (max-width: 767px) {
+  .node-card.is-compact .field-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .node-card.is-compact .node-card-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+}

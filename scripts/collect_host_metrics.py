@@ -133,7 +133,14 @@ def main() -> int:
     results = []
     with ThreadPoolExecutor(max_workers=max(1, len(nodes))) as pool:
         futs = [
-            pool.submit(probe_one, name, str(meta.get("ansible_host") or ""), user, port, key)
+            pool.submit(
+                probe_one,
+                name,
+                str(meta.get("ansible_host") or ""),
+                str(meta.get("ansible_user") or user),
+                int(meta.get("ansible_port") or port),
+                expand_path(str(meta.get("ansible_ssh_private_key_file") or key)),
+            )
             for name, meta in sorted(nodes.items())
         ]
         for fut in as_completed(futs):

@@ -1399,9 +1399,11 @@ def test_ssh_connectivity(*, node: str | None = None, timeout: int = 8, remote: 
                 _ssh_one,
                 name=name,
                 host=str(meta.get("ansible_host") or ""),
-                user=user,
-                port=port,
-                key=key,
+                user=str(meta.get("ansible_user") or user),
+                port=int(meta.get("ansible_port") or port),
+                key=expand_path(str(meta.get("ansible_ssh_private_key_file") or key))
+                if (meta.get("ansible_ssh_private_key_file") or key)
+                else "",
                 remote=remote,
                 timeout=timeout,
             )

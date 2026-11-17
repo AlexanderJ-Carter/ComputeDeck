@@ -568,22 +568,26 @@ gpu-control jobs install vllm-serve --name vllm</pre>
               <button id="btn-gateway-render" class="ghost tiny" data-keep-enabled="1" data-action="1">写出网关配置</button>
             </div>
             <p class="meta" id="gateway-topo">加载中…</p>
-            <div class="panel-h" style="margin-top:10px">
-              <h2>客户端片段</h2>
-              <select id="lb-strategy">
-                <option value="least_latency">健康优先 · 低延迟</option>
-                <option value="round_robin">健康列表轮询</option>
-                <option value="by_node">按节点排序</option>
-              </select>
-              <select id="snippet-kind">
-                <option value="python">Python 客户端</option>
-                <option value="nginx">nginx Edge LB</option>
-                <option value="litellm">LiteLLM model_list</option>
-                <option value="curl">curl 探测</option>
-                <option value="gateway_notes">分层说明</option>
-              </select>
+            <div class="panel-h snippet-h" style="margin-top:10px">
+              <div class="snippet-title">
+                <h2>客户端片段</h2>
+                <span class="meta" id="lb-meta"></span>
+              </div>
+              <div class="snippet-controls">
+                <select id="lb-strategy" aria-label="负载策略">
+                  <option value="least_latency">健康优先 · 低延迟</option>
+                  <option value="round_robin">健康列表轮询</option>
+                  <option value="by_node">按节点排序</option>
+                </select>
+                <select id="snippet-kind" aria-label="片段类型">
+                  <option value="python">Python 客户端</option>
+                  <option value="nginx">nginx Edge LB</option>
+                  <option value="litellm">LiteLLM model_list</option>
+                  <option value="curl">curl 探测</option>
+                  <option value="gateway_notes">分层说明</option>
+                </select>
+              </div>
             </div>
-            <span class="meta" id="lb-meta"></span>
             <pre id="client-snippet" class="snippet"></pre>
           </details>
         </div>
