@@ -15,6 +15,7 @@ const state = {
   pollFailures: 0,
   pollSkip: 0,
   jobTemplates: [],
+  jobs: [],
 };
 
 const VIEW_TITLE = {
@@ -2284,8 +2285,12 @@ function jobOptionLabel(j) {
 
 function renderJobs(jobs) {
   const list = jobs || [];
-  const opts =
+  state.jobs = list;
+  const labelOpts =
     list.map((j) => `<option value="${escapeHtml(j.name)}">${escapeHtml(jobOptionLabel(j))}</option>`).join("") ||
+    `<option value="">（无任务 — 请安装模板）</option>`;
+  const shortOpts =
+    list.map((j) => `<option value="${escapeHtml(j.name)}">${escapeHtml(j.name)}</option>`).join("") ||
     `<option value="">（无任务 — 请安装模板）</option>`;
   for (const id of ["job-select", "setup-job-pick"]) {
     const sel = document.getElementById(id);
@@ -2293,11 +2298,12 @@ function renderJobs(jobs) {
     const prev = sel.value;
     const withEmpty =
       id === "setup-job-pick"
-        ? `<option value="">— 选择已有 Job —</option>${opts}`
-        : opts;
+        ? `<option value="">— 选择已有 Job —</option>${labelOpts}`
+        : shortOpts;
     sel.innerHTML = withEmpty;
     if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
   }
+  renderJobPicker(list, document.getElementById("job-select")?.value || "");
   const root = document.getElementById("jobs");
   if (root) {
     root.innerHTML =
@@ -2322,6 +2328,122 @@ function renderJobs(jobs) {
   syncJobArgsHint(list);
   syncJobSelectHint(list);
   syncDeployGpusDefault(list);
+}
+
+function jobPickerDetail(job) {
+  const model = job.model ? String(job.model).split("/").pop() : "";
+  const source = { local: "本地", template: "模板", bundle: "推荐包" }[job.source] || job.source || "";
+  return [
+    job.description || "",
+    model ? `模型 ${model}` : "",
+    `${job.gpus_per_node ?? "?"} GPU/节点`,
+    job.distributed ? "多机" : "",
+    source,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function renderJobPicker(jobs, selected) {
+  const menu = $("job-picker-menu");
+  const label = $("job-picker-label");
+  const sel = $("job-select");
+  if (!menu || !label) return;
+  const list = jobs || [];
+  if (!list.length) {
+    label.textContent = "（无任务 — 请安装模板）";
+    menu.innerHTML =
+      '<div class="job-option" aria-disabled="true"><strong>暂无已安装任务</strong>' +
+      '<span class="meta">先到「从模板安装」安装模板</span></div>';
+    return;
+  }
+  const current = list.some((j) => j.name === selected) ? selected : list[0].name;
+  if (sel && sel.value !== current) sel.value = current;
+  const job = list.find((j) => j.name === current) || list[0];
+  label.textContent = job.gpus_per_node != null ? `${job.name} · ${job.gpus_per_node} GPU` : job.name;
+  menu.innerHTML = list
+    .map(
+      (j) => `<button type="button" class="job-option" role="option" data-job-value="${escapeHtml(j.name)}"
+        aria-selected="${j.name === current}"><strong>${escapeHtml(j.name)}</strong>
+        <span class="meta">${escapeHtml(jobPickerDetail(j))}</span></button>`
+    )
+    .join("");
+  if (!menu.hidden) {
+    menu.querySelector('.job-option[aria-selected="true"]')?.focus();
+  }
+}
+
+function setJobPickerOpen(open) {
+  const btn = $("job-picker-btn");
+  const menu = $("job-picker-menu");
+  if (!btn || !menu) return;
+  menu.hidden = !open;
+  btn.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) {
+    const active =
+      menu.querySelector('.job-option[aria-selected="true"]') || menu.querySelector(".job-option");
+    active?.focus();
+  }
+}
+
+function selectJobPickerValue(value) {
+  const sel = $("job-select");
+  if (!sel || !value) return;
+  sel.value = value;
+  sel.dispatchEvent(new Event("change", { bubbles: true }));
+  renderJobPicker(state.jobs, value);
+  setJobPickerOpen(false);
+  $("job-picker-btn")?.focus();
+}
+
+function bindJobPicker() {
+  const btn = $("job-picker-btn");
+  const menu = $("job-picker-menu");
+  const picker = $("job-picker");
+  if (!btn || !menu || !picker) return;
+  btn.addEventListener("click", () => setJobPickerOpen(menu.hidden));
+  btn.addEventListener("keydown", (ev) => {
+    if (["ArrowDown", "Enter", " "].includes(ev.key)) {
+      ev.preventDefault();
+      setJobPickerOpen(true);
+    } else if (ev.key === "Escape") {
+      setJobPickerOpen(false);
+    }
+  });
+  menu.addEventListener("click", (ev) => {
+    const opt = ev.target.closest ? ev.target.closest("[data-job-value]") : null;
+    if (!opt) return;
+    selectJobPickerValue(opt.dataset.jobValue);
+  });
+  menu.addEventListener("keydown", (ev) => {
+    const options = [...menu.querySelectorAll(".job-option[data-job-value]")];
+    const idx = options.indexOf(document.activeElement);
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      const next = ev.key === "ArrowDown" ? Math.min(options.length - 1, idx + 1) : Math.max(0, idx - 1);
+      options[next]?.focus();
+    } else if (ev.key === "Home") {
+      ev.preventDefault();
+      options[0]?.focus();
+    } else if (ev.key === "End") {
+      ev.preventDefault();
+      options[options.length - 1]?.focus();
+    } else if (ev.key === "Enter" || ev.key === " ") {
+      ev.preventDefault();
+      const active = document.activeElement;
+      if (active?.dataset?.jobValue) selectJobPickerValue(active.dataset.jobValue);
+    } else if (ev.key === "Escape") {
+      ev.preventDefault();
+      setJobPickerOpen(false);
+      btn.focus();
+    }
+  });
+  document.addEventListener("click", (ev) => {
+    if (!menu.hidden && !picker.contains(ev.target)) setJobPickerOpen(false);
+  });
+  $("job-select")?.addEventListener("change", () => {
+    renderJobPicker(state.jobs, $("job-select")?.value || "");
+  });
 }
 
 function syncJobSelectHint(jobs) {
@@ -5039,6 +5161,7 @@ async function boot() {
       setBusy(false);
     }
   });
+  bindJobPicker();
   document.getElementById("job-select")?.addEventListener("change", () => {
     syncJobArgsHint(state.overview?.jobs);
   });

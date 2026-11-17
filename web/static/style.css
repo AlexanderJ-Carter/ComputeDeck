@@ -5195,3 +5195,120 @@ a[aria-disabled="true"]:hover {
 .list .item > strong.chip {
   flex: 0 0 auto;
 }
+
+/* 任务选择：自定义下拉，选项可多行完整显示，不使用原生 select 的截断 */
+.job-picker {
+  position: relative;
+}
+
+.job-picker-btn {
+  width: 100%;
+  min-height: var(--control-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--input);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.job-picker-btn:hover {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  transform: none;
+}
+
+.job-picker-btn:active {
+  transform: none;
+}
+
+.job-picker-btn[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+#job-picker-label {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.job-picker-caret {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.job-picker-menu {
+  position: absolute;
+  z-index: 40;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  max-height: min(320px, 50vh);
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-solid);
+  box-shadow: var(--shadow-soft);
+}
+
+.job-option {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  white-space: normal;
+  cursor: pointer;
+}
+
+.job-option:hover,
+.job-option:active {
+  transform: none;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.job-option[aria-selected="true"] {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.job-option strong {
+  font-size: var(--fs-sm);
+}
+
+.job-option .meta {
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.job-picker-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (max-width: 767px) {
+  .job-picker-btn {
+    min-height: 42px;
+  }
+}

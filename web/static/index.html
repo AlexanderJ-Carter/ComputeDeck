@@ -316,7 +316,18 @@ gpu-control jobs install vllm-serve --name vllm</pre>
             <div class="panel-h">
               <h2>任务操作</h2>
             </div>
-            <label class="field"><span>已安装任务</span><select id="job-select"></select></label>
+            <div class="field job-picker-field">
+              <span>已安装任务</span>
+              <div class="job-picker" id="job-picker">
+                <button type="button" class="job-picker-btn" id="job-picker-btn" aria-haspopup="listbox"
+                  aria-expanded="false">
+                  <span id="job-picker-label">加载中…</span>
+                  <span class="job-picker-caret" aria-hidden="true">▾</span>
+                </button>
+                <div class="job-picker-menu" id="job-picker-menu" role="listbox" aria-label="已安装任务" hidden></div>
+                <select id="job-select" class="job-picker-native" aria-hidden="true" tabindex="-1"></select>
+              </div>
+            </div>
             <span id="job-select-hint" class="meta"></span>
             <label class="field">
               <span>目标节点</span>
