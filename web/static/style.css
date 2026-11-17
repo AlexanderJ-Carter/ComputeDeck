@@ -6354,3 +6354,607 @@ a[aria-disabled="true"]:hover {
     display: none;
   }
 }
+
+/* ==========================================================================
+   二级分页 — 入口 / 任务 / 模型等复杂页面
+   ========================================================================== */
+
+.section-shell {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.section-nav {
+  position: sticky;
+  top: 12px;
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel-2) 72%, transparent);
+}
+
+.section-nav-btn {
+  display: grid;
+  gap: 1px;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.section-nav-btn:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--ink);
+}
+
+.section-nav-btn.active {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--line));
+  color: var(--ink);
+}
+
+.section-nav-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.section-nav-sub {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.section-main {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  scroll-margin-top: 84px;
+}
+
+.section-page {
+  display: grid;
+  gap: 12px;
+  animation: section-page-in 0.18s ease both;
+}
+
+.section-page[hidden] {
+  display: none !important;
+}
+
+@keyframes section-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.section-page > .panel {
+  margin: 0;
+}
+
+/* 看板分区导航 */
+.page-toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 10px;
+}
+
+.page-toc button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel-2) 80%, transparent);
+  color: var(--muted);
+  padding: 5px 11px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.page-toc button:hover {
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--line));
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+#dash-top,
+#dash-trends,
+#dash-actions,
+#dash-notices {
+  scroll-margin-top: 84px;
+}
+
+@media (max-width: 1000px) {
+  .section-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .section-nav {
+    position: static;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .section-nav-btn {
+    flex: 1 1 150px;
+  }
+
+  .section-nav-sub {
+    display: none;
+  }
+}
+
+/* ==========================================================================
+   单屏应用外壳 — 页面刚好占满一屏
+   ========================================================================== */
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  overflow: hidden;
+}
+
+.layout {
+  height: 100vh;
+  min-height: 0;
+}
+
+.rail {
+  height: 100vh;
+}
+
+.main {
+  height: 100vh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 12px 18px 12px;
+}
+
+.topbar,
+.subnav {
+  flex: 0 0 auto;
+}
+
+.view.active {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+}
+
+.console-wrap {
+  flex: 0 0 auto;
+  margin-top: 6px;
+}
+
+/* —— 看板：顶部状态 / 操作 / 底部趋势 + 公告 —— */
+.view.active.dash {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1.15fr) auto minmax(0, 0.95fr);
+  gap: 10px;
+  overflow: hidden;
+}
+
+.dash > #freshness-banner {
+  grid-row: 1;
+}
+
+.dash > .page-toc {
+  grid-row: 2;
+  margin: 0;
+}
+
+.dash > .dash-top {
+  grid-row: 3;
+  min-height: 0;
+  margin: 0;
+}
+
+.dash > .dash-actions {
+  grid-row: 4;
+  margin: 0;
+}
+
+.dash > .dash-bottom {
+  grid-row: 5;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.9fr);
+  gap: 12px;
+  overflow: hidden;
+}
+
+.dash-bottom > .panel {
+  margin: 0;
+  min-height: 0;
+  max-height: 100%;
+  overflow: auto;
+}
+
+.dash-top > .panel {
+  min-height: 0;
+  max-height: 100%;
+  overflow: auto;
+}
+
+/* —— 二级分页页面 —— */
+.view.active > .section-shell,
+.view.active > .config-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.section-main,
+.config-main {
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.section-page,
+.config-page {
+  min-height: 0;
+  align-content: start;
+}
+
+.section-page > .panel,
+.config-page > .panel {
+  min-height: 0;
+  max-height: 100%;
+  overflow: auto;
+}
+
+.section-page > .setup-grid,
+.config-page > .setup-grid {
+  min-height: 0;
+  max-height: 100%;
+  overflow: auto;
+}
+
+/* —— 节点：KPI 固定，卡片区内部滚动 —— */
+.view[data-view-panel="cluster"] > .panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  margin: 0;
+}
+
+.view[data-view-panel="cluster"] .mosaic {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* —— 工具栈：左右分栏，各自滚动 —— */
+.view.active[data-view-panel="toolkits"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 12px;
+  overflow: hidden;
+}
+
+.view.active[data-view-panel="toolkits"] > .panel {
+  margin: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* —— 交互终端：终端占满，指标区限高 —— */
+.view.active[data-view-panel="terminal"] {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.view.active[data-view-panel="terminal"] > .panel {
+  margin: 0;
+  min-height: 0;
+}
+
+.view.active[data-view-panel="terminal"] > .panel:first-child {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.view.active[data-view-panel="terminal"] .term-host {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 200px;
+}
+
+.view.active[data-view-panel="terminal"] > .panel:last-child {
+  max-height: 24vh;
+  overflow: auto;
+}
+
+@media (max-width: 1100px) {
+  body {
+    overflow: auto;
+  }
+
+  .main {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  .view.active,
+  .view.active.dash {
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
+  }
+
+  .dash > .dash-bottom,
+  .view.active[data-view-panel="toolkits"] {
+    display: block;
+  }
+
+  .dash-bottom > .panel,
+  .view.active[data-view-panel="toolkits"] > .panel {
+    margin-bottom: 12px;
+  }
+}
+
+/* 任务页：控制与列表左右分栏，各自内部滚动 */
+.section-page--two {
+  grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
+  align-items: stretch;
+}
+
+.section-page--two > .panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 100%;
+  overflow: auto;
+}
+
+.section-page--two #jobs {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+@media (max-width: 1100px) {
+  .section-page--two {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 分页外壳：主体占满剩余高度，侧栏保持顶部对齐 */
+.section-shell,
+.config-shell {
+  align-items: stretch;
+}
+
+.section-nav,
+.config-side {
+  align-self: start;
+}
+
+.section-main,
+.config-main {
+  height: 100%;
+}
+
+/* 登录密码 / 日志 / 远程接入 */
+.auth-password-box {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--panel-2) 62%, transparent);
+}
+
+#auth-password-state[data-state="ok"] {
+  color: var(--ok);
+}
+
+#auth-password-state[data-state="warn"] {
+  color: var(--warn);
+}
+
+.auth-sep {
+  margin: 12px 0;
+  border: 0;
+  border-top: 1px dashed var(--line);
+}
+
+.config-page--two {
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.config-page--two > .config-page-h {
+  grid-column: 1 / -1;
+}
+
+.config-page--two > .panel {
+  min-height: 0;
+  max-height: 100%;
+  overflow: auto;
+}
+
+.log-view {
+  max-height: none;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.runlog-list {
+  max-height: 100%;
+  overflow: auto;
+}
+
+.runlog-item {
+  display: grid;
+  gap: 2px;
+}
+
+.runlog-item[data-tone="ok"] strong {
+  color: var(--ok);
+}
+
+.runlog-item[data-tone="bad"] strong {
+  color: var(--bad);
+}
+
+@media (max-width: 1100px) {
+  .config-page--two {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+  }
+
+  .config-page--two > .config-page-h {
+    grid-column: auto;
+  }
+}
+
+/* 趋势曲线：两列 + 时间轴 */
+.trend-charts {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.trend-chart-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  opacity: 0.75;
+}
+
+@media (max-width: 1200px) {
+  .trend-charts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* 看板：压缩顶部与操作区，给趋势曲线留出整屏高度 */
+.view.active.dash {
+  grid-template-rows: auto auto minmax(0, 0.9fr) auto minmax(0, 1.1fr);
+}
+
+.dash > .dash-actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.dash-actions .dash-ops,
+.dash-actions .dash-deploy {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dash-actions .dash-ops button,
+.dash-actions .dash-deploy button {
+  height: 32px;
+  padding: 0 11px;
+  font-size: 12px;
+}
+
+.dash > .dash-top {
+  min-height: 200px;
+}
+
+.trend-chart {
+  padding: 6px 8px 4px;
+}
+
+.trend-chart svg {
+  height: 58px;
+}
+
+.trend-chart figcaption {
+  margin-bottom: 2px;
+}
+
+/* 看板趋势：再紧凑一档，四条曲线在首屏完整可见 */
+.trend-chart {
+  padding: 4px 8px 3px;
+}
+
+.trend-chart svg {
+  height: 48px;
+}
+
+.trend-chart figcaption {
+  font-size: 11px;
+  margin-bottom: 1px;
+}
+
+.trend-chart-axis {
+  margin-top: 0;
+  font-size: 8.5px;
+}
+
+.view.active.dash {
+  grid-template-rows: auto auto minmax(0, 0.75fr) auto minmax(0, 1.25fr);
+}
+
+.dash-bottom > .panel {
+  padding: 10px 12px;
+}
+
+.trend-kpis {
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.trend-kpis > div {
+  padding: 6px 8px;
+}
+
+.trend-kpis strong {
+  font-size: 15px;
+}
+
+.dash-trends .panel-h,
+.dash-notices .panel-h {
+  align-items: flex-start;
+  margin-bottom: 6px;
+}
+
+.dash-trends .panel-h .meta {
+  font-size: 10px;
+  line-height: 1.25;
+}

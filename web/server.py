@@ -108,7 +108,9 @@ from auth_util import (  # noqa: E402
     parse_cookies,
     password_login_allowed,
     record_login_failure,
+    save_auth_mode,
     session_cookie_header,
+    set_password,
     try_login,
     verify_api_token,
     verify_session,
@@ -861,6 +863,13 @@ def assistant_runners(jobs_list: list[dict]) -> dict:
     def _notices(_args: dict) -> Any:
         return list_notices(limit=50)
 
+    def _metrics_history(args: dict) -> Any:
+        try:
+            limit = int((args or {}).get("limit") or 60)
+        except (TypeError, ValueError):
+            limit = 60
+        return list_history(limit=max(5, min(limit, 240)))
+
     def _liveness(args: dict) -> Any:
         action = str((args or {}).get("action") or "status")
         if action == "check":
@@ -899,6 +908,7 @@ def assistant_runners(jobs_list: list[dict]) -> dict:
         "gc_exec_preset": _exec_preset,
         "gc_exec": _exec_command,
         "gc_api_catalog": lambda _args: catalog_payload(),
+        "gc_metrics_history": _metrics_history,
         "gc_get_config": _config,
         "gc_queue": _queue,
         "gc_lease": _lease,
@@ -955,6 +965,23 @@ def compact_action_result(data: Any) -> Any:
     out.pop("overview", None)
     out.pop("liveness", None)
     return out
+
+
+def _tail_lines(path: Path, lines: int, *, max_block: int = 512 * 1024) -> list[str]:
+    """读取文本日志末尾若干行；大文件只读最后一段。"""
+    try:
+        with path.open("rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            block = min(size, max(64 * 1024, min(max_block, lines * 4096)))
+            fh.seek(size - block)
+            raw = fh.read()
+    except OSError:
+        return []
+    rows = raw.decode("utf-8", errors="replace").splitlines()
+    if block < size and rows:
+        rows = rows[1:]
+    return rows[-lines:]
 
 
 def assistant_known_jobs(jobs_list: list[dict]) -> set[str]:
@@ -2542,6 +2569,56 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, list_runlog(limit=limit, kind=kind))
             return
 
+        if path == "/api/logs":
+            qs = parse_qs(parsed.query)
+            name = (qs.get("name") or ["ui"])[0]
+            try:
+                lines = int((qs.get("lines") or ["200"])[0])
+            except ValueError:
+                lines = 200
+            lines = max(1, min(lines, 2000))
+            log_files = {
+                "ui": STATE_DIR / "ui.log",
+                "watchdog": STATE_DIR / "watchdog.log",
+                "ingress-edge": STATE_DIR / "ingress-edge.log",
+                "ingress-litellm": STATE_DIR / "ingress-litellm.log",
+                "cloudflared": STATE_DIR / "cloudflared.log",
+                "runlog": STATE_DIR / "runlog.jsonl",
+            }
+            log_path = log_files.get(name)
+            if log_path is None:
+                self._json(400, {"ok": False, "error": f"unknown log: {name}"})
+                return
+            if not log_path.is_file():
+                self._json(
+                    200,
+                    {
+                        "ok": True,
+                        "name": name,
+                        "path": str(log_path),
+                        "exists": False,
+                        "lines": [],
+                        "size": 0,
+                    },
+                )
+                return
+            stat = log_path.stat()
+            self._json(
+                200,
+                {
+                    "ok": True,
+                    "name": name,
+                    "path": str(log_path),
+                    "exists": True,
+                    "size": stat.st_size,
+                    "modified": datetime.fromtimestamp(stat.st_mtime, timezone.utc).strftime(
+                        "%Y-%m-%dT%H:%M:%SZ"
+                    ),
+                    "lines": _tail_lines(log_path, lines),
+                },
+            )
+            return
+
         if path == "/api/diagnose":
             result = run_cli(["diagnose", "check"], timeout=60)
             try:
@@ -2882,6 +2959,34 @@ class Handler(BaseHTTPRequestHandler):
                     "token": token,
                     "path": str(token_path),
                     "auth": auth_status_payload(cfg=cfg),
+                },
+            )
+            return
+
+        if path == "/api/auth/password":
+            password = str(body.get("password") or "")
+            enable = bool(body.get("enable", True))
+            if len(password) < 8:
+                self._json(400, {"ok": False, "error": "密码至少 8 位"})
+                return
+            try:
+                hash_path = set_password(password)
+                if enable:
+                    save_auth_mode("password")
+            except ValueError as exc:
+                self._json(400, {"ok": False, "error": str(exc)})
+                return
+            try:
+                os.chmod(hash_path, 0o600)
+            except OSError:
+                pass
+            self._json(
+                200,
+                {
+                    "ok": True,
+                    "path": str(hash_path),
+                    "enabled": enable,
+                    "auth": auth_status_payload(),
                 },
             )
             return

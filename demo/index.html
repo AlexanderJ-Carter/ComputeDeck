@@ -5,7 +5,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ComputeDeck — 多节点 GPU 控制面</title>
-  <meta name="description" content="ComputeDeck：多节点 GPU 控制面 · 看板助手 · 命令补全 · 监管公告 · MCP。" />
+  <meta name="description" content="ComputeDeck：多节点 GPU 控制面 · 单屏工作台 · 配置分页 · AI 趋势解读 · MCP。" />
   <meta property="og:title" content="ComputeDeck — 多节点 GPU 控制面" />
   <meta property="og:description" content="多节点 GPU 控制面 · Web · CLI · AI 助手 · MCP" />
   <meta property="og:url" content="https://compute.alexander.xin/" />
@@ -36,6 +36,7 @@
     </a>
     <nav class="top-nav" aria-label="快捷">
       <button type="button" id="btn-play" class="ghost-btn" data-keep aria-pressed="false">自动播放</button>
+      <a href="https://alexanderj-carter.github.io/ComputeDeck/">文档</a>
       <a href="https://github.com/AlexanderJ-Carter/ComputeDeck">GitHub</a>
       <a class="cta" href="https://github.com/AlexanderJ-Carter/ComputeDeck#快速开始">开始使用</a>
     </nav>
@@ -56,7 +57,7 @@
         <p class="eyebrow reveal d1">多节点 GPU 控制面</p>
         <h1 class="reveal d2">ComputeDeck</h1>
         <p class="lede reveal d3">主控一台，卡、任务和入口都管得住。</p>
-        <p class="lede sub reveal d3">看板带 AI 助手与监管公告；命令行可补全；Agent 走同一套 MCP。</p>
+        <p class="lede sub reveal d3">单屏工作台 · 配置分页 · AI 趋势解读；命令行可补全，Agent 走同一套 MCP。</p>
         <div class="hero-stats reveal d4">
           <div class="stat-card"><b data-count="20">0</b><span>MCP 工具</span></div>
           <div class="stat-card"><b data-count="3">0</b><span>AI 能力</span></div>
@@ -118,16 +119,16 @@ GPU 3  76%  PID  9921  ???</pre>
         <h2 class="reveal d1">从看见卡，到对外服务</h2>
         <p class="body narrow reveal d2">占卡、跑任务、对外入口、Agent 接入，都落在同一套配置和状态里。</p>
         <ol class="cap-rail reveal d3">
-          <li><strong>看板</strong><span>健康分 · GPU 池 · 入口</span></li>
+          <li><strong>单屏</strong><span>一页一屏 · 列表内部滚动</span></li>
+          <li><strong>看板</strong><span>健康分 · GPU 池 · 趋势</span></li>
           <li><strong>Job</strong><span>推理 / 训练 / Ray / Docker</span></li>
-          <li><strong>路径</strong><span>defaults.paths · 节点覆盖</span></li>
-          <li><strong>入口</strong><span>Edge · 重试 · least-conn</span></li>
-          <li><strong>腾空</strong><span>free · cordon · 清进程</span></li>
+          <li><strong>配置</strong><span>左侧分页 · 一次一页</span></li>
+          <li><strong>入口</strong><span>Edge · LiteLLM · 远程接入</span></li>
           <li><strong>模型栈</strong><span>拉取校验 · train/serve</span></li>
-          <li><strong>AI</strong><span>助手对话 · 命令补全 · 监管</span></li>
+          <li><strong>AI</strong><span>趋势解读 · 行内确认 · 监管</span></li>
           <li><strong>Agent</strong><span>OpenAPI · 20 个 gc_*</span></li>
         </ol>
-        <p class="rail-foot reveal d4">场景在 UI 里配；高级仍可写 <code>config/local</code>。</p>
+        <p class="rail-foot reveal d4">日常在 UI 里配；高级仍可写 <code>config/local</code>。</p>
       </div>
     </section>
 
@@ -138,9 +139,9 @@ GPU 3  76%  PID  9921  ???</pre>
         <div>
           <p class="eyebrow reveal">看得见</p>
           <h2 class="reveal d1">池子、占用、入口一眼排开</h2>
-          <p class="body reveal d2">看板先看总览。腾空、隔离、探测都是明确动作，不用猜。</p>
+          <p class="body reveal d2">看板先看总览；趋势把 API 连通、GPU 算力/显存、槽位、节点在线率与队列等待放在同一条时间线上。</p>
           <ul class="bullet reveal d3">
-            <li>GPU 快照和主机指标可刷新</li>
+            <li>60 分钟曲线 · 三列排布 · 时间轴与末值</li>
             <li><code>free</code>：停 Job、清进程、释租约</li>
             <li><code>cordon</code>：隔离调度，部署会躲开</li>
           </ul>
@@ -191,22 +192,21 @@ GPU 3  76%  PID  9921  ???</pre>
       <div class="slide-inner split">
         <div>
           <p class="eyebrow reveal">配置驱动</p>
-          <h2 class="reveal d1">换集群，主要改 JSON</h2>
-          <p class="body reveal d2">真实环境写在 <code>config/local/</code>。路径、SSH、标签、默认 Job、<code>unit_gpus</code>
-            写清楚，框架保持中性。</p>
+          <h2 class="reveal d1">一页一件事，配置不再堆成山</h2>
+          <p class="body reveal d2">SSH、节点、Job、巡检、登录与 OAuth、远程接入、日志各占一页；左侧分页直达，保存后自动刷新就绪状态。真实环境仍落在 <code>config/local/</code>。</p>
         </div>
-        <div class="code-shell reveal d3">
-          <div class="code-chrome"><span>nodes.json</span><em>defaults.paths</em></div>
-          <pre class="code-panel" tabindex="0"><code>{
-  "python": "/opt/conda/bin/python",
-  "model_root": "/data/models",
-  "workdir": "/data/jobs",
-  "cache": "/data/cache"
-}
-
-# Job 里引用
-"script": "${paths.repo}/manage.py"
-"python": "${paths.python}"</code></pre>
+        <div class="cfg-mock reveal d3" aria-hidden="true">
+          <div class="cfg-mock-head"><strong>配置中心</strong><span>左侧分页 · 一次一页</span></div>
+          <ul>
+            <li class="on">1 基础连接 <em>SSH · 集群策略</em></li>
+            <li>2 节点清单 <em>主机 · GPU · 标签</em></li>
+            <li>3 Job 模板 <em>启停 · 运行时</em></li>
+            <li>4 巡检与守护 <em>Watchdog</em></li>
+            <li>5 登录与鉴权 <em>密码 · OIDC · Token</em></li>
+            <li>6 远程接入 <em>Tailscale · 端口</em></li>
+            <li>日志与诊断 <em>UI · watchdog · 审计</em></li>
+          </ul>
+          <p class="cfg-mock-foot">高级项仍可写 <code>config/local</code></p>
         </div>
       </div>
     </section>
@@ -283,8 +283,7 @@ GPU 3  76%  PID  9921  ???</pre>
       <div class="slide-inner">
         <p class="eyebrow reveal">AI · Agent</p>
         <h2 class="reveal d1">AI 自动巡检，配置也能一步一步带你</h2>
-        <p class="body narrow reveal d2">SSH / 主机 / API / 互通 / GPU 在过期前自动采集；异常时 AI 生成只读建议。「配置就绪」逐步检查并让 AI
-          指导下一步；Cursor / Claude Code 仍走同一 <code>bin/gpu-control-mcp</code>。</p>
+        <p class="body narrow reveal d2">AI 能读最近一小时趋势，解释 GPU 负载、队列积压与入口异常；写操作先出行内确认卡，破坏性操作二次确认。SSH / 主机 / API / 互通 / GPU 在过期前自动采集，「配置就绪」逐步检查并让 AI 指导下一步；Cursor / Claude Code 仍走同一 <code>bin/gpu-control-mcp</code>。</p>
         <div class="ai-stage reveal d3" aria-hidden="true">
           <div class="ai-demo">
             <article class="ai-card glow">
@@ -383,7 +382,7 @@ GPU 3  76%  PID  9921  ???</pre>
           </article>
           <article>
             <strong>鉴权</strong>
-            <p>密码或 OIDC（PKCE + userinfo），Session / Bearer；密钥权限与登录节流。</p>
+            <p>密码 / OIDC（PKCE + userinfo）在配置页集中管理；设置页可轮换密码、生成 Token，Session / Bearer 与登录节流。</p>
           </article>
           <article>
             <strong>终端</strong>
@@ -404,7 +403,7 @@ GPU 3  76%  PID  9921  ???</pre>
         <div class="finale-copy">
           <p class="eyebrow reveal">开源 · AGPL-3.0</p>
           <h2 class="reveal d1">拿到你的机房里用</h2>
-          <p class="body reveal d2">克隆 + <code>uv</code> 或容器跑起控制面。UI 里配节点 / Job / 助手上游；看板能对话、补全命令、看监管公告。不发 PyPI / npm。</p>
+          <p class="body reveal d2">克隆 + <code>uv</code> 或容器跑起控制面。UI 里按左侧分页配节点 / Job / 登录 / 远程 / 日志；看板一屏看趋势、和 AI 对话、补全命令。不发 PyPI / npm。</p>
           <ul class="finale-ai reveal d3">
             <li><strong>AI 对话</strong><span>总览 · 自检 · 建议操作</span></li>
             <li><strong>命令补全</strong><span>exec suggest</span></li>
@@ -415,6 +414,7 @@ GPU 3  76%  PID  9921  ???</pre>
             <a class="btn primary" href="https://github.com/AlexanderJ-Carter/ComputeDeck">打开 GitHub</a>
             <a class="btn ghost" href="https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/docs/ai-接入.md">AI /
               MCP</a>
+            <a class="btn ghost" href="https://alexanderj-carter.github.io/ComputeDeck/">文档站</a>
             <a class="btn ghost" href="https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/docs/手册.md">阅读手册</a>
             <a class="btn ghost"
               href="https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/docs/develop/docker.md">容器部署</a>

@@ -25,8 +25,11 @@ class TestMetricsHistory(unittest.TestCase):
                 "api_fail": 2,
                 "api_total": 10,
                 "leases": 1,
-                "queue_pending": 0,
+                "queue_pending": 3,
+                "nodes": 2,
+                "nodes_online": 1,
             },
+            "quality": {"score": 88, "grade": "good"},
             "nodes": [
                 {
                     "cpu_percent": 20,
@@ -81,7 +84,13 @@ class TestMetricsHistory(unittest.TestCase):
         self.assertEqual(last["gpu_mem_util_pct"], 25.0)
         self.assertEqual(last["cpu_avg_pct"], 30.0)
         self.assertEqual(last["edge_upstreams"], 6)
+        self.assertEqual(last["queue_pending"], 3)
+        self.assertEqual(last["nodes_online_pct"], 50.0)
+        self.assertEqual(last["quality_score"], 88)
         self.assertNotIn("gpu_util_pct", last)
+        series = {row["id"] for row in out["series"]}
+        self.assertIn("nodes_online_pct", series)
+        self.assertIn("queue_pending", series)
 
     def test_prune_old_points(self) -> None:
         overview = {

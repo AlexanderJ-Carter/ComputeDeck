@@ -392,6 +392,12 @@ _SPECS: list[dict[str, Any]] = [
         risk="read",
     ),
     _spec(
+        "gc_metrics_history",
+        "最近约 1 小时的控制面趋势采样：API 连通率、GPU 算力/显存利用率、槽位占用、CPU 均载、节点在线率、队列等待。",
+        parameters=_obj(limit={"type": "integer", "description": "返回点数，默认 60"}),
+        risk="read",
+    ),
+    _spec(
         "gc_get_config",
         "读取配置。kind=cluster|nodes|job；job 需要 name。",
         parameters=_obj(

@@ -98,6 +98,13 @@ def sample_from_overview(overview: dict[str, Any]) -> dict[str, Any]:
     gpus_total = int(summary.get("gpus_total") or (gpus_used + gpus_free) or 0)
     api_rate = round(100.0 * api_ok / api_total, 2) if api_total else None
     alloc_rate = round(100.0 * gpus_used / gpus_total, 2) if gpus_total else None
+    nodes_total = int(summary.get("nodes") or 0)
+    nodes_online = int(summary.get("nodes_online") or 0)
+    nodes_online_pct = (
+        round(100.0 * nodes_online / nodes_total, 2) if nodes_total else None
+    )
+    quality = overview.get("quality") if isinstance(overview.get("quality"), dict) else {}
+    quality_score = quality.get("score")
     sm_util, mem_util = _gpu_real_utils(overview)
     upstream = pool.get("available")
     if upstream is None:
@@ -119,6 +126,10 @@ def sample_from_overview(overview: dict[str, Any]) -> dict[str, Any]:
         "edge_upstreams": int(upstream) if upstream is not None else None,
         "leases": int(summary.get("leases") or 0),
         "queue_pending": int(summary.get("queue_pending") or 0),
+        "nodes_online": nodes_online,
+        "nodes_total": nodes_total,
+        "nodes_online_pct": nodes_online_pct,
+        "quality_score": quality_score,
     }
 
 
@@ -185,5 +196,8 @@ def list_history(*, limit: int = 120) -> dict[str, Any]:
             {"id": "gpu_alloc_pct", "label": "GPU 槽位占用 %"},
             {"id": "cpu_avg_pct", "label": "节点 CPU 均载 %"},
             {"id": "edge_upstreams", "label": "入口上游数"},
+            {"id": "nodes_online_pct", "label": "节点在线率 %"},
+            {"id": "queue_pending", "label": "队列等待数"},
+            {"id": "quality_score", "label": "健康评分"},
         ],
     }

@@ -112,7 +112,8 @@ open http://127.0.0.1:8787/api/docs
 - `POST /api/assistant/config` · `GET|POST /api/assistant/models` — UI 设置上游与拉取模型列表
 - `POST /api/assistant/analyze` — 只读解读 overview + notices + diagnose
 - `GET /api/notices` · `POST /api/notices/mark` — 监管公告（规则告警；可 `?sync=1`）
-- `GET /api/metrics/history` — 看板趋势采样（API/GPU/CPU/健康分）
+- `GET /api/metrics/history` — 看板趋势采样（API/GPU/CPU/在线率/队列/健康分）
+- `GET /api/logs?name=ui|watchdog|ingress-edge|ingress-litellm|cloudflared|runlog&lines=200` — 日志尾（需鉴权）
 - `GET /api/exec/suggest` — 远程命令补全
 
 **助手确认协议**：对话返回 `conversation_id` 与 `pending_actions[]`（确认卡）。确认后调用：
@@ -127,6 +128,8 @@ POST /api/assistant/execute
 ```
 
 服务端会重新校验节点 / Job 是否仍存在、目标是否离线、参数哈希是否被篡改，然后回调已有 `/api/*` 执行；执行结果以 `role:"tool"` 写回会话，再让模型总结并给出下一步。`stage:"reject"` 可取消。坏参数、未知目标、离线目标都会被拒绝并返回结构化错误，不会产生任何写操作。
+
+**趋势工具**：助手可调用 `gc_metrics_history`（只读）读取最近约 1 小时的控制面趋势，包括 API 连通率、GPU 算力/显存、槽位占用、CPU 均载、节点在线率、队列等待与健康评分；看板「趋势」面板的「让 AI 解读」会直接发起这条分析。
 
 **UI 交互**：确认卡内联在对话流中。普通写操作点一次「允许」即执行；破坏性操作需要在同一张卡上再点一次（Esc 可取消这次确认）。执行时卡片下方出现运行块，节点结果与命令输出就地展开，随后由模型给出总结。只读工具不弹确认，直接在回答上方以步骤形式显示。
 

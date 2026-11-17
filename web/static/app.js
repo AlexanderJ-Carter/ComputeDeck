@@ -6,6 +6,7 @@ const state = {
   autoTimer: null,
   view: "actions",
   configPage: "connect",
+  sectionPages: {},
   quality: null,
   refreshInFlight: false,
   lb: null,
@@ -872,6 +873,7 @@ function renderAuthSessionChip(auth) {
 async function refreshAuthStatus() {
   const data = await api("/api/auth/status");
   state.auth = data;
+  updateAuthPasswordState(data);
   const needLogin = !!(data.enabled && !data.authenticated);
   showAuthGate(needLogin);
   const logout = document.getElementById("btn-logout");
@@ -1171,10 +1173,19 @@ async function refreshRemoteStatus() {
   }
 }
 
+function remoteSelection() {
+  const mode = $("remote-mode")?.value || "auto";
+  const rawPort = $("remote-port")?.value || "";
+  const port = rawPort ? Number(rawPort) : null;
+  return { mode, port: Number.isFinite(port) && port > 0 ? port : null };
+}
+
 function renderRemote(data) {
   const meta = $("remote-meta");
   const body = $("remote-body");
   if (!body) return;
+  const portInput = $("remote-port");
+  if (portInput && !portInput.value && data.ui_port) portInput.value = String(data.ui_port);
   const tail = data.tailscale || {};
   const cf = data.cloudflared || {};
   if (meta) meta.textContent = data.summary || "已检测";
@@ -1198,8 +1209,10 @@ function renderRemote(data) {
 
 async function remotePlan() {
   const body = $("remote-body");
+  const { mode, port } = remoteSelection();
+  const query = `plan=1&mode=${encodeURIComponent(mode)}${port ? `&port=${port}` : ""}`;
   try {
-    const data = await api("/api/remote?plan=1&mode=auto", { timeoutMs: 20000 });
+    const data = await api(`/api/remote?${query}`, { timeoutMs: 20000 });
     if (body) {
       const lines = [
         `模式：${data.mode}`,
@@ -1220,10 +1233,11 @@ async function remotePlan() {
 }
 
 async function remoteUp() {
+  const { mode, port } = remoteSelection();
   const ok = await confirmDialog({
     title: "启动远程接入",
     message:
-      "将按检测结果启动 Tailscale serve 或 Cloudflare 接入。\n默认只暴露到 tailnet；公网模式必须已有鉴权。",
+      `将启动 ${mode === "auto" ? "自动推荐的" : mode} 接入${port ? `，端口 ${port}` : ""}。\n默认只暴露到 tailnet；公网模式必须已有鉴权。`,
     tone: "primary",
     confirmText: "启动",
   });
@@ -1231,7 +1245,7 @@ async function remoteUp() {
   try {
     const data = await api("/api/remote/action", {
       method: "POST",
-      body: JSON.stringify({ action: "up", mode: "auto", confirm: true }),
+      body: JSON.stringify({ action: "up", mode, port, confirm: true }),
       timeoutMs: 60000,
     });
     if (data.ok) toastOk(`远程接入已启动：${data.mode || ""}`);
@@ -3938,7 +3952,8 @@ function scrollBehavior() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
 }
 
-const CONFIG_PAGES = ["connect", "nodes", "jobs", "ops", "auth", "checklist", "integration", "docs", "raw"];
+const SECTION_NAV_SETTERS = {};
+const CONFIG_PAGES = ["connect", "nodes", "jobs", "ops", "auth", "remote", "checklist", "logs", "integration", "docs", "raw"];
 const CONFIG_ALIASES = {
   wizard: "connect",
   "cfg-ssh": "connect",
@@ -3947,6 +3962,7 @@ const CONFIG_ALIASES = {
   "cfg-job": "jobs",
   "cfg-watchdog": "ops",
   "cfg-auth": "auth",
+  "cfg-remote": "remote",
 };
 
 function setConfigTab(name, { updateHash = false, focus = false, scroll = false } = {}) {
@@ -3967,6 +3983,13 @@ function setConfigTab(name, { updateHash = false, focus = false, scroll = false 
   });
   if (updateHash && state.view === "config") {
     history.replaceState(null, "", `#/config/${page}`);
+  }
+  if (page === "logs") {
+    loadLog().catch(() => {});
+    loadRunlog().catch(() => {});
+  }
+  if (page === "remote") {
+    refreshRemoteStatus().catch(() => {});
   }
   if (scroll) {
     $("config-main")?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
@@ -4030,14 +4053,25 @@ function setView(name, { updateHash = true } = {}) {
   renderSubnav(name);
   const hint = $("cli-hint-code");
   if (hint) hint.textContent = VIEW_CLI[name] || "gpu-control --help";
+  const route = currentRoute();
+  const requestedTab = route.view === name ? route.tab : "";
+  const section = name !== "config" ? SECTION_NAV_SETTERS[name] : null;
+  const configPage = name === "config" ? requestedTab || state.configPage || "connect" : "";
+  const sectionPage = section ? requestedTab || state.sectionPages[name] || section.default : "";
   if (updateHash) {
-    const tab = name === "config" ? resolved.tab || state.configPage || "connect" : "";
-    const hash = name === "config" ? `#/config/${tab}` : `#/${name}`;
+    const tab = name === "config" ? configPage : section ? sectionPage : "";
+    const hash = tab ? `#/${name}/${tab}` : `#/${name}`;
     if (location.hash !== hash) history.pushState(null, "", hash);
   }
   if (name === "config") {
-    setConfigTab(resolved.tab || state.configPage || "connect", { updateHash: false });
+    setConfigTab(configPage, { updateHash: false });
+  } else if (section) {
+    section.set(sectionPage);
   }
+  const activeSubLabel = document
+    .querySelector(".config-nav.active .config-nav-title, .section-nav-btn.active .section-nav-title")
+    ?.textContent?.trim();
+  if (activeSubLabel) document.title = `ComputeDeck · ${VIEW_TITLE[name] || name} / ${activeSubLabel}`;
   renderView(name);
   if (name === "config" && !stateSetup.data) {
     loadSetup().catch((err) => actionError("加载配置", err));
@@ -4484,6 +4518,7 @@ function fillSetupForm(data) {
 
   const auth = (cluster.control && cluster.control.auth) || {};
   const oidc = auth.oidc || {};
+  updateAuthPasswordState(state.auth || auth);
   if ($("auth-mode")) $("auth-mode").value = auth.mode || "off";
   if ($("auth-ttl")) $("auth-ttl").value = auth.session_ttl_hours ?? 168;
   if ($("auth-password-hash")) $("auth-password-hash").value = auth.password_hash_file || "";
@@ -4612,6 +4647,61 @@ function renderConfigNavStatus(data) {
     dot.dataset.state = ok ? "ok" : "warn";
     dot.textContent = ok ? "✓" : "!";
     dot.title = ok ? "已就绪" : "待完善";
+  });
+}
+
+function bindSectionNav(viewName, navAttr, panelAttr, defaultName) {
+  const navs = Array.from(document.querySelectorAll(`[${navAttr}]`));
+  const panels = Array.from(document.querySelectorAll(`[${panelAttr}]`));
+  if (!navs.length || !panels.length) return null;
+  const set = (name, { focus = false, updateHash = false } = {}) => {
+    const known = navs.some((btn) => btn.getAttribute(navAttr) === name);
+    const target = known ? name : defaultName || navs[0].getAttribute(navAttr);
+    state.sectionPages[viewName] = target;
+    navs.forEach((btn) => {
+      const active = btn.getAttribute(navAttr) === target;
+      btn.classList.toggle("active", active);
+      if (active) btn.setAttribute("aria-current", "page");
+      else btn.removeAttribute("aria-current");
+      if (active && focus) btn.focus();
+    });
+    panels.forEach((panel) => {
+      const active = panel.getAttribute(panelAttr) === target;
+      panel.classList.toggle("active", active);
+      panel.hidden = !active;
+    });
+    if (updateHash && state.view === viewName) {
+      history.replaceState(null, "", `#/${viewName}/${target}`);
+    }
+  };
+  navs.forEach((btn, idx) => {
+    btn.addEventListener("click", () => set(btn.getAttribute(navAttr), { updateHash: true }));
+    btn.addEventListener("keydown", (ev) => {
+      const delta = ev.key === "ArrowDown" ? 1 : ev.key === "ArrowUp" ? -1 : 0;
+      if (!delta) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const next = navs[(idx + delta + navs.length) % navs.length];
+      set(next.getAttribute(navAttr), { focus: true, updateHash: true });
+    });
+  });
+  const initial = defaultName || navs[0].getAttribute(navAttr);
+  set(initial);
+  SECTION_NAV_SETTERS[viewName] = { set, default: initial };
+  return set;
+}
+
+function bindSectionNavs() {
+  bindSectionNav("endpoints", "data-endpoint-nav", "data-endpoint-panel", "overview");
+  bindSectionNav("workloads", "data-workload-nav", "data-workload-panel", "jobs");
+  bindSectionNav("models", "data-model-nav", "data-model-panel", "download");
+  bindSectionNav("ops", "data-ops-nav", "data-ops-panel", "exec");
+  document.querySelectorAll("[data-scroll-target]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document
+        .getElementById(btn.dataset.scrollTarget)
+        ?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
+    });
   });
 }
 
@@ -5893,6 +5983,14 @@ async function boot() {
 
   bindAssistant();
   bindConfigPages();
+  bindSectionNavs();
+  $("btn-save-password")?.addEventListener("click", saveAuthPassword);
+  $("btn-generate-password")?.addEventListener("click", generateAuthPassword);
+  $("log-file")?.addEventListener("change", () => loadLog());
+  $("btn-log-refresh")?.addEventListener("click", () => loadLog());
+  $("btn-runlog-refresh")?.addEventListener("click", () => loadRunlog());
+  $("btn-runlog-clear")?.addEventListener("click", () => clearRunlog());
+  $("btn-trend-ai")?.addEventListener("click", askAssistantAboutTrends);
   bindNotices();
   restoreAiAnalyze();
 
@@ -5968,7 +6066,11 @@ function sparklinePath(values, width, height, pad = 4, domain = null) {
   return { line, area };
 }
 
-function paintSpark(svgId, values, { altValues = null, domain = null, altDomain = null } = {}) {
+function paintSpark(
+  svgId,
+  values,
+  { altValues = null, domain = null, altDomain = null, axisLabels = null, valueText = null } = {}
+) {
   const svg = $(svgId);
   if (!svg) return;
   const w = 320;
@@ -5977,10 +6079,11 @@ function paintSpark(svgId, values, { altValues = null, domain = null, altDomain 
   const padY = 6;
   const main = sparklinePath(values, w, h, 4, domain);
   const alt = altValues ? sparklinePath(altValues, w, h, 4, altDomain) : { line: "", area: "" };
+  const labels = axisLabels || ["100%", "50%", "0%"];
   let html = "";
-  html += `<text class="axis" x="2" y="${padY + 8}">100%</text>`;
-  html += `<text class="axis" x="2" y="${(h / 2 + 3).toFixed(1)}">50%</text>`;
-  html += `<text class="axis" x="2" y="${h - 2}">0%</text>`;
+  html += `<text class="axis" x="2" y="${padY + 8}">${escapeHtml(labels[0])}</text>`;
+  html += `<text class="axis" x="2" y="${(h / 2 + 3).toFixed(1)}">${escapeHtml(labels[1])}</text>`;
+  html += `<text class="axis" x="2" y="${h - 2}">${escapeHtml(labels[2])}</text>`;
   html += `<path class="guide" d="M${padX},${padY} H${w - 4}"></path>`;
   html += `<path class="guide" d="M${padX},${(h / 2).toFixed(1)} H${w - 4}"></path>`;
   html += `<path class="guide" d="M${padX},${h - padY} H${w - 4}"></path>`;
@@ -5990,7 +6093,8 @@ function paintSpark(svgId, values, { altValues = null, domain = null, altDomain 
   const solid = (values || []).filter((v) => v != null && !Number.isNaN(Number(v)));
   const last = solid.length ? Number(solid[solid.length - 1]) : null;
   if (last != null) {
-    html += `<text class="last" x="${w - 4}" y="${padY + 9}" text-anchor="end">${fmtPct(last)}</text>`;
+    const text = valueText ? valueText(last) : fmtPct(last);
+    html += `<text class="last" x="${w - 4}" y="${padY + 9}" text-anchor="end">${escapeHtml(String(text))}</text>`;
   }
   if (!main.line && !alt.line) {
     html += `<text class="empty" x="${padX + 4}" y="40">采样不足，刷新总览稍后可见</text>`;
@@ -6013,6 +6117,8 @@ function renderTrends(payload) {
     "gpu_mem_util_pct",
     "gpu_alloc_pct",
     "cpu_avg_pct",
+    "nodes_online_pct",
+    "queue_pending",
   ];
   const enough = seriesKeys.some(
     (key) => points.filter((point) => point && point[key] != null).length >= 2
@@ -6034,8 +6140,8 @@ function renderTrends(payload) {
   set("trend-gpu-sm", fmtPct(last.gpu_sm_util_pct));
   set("trend-gpu-mem", fmtPct(last.gpu_mem_util_pct));
   set("trend-gpu-alloc", fmtPct(last.gpu_alloc_pct));
-  set("trend-cpu", fmtPct(last.cpu_avg_pct));
-  set("trend-edge", last.edge_upstreams != null ? String(last.edge_upstreams) : "-");
+  set("trend-nodes", fmtPct(last.nodes_online_pct));
+  set("trend-queue", last.queue_pending != null ? String(last.queue_pending) : "-");
   const pctDomain = { min: 0, max: 100 };
   paintSpark(
     "chart-api",
@@ -6059,6 +6165,22 @@ function renderTrends(payload) {
       domain: pctDomain,
       altValues: points.map((p) => p.gpu_sm_util_pct),
       altDomain: pctDomain,
+    }
+  );
+  paintSpark(
+    "chart-nodes",
+    points.map((p) => p.nodes_online_pct),
+    { domain: pctDomain }
+  );
+  const queueValues = points.map((p) => p.queue_pending).filter((v) => v != null);
+  const queueMax = Math.max(1, ...queueValues.map((v) => Number(v) || 0));
+  paintSpark(
+    "chart-queue",
+    points.map((p) => p.queue_pending),
+    {
+      domain: { min: 0, max: queueMax },
+      axisLabels: [String(queueMax), String(Math.round(queueMax / 2)), "0"],
+      valueText: (v) => String(v),
     }
   );
 }
@@ -6884,6 +7006,155 @@ async function runAssistantPending(row, card) {
     if (sendBtn) sendBtn.disabled = false;
     updateAssistantFabDot();
   }
+}
+
+function updateAuthPasswordState(auth) {
+  const el = $("auth-password-state");
+  if (!el) return;
+  if (!auth || !auth.mode) {
+    el.textContent = "检测中…";
+    delete el.dataset.state;
+    return;
+  }
+  const mode = auth.mode || "none";
+  el.textContent = auth.password_configured ? `已设置 · 模式 ${mode}` : `未设置 · 模式 ${mode}`;
+  el.dataset.state = auth.password_configured ? "ok" : "warn";
+}
+
+function generateAuthPassword() {
+  const bytes = new Uint8Array(18);
+  crypto.getRandomValues(bytes);
+  const pw = Array.from(bytes, (b) => b.toString(36).padStart(2, "0")).join("").slice(0, 20);
+  const one = $("auth-new-password");
+  const two = $("auth-new-password2");
+  if (one) one.value = pw;
+  if (two) two.value = pw;
+  const meta = $("auth-password-meta");
+  if (meta) meta.textContent = `已生成：${pw}（保存后请立即记录）`;
+  toast("已生成随机密码");
+}
+
+async function saveAuthPassword() {
+  const one = $("auth-new-password");
+  const two = $("auth-new-password2");
+  const password = (one?.value || "").trim();
+  if (password.length < 8) {
+    toastBad("密码至少 8 位");
+    return;
+  }
+  if (password !== (two?.value || "").trim()) {
+    toastBad("两次输入的密码不一致");
+    return;
+  }
+  const current = state.auth || {};
+  if (current.mode === "none" || current.mode === "oidc") {
+    const ok = await confirmDialog({
+      title: "启用密码登录",
+      message: `当前模式为 ${current.mode}，保存后将切换为 password 并需要重新登录。`,
+      tone: "danger",
+      confirmText: "保存并启用",
+    });
+    if (!ok) return;
+  }
+  const btn = $("btn-save-password");
+  if (btn) btn.disabled = true;
+  try {
+    const data = await api("/api/auth/password", {
+      method: "POST",
+      body: JSON.stringify({ password, enable: true }),
+      timeoutMs: 30000,
+    });
+    state.auth = data.auth || state.auth;
+    updateAuthPasswordState(state.auth);
+    if (one) one.value = "";
+    if (two) two.value = "";
+    const meta = $("auth-password-meta");
+    if (meta) meta.textContent = "密码已保存并启用；需要重新登录后继续操作。";
+    toastOk("登录密码已保存");
+    await refreshAuthStatus();
+  } catch (err) {
+    toastBad(`保存密码失败：${err.message || err}`);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function formatBytes(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n) || n <= 0) return "0 B";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+async function loadLog() {
+  const name = $("log-file")?.value || "ui";
+  const lines = Number($("log-lines")?.value || 200) || 200;
+  const pre = $("log-view");
+  const meta = $("log-meta");
+  if (pre) pre.textContent = "加载中…";
+  try {
+    const data = await api(`/api/logs?name=${encodeURIComponent(name)}&lines=${encodeURIComponent(lines)}`, {
+      timeoutMs: 20000,
+    });
+    if (!data.exists) {
+      if (pre) pre.textContent = `日志不存在：${data.path || ""}`;
+      if (meta) meta.textContent = "尚未生成该日志；执行对应动作后再刷新。";
+      return;
+    }
+    if (pre) pre.textContent = (data.lines || []).join("\n") || "（空）";
+    if (meta) meta.textContent = `${data.path} · ${formatBytes(data.size)} · 更新 ${data.modified || "-"}`;
+  } catch (err) {
+    if (pre) pre.textContent = `读取失败：${err.message || err}`;
+    if (meta) meta.textContent = "读取失败";
+  }
+}
+
+async function loadRunlog() {
+  const root = $("runlog-list");
+  if (!root) return;
+  root.innerHTML = '<div class="meta">加载中…</div>';
+  try {
+    const data = await api("/api/runlog?limit=50", { timeoutMs: 15000 });
+    const items = data.items || [];
+    root.innerHTML =
+      items
+        .map((row) => {
+          const ok = row.ok === true ? "ok" : row.ok === false ? "bad" : "idle";
+          return `<div class="item runlog-item" data-tone="${ok}">
+            <div><strong>${escapeHtml(row.kind || "log")}</strong><span class="meta">${escapeHtml(row.ts || "")}</span></div>
+            <div class="meta">${escapeHtml(row.summary || "")}</div>
+          </div>`;
+        })
+        .join("") || '<div class="meta">暂无动作日志。</div>';
+  } catch (err) {
+    root.innerHTML = `<div class="meta">读取失败：${escapeHtml(String(err.message || err))}</div>`;
+  }
+}
+
+async function clearRunlog() {
+  const ok = await confirmDialog({
+    title: "清空动作审计",
+    message: "将删除 state/runlog.jsonl；不影响 UI / watchdog 日志。",
+    tone: "danger",
+    confirmText: "清空",
+  });
+  if (!ok) return;
+  try {
+    await api("/api/runlog/clear", { method: "POST", body: "{}" });
+    toastOk("动作审计已清空");
+    await loadRunlog();
+  } catch (err) {
+    toastBad(`清空失败：${err.message || err}`);
+  }
+}
+
+function askAssistantAboutTrends() {
+  setAssistantOpen(true);
+  if (!assistantState.status) loadAssistantStatus();
+  sendAssistant(
+    "请调用 gc_metrics_history 查看最近一小时的连通与负载趋势，指出异常节点、GPU 负载失衡、队列积压或入口问题，并给出下一步建议。"
+  );
 }
 
 async function loadAssistantStatus() {
