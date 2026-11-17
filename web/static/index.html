@@ -8,7 +8,7 @@
   <link rel="icon" href="/static/logo.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/vendor/xterm/xterm-6.1.0.css" />
   <link rel="stylesheet" href="/static/tokens.css?v=__UI_VERSION__" />
-  <link rel="stylesheet" href="/static/style.css?v=__UI_VERSION__.dash6" />
+  <link rel="stylesheet" href="/static/style.css?v=__UI_VERSION__.dash7" />
   <script src="/static/theme-boot.js?v=__UI_VERSION__"></script>
 </head>
 
@@ -411,7 +411,8 @@ gpu-control jobs install vllm-serve --name vllm</pre>
                       data-action="1">安装推荐包</button>
                   </div>
                 </div>
-                <details class="fold" id="job-templates-fold">
+                <div id="jobs" class="list"></div>
+                <details class="fold" id="job-templates-fold" style="margin-top:10px">
                   <summary>从模板安装（推理 / 训练 / Ray / Docker）</summary>
                   <div class="compact-fields" style="margin-top:8px">
                     <label class="field"><span>模板</span><select id="job-template" data-keep-enabled="1"></select></label>
@@ -423,7 +424,6 @@ gpu-control jobs install vllm-serve --name vllm</pre>
                   <span class="meta" id="job-templates-meta"></span>
                   <div id="job-templates-list" class="list" style="margin-top:8px"></div>
                 </details>
-                <div id="jobs" class="list" style="margin-top:12px"></div>
               </div>
             </section>
 
@@ -610,7 +610,7 @@ gpu-control jobs install vllm-serve --name vllm</pre>
                 <button id="btn-litellm-key-clear" class="ghost tiny" data-keep-enabled="1" data-action="1">清除</button>
               </div>
               <p class="meta" id="litellm-key-reveal" hidden></p>
-              <details class="fold" style="margin-top:8px" id="litellm-models-fold">
+              <details class="fold" style="margin-top:8px" id="litellm-models-fold" open>
                 <summary>模型（简化管理）<span class="meta" id="litellm-models-meta"></span></summary>
                 <div class="btn-row" style="margin:8px 0">
                   <button type="button" id="btn-litellm-models-refresh" class="ghost tiny"
@@ -844,14 +844,15 @@ gpu-control jobs install vllm-serve --name vllm</pre>
               <div class="setup-grid">
                 <div class="panel" id="cfg-ssh">
                   <div class="panel-h">
-                    <h2>SSH 连接</h2>
+                    <h2>默认 SSH（可被节点覆盖）</h2>
                     <button id="btn-test-ssh" class="ghost tiny" data-keep-enabled="1">测试连通</button>
                   </div>
                   <p class="path-line" id="setup-nodes-path">config/local/nodes.json</p>
-                  <label class="field"><span>SSH 私钥路径</span><input id="ssh-key" placeholder="~/.ssh/id_ed25519" /></label>
+                  <p class="meta">节点清单里可逐台填写用户 / 端口 / 私钥，覆盖这里的默认值。</p>
+                  <label class="field"><span>默认私钥路径</span><input id="ssh-key" placeholder="~/.ssh/id_ed25519" /></label>
                   <div class="key-chips" id="ssh-key-chips"></div>
-                  <label class="field"><span>用户</span><input id="ssh-user" placeholder="ubuntu" /></label>
-                  <label class="field"><span>端口</span><input id="ssh-port" type="number" placeholder="22" /></label>
+                  <label class="field"><span>默认用户</span><input id="ssh-user" placeholder="ubuntu（节点可覆盖）" /></label>
+                  <label class="field"><span>默认端口</span><input id="ssh-port" type="number" placeholder="22（节点可覆盖）" /></label>
                   <div class="btn-row">
                     <button id="btn-save-ssh" class="primary" data-keep-enabled="1">保存并生成 inventory</button>
                     <button id="btn-render" class="ghost" data-keep-enabled="1">仅重新生成</button>
@@ -1029,6 +1030,7 @@ gpu-control jobs install vllm-serve --name vllm</pre>
                 </div>
                 <div class="auth-password-box">
                   <div class="kv"><b>登录密码</b> <span id="auth-password-state">检测中…</span></div>
+                  <div class="kv"><b>OAuth / OIDC</b> <span id="auth-oidc-state">检测中…</span></div>
                   <div class="field-row">
                     <label class="field"><span>新密码（至少 8 位）</span>
                       <input id="auth-new-password" type="password" autocomplete="new-password" data-keep-enabled="1" />
@@ -1060,7 +1062,7 @@ gpu-control jobs install vllm-serve --name vllm</pre>
                   <button id="btn-auth-token-clear" class="ghost tiny" data-keep-enabled="1">清除 Token</button>
                 </div>
                 <p class="meta" id="auth-token-meta" role="status" aria-live="polite">Token 只在生成时显示一次；脚本 / MCP 需同步更新。</p>
-                <details class="fold">
+                <details class="fold" open>
                   <summary>OAuth / OIDC / 免密登录</summary>
                   <label class="field"><span>Issuer</span><input id="auth-oidc-issuer" placeholder="https://login.example.com" /></label>
                   <label class="field"><span>Client ID</span><input id="auth-oidc-client-id" /></label>
@@ -1177,6 +1179,7 @@ gpu-control jobs install vllm-serve --name vllm</pre>
                     </select>
                     <input id="log-lines" type="number" min="20" max="2000" value="200" aria-label="行数" />
                     <button id="btn-log-refresh" class="ghost tiny" data-keep-enabled="1">刷新</button>
+                    <button id="btn-log-ai" class="primary tiny" data-keep-enabled="1">让 AI 分析</button>
                   </div>
                 </div>
                 <p class="meta" id="log-meta">选择日志后刷新。</p>
@@ -1252,7 +1255,11 @@ gpu-control jobs install vllm-serve --name vllm</pre>
                 </div>
                 <div class="kv"><b>状态</b> <span id="integration-ai-state">-</span></div>
                 <div class="kv"><b>模型</b> <span id="integration-ai-model">-</span></div>
-                <p class="meta">助手读取 overview / diagnose / 配置；只读工具自动执行，写操作先确认。</p>
+                <p class="meta">助手读取 overview / 趋势 / 日志 / 配置；只读工具自动执行，写操作先确认。</p>
+                <details class="fold" id="assistant-tools-fold" open>
+                  <summary>内置工具 <span class="meta" id="assistant-tools-meta"></span></summary>
+                  <div id="assistant-tools" class="tool-chips"></div>
+                </details>
               </div>
             </section>
 
@@ -1402,6 +1409,15 @@ gpu-control ui --background</pre>
           <datalist id="assistant-model-list"></datalist>
         </div>
       </label>
+      <div class="assistant-field-row">
+        <label class="assistant-check">
+          <input id="assistant-enabled" type="checkbox" data-keep-enabled="1" checked />
+          <span>启用助手</span>
+        </label>
+        <label class="assistant-field"><span>超时秒</span>
+          <input id="assistant-timeout" type="number" min="5" max="180" placeholder="60" data-keep-enabled="1" />
+        </label>
+      </div>
       <label class="assistant-check">
         <input id="assistant-clear-key" type="checkbox" data-keep-enabled="1" />
         <span>清除已保存的 API Key</span>
@@ -1484,7 +1500,7 @@ gpu-control ui --background</pre>
   </div>
   <script src="/static/vendor/xterm/xterm-6.1.0.min.js"></script>
   <script src="/static/xterm-fit.js?v=__UI_VERSION__"></script>
-  <script src="/static/app.js?v=__UI_VERSION__.dash6"></script>
+  <script src="/static/app.js?v=__UI_VERSION__.dash7"></script>
 </body>
 
 </html>

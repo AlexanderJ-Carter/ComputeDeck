@@ -2729,8 +2729,8 @@ function renderJobTemplatesList(templates) {
     });
   });
   const fold = $("job-templates-fold");
-  if (fold && templates.some((t) => t.recommended && !t.installed)) {
-    fold.open = true;
+  if (fold && !(state.jobs || []).length && templates.some((t) => t.recommended && !t.installed)) {
+    // 不自动展开：已安装任务始终优先显示；模板由用户点开
   }
 }
 
@@ -3991,6 +3991,9 @@ function setConfigTab(name, { updateHash = false, focus = false, scroll = false 
   if (page === "remote") {
     refreshRemoteStatus().catch(() => {});
   }
+  if (page === "integration") {
+    loadAssistantTools().catch(() => {});
+  }
   if (scroll) {
     $("config-main")?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
   }
@@ -4235,18 +4238,20 @@ function readCardFields(card) {
   const host = (card.querySelector('[data-nc="host"]')?.value || "").trim();
   const gpusRaw = (card.querySelector('[data-nc="gpus"]')?.value || "").trim();
   const portRaw = (card.querySelector('[data-nc="port"]')?.value || "").trim();
+  const user = (card.querySelector('[data-nc="user"]')?.value || "").trim();
+  const key = (card.querySelector('[data-nc="key"]')?.value || "").trim();
   const labels = (card.querySelector('[data-nc="labels"]')?.value || "")
     .split(",")
     .map((x) => x.trim())
     .filter(Boolean);
   const note = (card.querySelector('[data-nc="note"]')?.value || "").trim();
-  return { name, host, gpusRaw, portRaw, labels, note };
+  return { name, host, gpusRaw, portRaw, user, key, labels, note };
 }
 
 function commitCardToDraft(card) {
   const draft = ensureNodesDraft(stateSetup.nodesDraft);
   const oldKey = card.dataset.nodeCard;
-  const { name, host, gpusRaw, portRaw, labels, note } = readCardFields(card);
+  const { name, host, gpusRaw, portRaw, user, key, labels, note } = readCardFields(card);
   if (!oldKey) return;
   if (!name) return;
   const prev = draft.nodes[oldKey] || draft.nodes[name] || {};
@@ -4257,6 +4262,10 @@ function commitCardToDraft(card) {
   else if (!gpusRaw && "gpus_per_node" in node) delete node.gpus_per_node;
   if (portRaw && /^\d+$/.test(portRaw)) node.ansible_port = Number(portRaw);
   else if (!portRaw && "ansible_port" in node) delete node.ansible_port;
+  if (user) node.ansible_user = user;
+  else if ("ansible_user" in node) delete node.ansible_user;
+  if (key) node.ansible_ssh_private_key_file = key;
+  else if ("ansible_ssh_private_key_file" in node) delete node.ansible_ssh_private_key_file;
   if (labels.length) node.labels = labels;
   else if ("labels" in node) delete node.labels;
   if (note) node.note = note;
@@ -4336,7 +4345,9 @@ function renderNodesCards(doc) {
             <label class="field"><span>名称</span><input data-nc="name" value="${escapeHtml(name)}" /></label>
             <label class="field"><span>地址</span><input data-nc="host" value="${escapeHtml(meta.ansible_host || "")}" /></label>
             <label class="field"><span>GPU</span><input data-nc="gpus" type="number" value="${escapeHtml(meta.gpus_per_node ?? "")}" /></label>
-            <label class="field"><span>SSH 端口</span><input data-nc="port" type="number" placeholder="默认" value="${escapeHtml(meta.ansible_port ?? "")}" /></label>
+            <label class="field"><span>SSH 端口</span><input data-nc="port" type="number" placeholder="默认 ${escapeHtml(String((draft.defaults || {}).ansible_port ?? ""))}" value="${escapeHtml(meta.ansible_port ?? "")}" /></label>
+            <label class="field"><span>SSH 用户</span><input data-nc="user" placeholder="默认 ${escapeHtml((draft.defaults || {}).ansible_user || "root")}" value="${escapeHtml(meta.ansible_user || "")}" /></label>
+            <label class="field"><span>私钥路径</span><input data-nc="key" placeholder="默认" value="${escapeHtml(meta.ansible_ssh_private_key_file || "")}" /></label>
             <label class="field"><span>标签</span><input data-nc="labels" value="${escapeHtml(labels)}" /></label>
             <div class="node-card-actions">
               <button type="button" class="ghost tiny" data-toggle-node-extra data-keep-enabled="1">备注</button>
@@ -4351,7 +4362,11 @@ function renderNodesCards(doc) {
           <label class="field"><span>名称</span><input data-nc="name" value="${escapeHtml(name)}" /></label>
           <label class="field"><span>地址</span><input data-nc="host" value="${escapeHtml(meta.ansible_host || "")}" /></label>
           <label class="field"><span>GPU</span><input data-nc="gpus" type="number" value="${escapeHtml(meta.gpus_per_node ?? "")}" /></label>
-          <label class="field"><span>SSH 端口</span><input data-nc="port" type="number" placeholder="默认" value="${escapeHtml(meta.ansible_port ?? "")}" /></label>
+          <label class="field"><span>SSH 端口</span><input data-nc="port" type="number" placeholder="默认 ${escapeHtml(String((draft.defaults || {}).ansible_port ?? ""))}" value="${escapeHtml(meta.ansible_port ?? "")}" /></label>
+        </div>
+        <div class="field-row node-ssh-row">
+          <label class="field"><span>SSH 用户</span><input data-nc="user" placeholder="默认 ${escapeHtml((draft.defaults || {}).ansible_user || "root")}" value="${escapeHtml(meta.ansible_user || "")}" /></label>
+          <label class="field"><span>私钥路径</span><input data-nc="key" placeholder="默认 ${escapeHtml((draft.defaults || {}).ansible_ssh_private_key_file || "~/.ssh/id_ed25519")}" value="${escapeHtml(meta.ansible_ssh_private_key_file || "")}" /></label>
         </div>
         <label class="field"><span>标签（逗号）</span><input data-nc="labels" value="${escapeHtml(labels)}" /></label>
         <label class="field"><span>备注</span><input data-nc="note" value="${escapeHtml(meta.note || "")}" /></label>
@@ -5991,6 +6006,7 @@ async function boot() {
   $("btn-runlog-refresh")?.addEventListener("click", () => loadRunlog());
   $("btn-runlog-clear")?.addEventListener("click", () => clearRunlog());
   $("btn-trend-ai")?.addEventListener("click", askAssistantAboutTrends);
+  $("btn-log-ai")?.addEventListener("click", askAssistantAboutLogs);
   bindNotices();
   restoreAiAnalyze();
 
@@ -6469,11 +6485,15 @@ function fillAssistantSettingsForm(status) {
   const modelInput = $("assistant-model");
   const keyInput = $("assistant-api-key");
   const clearKey = $("assistant-clear-key");
+  const enabledInput = $("assistant-enabled");
+  const timeoutInput = $("assistant-timeout");
   const hint = $("assistant-settings-hint");
   if (baseInput) baseInput.value = base;
   if (modelInput) modelInput.value = model;
   if (keyInput) keyInput.value = "";
   if (clearKey) clearKey.checked = false;
+  if (enabledInput) enabledInput.checked = status?.enabled !== false;
+  if (timeoutInput) timeoutInput.value = String(status?.timeout_sec ?? 60);
   if (preset) {
     const openaiUrl = "https://api.openai.com/v1";
     preset.value = base === openaiUrl ? "openai" : "custom";
@@ -6512,7 +6532,9 @@ function applyAssistantStatus(data) {
   assistantState.status = data;
   const mode = $("assistant-mode");
   if (mode) {
-    if (data.ready) {
+    if (!data.enabled) {
+      mode.textContent = "已停用 · 可在设置中启用";
+    } else if (data.ready) {
       mode.textContent = `模型 · ${data.model || "configured"}`;
     } else {
       mode.textContent = "未配置 · 请设置上游";
@@ -7019,6 +7041,12 @@ function updateAuthPasswordState(auth) {
   const mode = auth.mode || "none";
   el.textContent = auth.password_configured ? `已设置 · 模式 ${mode}` : `未设置 · 模式 ${mode}`;
   el.dataset.state = auth.password_configured ? "ok" : "warn";
+  const oidcEl = $("auth-oidc-state");
+  if (oidcEl) {
+    const oidc = auth.oidc || {};
+    oidcEl.textContent = oidc.ready ? `已就绪${oidc.issuer ? ` · ${oidc.issuer}` : ""}` : "未配置";
+    oidcEl.dataset.state = oidc.ready ? "ok" : "warn";
+  }
 }
 
 function generateAuthPassword() {
@@ -7157,6 +7185,42 @@ function askAssistantAboutTrends() {
   );
 }
 
+async function loadAssistantTools() {
+  const root = $("assistant-tools");
+  const meta = $("assistant-tools-meta");
+  if (!root) return;
+  try {
+    const data = await api("/api/assistant/policy", { timeoutMs: 15000 });
+    const byRisk = data.by_risk || {};
+    const risks = [
+      ["read", "只读"],
+      ["write", "写操作"],
+      ["destructive", "破坏性"],
+    ];
+    root.innerHTML = risks
+      .map(([key, label]) => {
+        const rows = byRisk[key] || [];
+        if (!rows.length) return "";
+        return `<div class="tool-group"><span class="tool-group-label">${label} · ${rows.length}</span><div class="tool-list">${rows
+          .map((name) => `<code class="tool-chip" data-risk="${key}" title="${escapeHtml(name)}">${escapeHtml(name)}</code>`)
+          .join("")}</div></div>`;
+      })
+      .join("");
+    if (meta) meta.textContent = `共 ${Object.values(byRisk).reduce((n, rows) => n + (rows || []).length, 0)} 个`;
+  } catch (err) {
+    root.innerHTML = `<p class="meta">读取工具列表失败：${escapeHtml(String(err.message || err))}</p>`;
+  }
+}
+
+async function askAssistantAboutLogs() {
+  const name = $("log-file")?.value || "ui";
+  setAssistantOpen(true);
+  if (!assistantState.status) loadAssistantStatus();
+  sendAssistant(
+    `请调用 gc_logs 查看 ${name} 最近 200 行日志，指出错误 / 异常和下一步排查建议；如果涉及节点或入口状态，再结合 overview。`
+  );
+}
+
 async function loadAssistantStatus() {
   const mode = $("assistant-mode");
   try {
@@ -7244,7 +7308,8 @@ async function saveAssistantConfig() {
     const body = {
       base_url: baseUrl,
       model,
-      enabled: true,
+      enabled: $("assistant-enabled")?.checked !== false,
+      timeout_sec: Number($("assistant-timeout")?.value || 60),
       clear_api_key: clearKey,
     };
     if (apiKey) body.api_key = apiKey;

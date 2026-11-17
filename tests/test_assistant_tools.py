@@ -30,6 +30,8 @@ class RiskTests(unittest.TestCase):
         self.assertIn("gc_free_node", names)
         self.assertIn("gc_remote", names)
         self.assertIn("gc_metrics_history", names)
+        self.assertIn("gc_logs", names)
+        self.assertIn("gc_auth_status", names)
 
     def test_action_level_risk(self) -> None:
         self.assertEqual(risk_for_call("gc_queue", {"action": "list"}), "read")
@@ -44,6 +46,8 @@ class RiskTests(unittest.TestCase):
         self.assertEqual(risk_for_call("gc_exec", {"command": "rm -rf /tmp/x", "node": "a"}), "destructive")
         self.assertEqual(risk_for_call("gc_exec_preset", {"node": "a", "preset": "nvidia-smi"}), "read")
         self.assertEqual(risk_for_call("gc_metrics_history", {"limit": 60}), "read")
+        self.assertEqual(risk_for_call("gc_logs", {"name": "ui"}), "read")
+        self.assertEqual(risk_for_call("gc_auth_status", {}), "read")
 
 
 class ExecCommandRiskTests(unittest.TestCase):

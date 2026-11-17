@@ -29,6 +29,9 @@
 - 配置页新增「登录与鉴权」（密码设置 / 轮换 + OIDC + Token）、「远程接入」（模式 / 暴露端口）与「日志与诊断」（UI / watchdog / Edge / LiteLLM / Cloudflare 日志尾 + 动作审计）；远程接入从入口页移入配置
 - 趋势新增节点在线率、队列等待、健康评分采样；曲线补充时间轴，看板「让 AI 解读」可调用 `gc_metrics_history`
 - GitHub Pages 展板更新：单屏 / 配置分页 / 趋势语义 / 新 AI 能力
+- 节点级 SSH：节点卡片可逐台填写用户 / 端口 / 私钥；「基础连接」改为默认值；`node add` CLI / HTTP / 助手工具支持 `--user --port --key`
+- 助手设置新增启用开关与超时；AI / MCP 页展示全部内置工具（31 个，按风险分组）；新增 `gc_logs` / `gc_auth_status` 只读工具，日志页可一键让 AI 分析
+- 任务页模板不再自动展开，已安装任务列表优先显示；OAuth / OIDC、LiteLLM 模型与 AI 工具等关键信息默认展开
 
 ### Fixed
 

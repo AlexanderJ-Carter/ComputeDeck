@@ -1353,11 +1353,21 @@ def cmd_node(args: argparse.Namespace) -> int:
         gpus = args.gpus if args.gpus is not None else defaults.get("gpus_per_node")
         if gpus is None:
             die("node add 需要 --gpus，或在 defaults.gpus_per_node 中配置")
-        nodes[args.name] = {
+        node_meta = {
             "ansible_host": args.host,
             "gpus_per_node": int(gpus),
             "labels": [x.strip() for x in (args.labels or "").split(",") if x.strip()],
         }
+        if getattr(args, "user", None):
+            node_meta["ansible_user"] = args.user
+        if getattr(args, "port", None):
+            port = int(args.port)
+            if not 1 <= port <= 65535:
+                die("--port 必须在 1..65535")
+            node_meta["ansible_port"] = port
+        if getattr(args, "key", None):
+            node_meta["ansible_ssh_private_key_file"] = args.key
+        nodes[args.name] = node_meta
         save_nodes_registry(registry)
         print(f"Added {args.name} ({args.host}); inventory regenerated")
         return 0
@@ -2358,6 +2368,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_node.add_argument("--host", help="ansible_host / IP")
     p_node.add_argument("--gpus", type=int, help="该节点 GPU 数")
     p_node.add_argument("--labels", help="逗号分隔标签")
+    p_node.add_argument("--user", help="该节点的 SSH 用户（覆盖 defaults.ansible_user）")
+    p_node.add_argument("--port", type=int, help="该节点的 SSH 端口（覆盖 defaults.ansible_port）")
+    p_node.add_argument("--key", help="该节点的 SSH 私钥路径（覆盖 defaults.ansible_ssh_private_key_file）")
     p_node.add_argument("--reason", default="")
     p_node.add_argument("--owner")
     p_node.set_defaults(func=cmd_node)

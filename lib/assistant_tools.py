@@ -109,8 +109,9 @@ def _node_route(args: dict[str, Any]) -> dict[str, Any]:
             "host": args.get("host"),
             "gpus": args.get("gpus") if args.get("gpus") is not None else 4,
         }
-        if args.get("labels"):
-            body["labels"] = args["labels"]
+        for key in ("labels", "user", "port", "key"):
+            if args.get(key) not in (None, ""):
+                body[key] = args[key]
         return {"method": "POST", "path": "/api/node/add", "body": body}
     return {}
 
@@ -398,6 +399,21 @@ _SPECS: list[dict[str, Any]] = [
         risk="read",
     ),
     _spec(
+        "gc_logs",
+        "读取控制面日志尾（只读）：ui / watchdog / ingress-edge / ingress-litellm / cloudflared / runlog。",
+        parameters=_obj(
+            name={"type": "string", "enum": ["ui", "watchdog", "ingress-edge", "ingress-litellm", "cloudflared", "runlog"]},
+            lines={"type": "integer", "description": "行数，默认 200"},
+        ),
+        risk="read",
+    ),
+    _spec(
+        "gc_auth_status",
+        "控制面鉴权状态：模式、密码 / Token / OIDC 是否配置、Session TTL。",
+        parameters=_obj(),
+        risk="read",
+    ),
+    _spec(
         "gc_get_config",
         "读取配置。kind=cluster|nodes|job；job 需要 name。",
         parameters=_obj(
@@ -456,6 +472,9 @@ _SPECS: list[dict[str, Any]] = [
             host={"type": "string", "description": "add 时的 ansible_host"},
             gpus={"type": "integer"},
             labels={"type": "string", "description": "逗号分隔标签"},
+            user={"type": "string", "description": "该节点 SSH 用户（覆盖默认）"},
+            port={"type": "integer", "description": "该节点 SSH 端口（覆盖默认）"},
+            key={"type": "string", "description": "该节点 SSH 私钥路径（覆盖默认）"},
             reason={"type": "string"},
         ),
         risk="write",

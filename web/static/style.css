@@ -6958,3 +6958,63 @@ body {
   font-size: 10px;
   line-height: 1.25;
 }
+
+/* 助手：启用 / 超时 / 内置工具 */
+.assistant-field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px;
+  gap: 8px;
+  align-items: end;
+}
+
+.tool-chips {
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.tool-group {
+  display: grid;
+  gap: 4px;
+}
+
+.tool-group-label {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.tool-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tool-chip {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 3px 6px;
+  background: color-mix(in srgb, var(--panel-2) 70%, transparent);
+  color: var(--ink-soft);
+  font-size: 10.5px;
+}
+
+.tool-chip[data-risk="read"] {
+  border-color: color-mix(in srgb, var(--ok) 34%, var(--line));
+}
+
+.tool-chip[data-risk="write"] {
+  border-color: color-mix(in srgb, var(--warn) 34%, var(--line));
+}
+
+.tool-chip[data-risk="destructive"] {
+  border-color: color-mix(in srgb, var(--bad) 34%, var(--line));
+}
+
+#auth-oidc-state[data-state="ok"] {
+  color: var(--ok);
+}
+
+#auth-oidc-state[data-state="warn"] {
+  color: var(--warn);
+}

@@ -870,6 +870,36 @@ def assistant_runners(jobs_list: list[dict]) -> dict:
             limit = 60
         return list_history(limit=max(5, min(limit, 240)))
 
+    def _logs_tail(args: dict) -> Any:
+        name = str((args or {}).get("name") or "ui")
+        try:
+            lines = int((args or {}).get("lines") or 200)
+        except (TypeError, ValueError):
+            lines = 200
+        lines = max(1, min(lines, 500))
+        files = {
+            "ui": STATE_DIR / "ui.log",
+            "watchdog": STATE_DIR / "watchdog.log",
+            "ingress-edge": STATE_DIR / "ingress-edge.log",
+            "ingress-litellm": STATE_DIR / "ingress-litellm.log",
+            "cloudflared": STATE_DIR / "cloudflared.log",
+        }
+        if name == "runlog":
+            return list_runlog(limit=lines)
+        path_obj = files.get(name)
+        if path_obj is None:
+            return {"ok": False, "error": f"unknown log: {name}"}
+        if not path_obj.is_file():
+            return {"ok": True, "name": name, "path": str(path_obj), "exists": False, "lines": []}
+        return {
+            "ok": True,
+            "name": name,
+            "path": str(path_obj),
+            "exists": True,
+            "size": path_obj.stat().st_size,
+            "lines": _tail_lines(path_obj, lines),
+        }
+
     def _liveness(args: dict) -> Any:
         action = str((args or {}).get("action") or "status")
         if action == "check":
@@ -909,6 +939,8 @@ def assistant_runners(jobs_list: list[dict]) -> dict:
         "gc_exec": _exec_command,
         "gc_api_catalog": lambda _args: catalog_payload(),
         "gc_metrics_history": _metrics_history,
+        "gc_logs": _logs_tail,
+        "gc_auth_status": lambda _args: auth_status_payload(),
         "gc_get_config": _config,
         "gc_queue": _queue,
         "gc_lease": _lease,
@@ -4160,6 +4192,20 @@ class Handler(BaseHTTPRequestHandler):
             args = ["node", "add", name, "--host", host, "--gpus", str(gpus)]
             if labels:
                 args.extend(["--labels", labels])
+            if body.get("user"):
+                args.extend(["--user", str(body["user"]).strip()])
+            if body.get("port"):
+                try:
+                    port = int(body["port"])
+                except (TypeError, ValueError):
+                    self._json(400, {"error": "port 必须是整数"})
+                    return
+                if not 1 <= port <= 65535:
+                    self._json(400, {"error": "port 必须在 1..65535"})
+                    return
+                args.extend(["--port", str(port)])
+            if body.get("key"):
+                args.extend(["--key", str(body["key"]).strip()])
             with _action_lock:
                 result = run_cli(args)
             self._json(
