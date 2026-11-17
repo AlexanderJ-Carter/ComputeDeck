@@ -193,20 +193,27 @@ GPU 3  76%  PID  9921  ???</pre>
         <div>
           <p class="eyebrow reveal">配置驱动</p>
           <h2 class="reveal d1">一页一件事，配置不再堆成山</h2>
-          <p class="body reveal d2">SSH、节点、Job、巡检、登录与 OAuth、远程接入、日志各占一页；节点级 SSH 用户 / 端口 / 私钥在节点清单里逐台设置。左侧分页直达，保存后自动刷新就绪状态。</p>
+          <p class="body reveal d2">配置中心按「配置 / 检查与接入 / 参考」三组共 11 页，一次只显示一页；节点级 SSH 用户 / 端口 / 私钥在节点清单里逐台设置。左侧分页直达，保存后自动刷新就绪状态。</p>
         </div>
         <div class="cfg-mock reveal d3" aria-hidden="true">
           <div class="cfg-mock-head"><strong>配置中心</strong><span>左侧分页 · 一次一页</span></div>
           <ul>
-            <li class="on">1 基础连接 <em>SSH · 集群策略</em></li>
-            <li>2 节点清单 <em>主机 · GPU · SSH 用户/端口/私钥</em></li>
-            <li>3 Job 模板 <em>启停 · 运行时</em></li>
-            <li>4 巡检与守护 <em>Watchdog</em></li>
-            <li>5 登录与鉴权 <em>密码 · OIDC · Token</em></li>
-            <li>6 远程接入 <em>Tailscale · 端口</em></li>
+            <li class="cfg-group">配置</li>
+            <li class="on">基础连接 <em>SSH · 集群策略</em></li>
+            <li>节点清单 <em>主机 · GPU · SSH 用户/端口/私钥</em></li>
+            <li>Job 模板 <em>启停 · 运行时</em></li>
+            <li>巡检与守护 <em>Watchdog</em></li>
+            <li>登录与鉴权 <em>密码 · OIDC · Token</em></li>
+            <li>远程接入 <em>Tailscale · 端口</em></li>
+            <li class="cfg-group">检查与接入</li>
+            <li>就绪检查 <em>主控 · SSH · 入口 · AI</em></li>
             <li>日志与诊断 <em>UI · watchdog · 审计</em></li>
+            <li>AI / MCP <em>Token · 内置工具</em></li>
+            <li class="cfg-group">参考</li>
+            <li>文档与 API <em>手册 · OpenAPI</em></li>
+            <li>高级配置 <em>config/local</em></li>
           </ul>
-          <p class="cfg-mock-foot">高级项仍可写 <code>config/local</code></p>
+          <p class="cfg-mock-foot">保存后自动检测；高级项仍可写 <code>config/local</code></p>
         </div>
       </div>
     </section>

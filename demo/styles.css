@@ -2705,6 +2705,25 @@ h3 {
   font-weight: 600;
 }
 
+.cfg-mock li.cfg-group {
+  justify-content: flex-start;
+  padding: 5px 10px 1px;
+  margin-top: 3px;
+  border: 0;
+  color: color-mix(in srgb, var(--ink) 46%, transparent);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cfg-mock li.cfg-group:not(:first-child) {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
 .cfg-mock-foot {
   margin: 0;
   padding: 10px 14px;

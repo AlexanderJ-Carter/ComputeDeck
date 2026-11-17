@@ -3236,65 +3236,80 @@ function renderAccessStatus(data) {
   ];
 
   const companions = Array.isArray(ingress.companions) ? ingress.companions : [];
-  if (companions.length) {
-    for (const id of ["edge", "nginx", "litellm", "tls"]) {
-      const c = companions.find((row) => row.id === id);
-      if (!c) continue;
-      rows.push({
-        label: companionLabel[id] || c.name || id,
-        value: c.label || c.state || "-",
-        hint: enrich(c),
-        tone: toneOf(c.severity),
-        view: viewOf(c),
-      });
-    }
+  const byId = Object.fromEntries(
+    companions.filter((row) => row && row.id).map((row) => [row.id, row])
+  );
+  const worstTone = (list) => {
+    const tones = list.filter(Boolean).map((row) => toneOf(row.severity));
+    if (tones.includes("bad")) return "bad";
+    if (tones.includes("warn")) return "warn";
+    if (tones.includes("ok")) return "ok";
+    return "neutral";
+  };
+  const gatewayRows = [byId.edge, byId.litellm, byId.nginx].filter(Boolean);
+  if (gatewayRows.length) {
+    const bits = gatewayRows.map((row) => {
+      const label = companionLabel[row.id] || row.name || row.id;
+      return `${label} ${row.label || row.state || ""}`.trim();
+    });
+    const edgeHint = byId.edge ? enrich(byId.edge) : "";
+    rows.push({
+      label: "入口与网关",
+      value: byId.edge ? byId.edge.label || byId.edge.state || "-" : gatewayRows[0].label || "-",
+      hint: [edgeHint, ...bits].filter(Boolean).join(" · "),
+      tone: worstTone(gatewayRows),
+      view: "endpoints",
+    });
   } else {
     // Older payloads: keep a useful fallback rather than an empty panel.
-    rows.push(
-      {
-        label: "入口与网关",
-        value: edge.running ? "运行中" : ingress.ingress && ingress.ingress.enabled === false ? "未启用" : "未运行",
-        hint: edge.listen || ingress.public_base_url || "未配置监听",
-        tone: edge.running ? "ok" : "neutral",
-        view: "endpoints",
-      },
-      {
-        label: "HTTPS / TLS",
-        value: tls.label || (tls.enabled ? "已启用" : "未启用"),
-        hint: tls.ready ? tls.not_after || "证书就绪" : tls.enabled ? (tls.reasons || []).join("；") || "缺少证书" : "HTTP 明文",
-        tone: tls.enabled && !tls.ready ? "warn" : tls.ready ? "ok" : "neutral",
-        view: "config",
-      }
-    );
+    rows.push({
+      label: "入口与网关",
+      value: edge.running ? "运行中" : ingress.ingress && ingress.ingress.enabled === false ? "未启用" : "未运行",
+      hint: edge.listen || ingress.public_base_url || "未配置监听",
+      tone: edge.running ? "ok" : "neutral",
+      view: "endpoints",
+    });
   }
 
+  const tlsRow = byId.tls;
+  const tlsLabel = tlsRow?.label || tls.label || (tls.enabled ? "已启用" : "HTTP");
+  const tlsTone = tlsRow
+    ? toneOf(tlsRow.severity)
+    : tls.enabled && !tls.ready
+      ? "warn"
+      : tls.ready
+        ? "ok"
+        : "neutral";
   rows.push({
-    label: "域名",
-    value: domain || "未配置",
-    hint: ingress.public_base_url || "使用 IP:端口访问",
-    tone: domain ? "ok" : "neutral",
+    label: "HTTPS / 域名",
+    value: domain || tlsLabel,
+    hint: [tlsLabel, ingress.public_base_url || "使用 IP:端口访问"].filter(Boolean).join(" · "),
+    tone: domain ? (tlsTone === "neutral" ? "ok" : tlsTone) : tlsTone,
     view: "config",
   });
+
+  const wdValue = wd.running ? "运行中" : wd.enabled ? "未运行" : "未启用";
+  const tkValue = tkSum.total ? `${tkSum.ok ?? 0}/${tkSum.total}` : "未探测";
+  const guardTone = wd.running
+    ? "ok"
+    : wd.enabled
+      ? "warn"
+      : tkSum.total && tkSum.ok === tkSum.total
+        ? "ok"
+        : "neutral";
   rows.push({
-    label: "自动重启",
-    value: wd.running ? "运行中" : wd.enabled ? "未运行" : "未启用",
-    hint: `${(wd.jobs || []).join(", ") || "跟随默认 Job"} · ${wd.interval_sec || 60}s · 连败 ${wd.failure_threshold || 2} 次重启 / 上限 ${wd.max_restarts || 3} 次`,
-    tone: wd.running ? "ok" : wd.enabled ? "warn" : "neutral",
+    label: "守护 / 工具栈",
+    value: `${wdValue} · 工具 ${tkValue}`,
+    hint: `${(wd.jobs || []).join(", ") || "跟随默认 Job"} · ${wd.interval_sec || 60}s · 连败 ${wd.failure_threshold || 2} 次重启 / 上限 ${wd.max_restarts || 3} 次 · ${tk.generated_at ? `工具探测于 ${tk.generated_at}` : "工具栈未探测"}`,
+    tone: guardTone,
     view: "workloads",
-  });
-  rows.push({
-    label: "工具栈",
-    value: tkSum.total ? `${tkSum.ok ?? 0}/${tkSum.total}` : "未探测",
-    hint: tk.generated_at ? `探测于 ${tk.generated_at}` : "训练 / 推理常用依赖",
-    tone: tkSum.total ? (tkSum.ok === tkSum.total ? "ok" : "warn") : "neutral",
-    view: "toolkits",
   });
 
   root.innerHTML = rows
     .map((row) => {
       const tone = row.tone || "neutral";
       return `<button type="button" class="status-row ${tone}" data-view-jump="${row.view || "endpoints"}"
-          title="打开 ${escapeHtml(row.label)} 详情">
+          title="${escapeHtml(`${row.label} · ${row.hint || ""}`)}">
         <span class="status-dot ${tone}" aria-hidden="true"></span>
         <span class="status-main">
           <span class="status-label">${escapeHtml(row.label)}</span>

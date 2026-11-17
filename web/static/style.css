@@ -3226,14 +3226,15 @@ summary:focus-visible,
   gap: 2px;
   flex: 1 1 auto;
   overflow: auto;
-  max-height: 176px;
+  max-height: none;
 }
 
 .status-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 8px;
+  padding: 4px 8px;
+  min-height: 27px;
   border-radius: 8px;
   border: 1px solid transparent;
   min-width: 0;
@@ -3281,20 +3282,26 @@ summary:focus-visible,
 
 .status-main {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 6px;
   min-width: 0;
   flex: 1 1 auto;
 }
 
 .status-label {
+  flex: 0 0 auto;
   font-size: 12px;
   font-weight: 600;
   line-height: 1.25;
+  white-space: nowrap;
 }
 
 .status-hint {
+  flex: 1 1 auto;
+  min-width: 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10.5px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4467,30 +4474,30 @@ body {
   }
 }
 
-/* 入口与状态：不再用固定高度裁掉最后一行提示 */
+/* 入口与状态：合并为 5 条关键信息，单行展示；完整提示放在 title */
 .status-list {
   max-height: none;
   overflow: visible;
 }
 
 .status-row {
-  align-items: flex-start;
-  padding: 7px 8px;
+  align-items: center;
+  padding: 4px 8px;
 }
 
 .status-dot {
-  margin-top: 5px;
+  margin-top: 0;
 }
 
 .status-hint {
-  white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
-  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
 }
 
 .dash-access .status-row .chip {
-  margin-top: 1px;
+  margin-top: 0;
 }
 
 /* 配置页：分区导航与分组标题 */
@@ -6989,10 +6996,6 @@ body {
   font-size: 12px;
 }
 
-.dash > .dash-top {
-  min-height: 200px;
-}
-
 .trend-chart {
   padding: 6px 8px 4px;
 }
@@ -7114,4 +7117,31 @@ body {
 
 #auth-oidc-state[data-state="warn"] {
   color: var(--warn);
+}
+
+/* 短屏保护：优先保证卡片可读，不把关键行压到看不见；正常桌面仍是一屏 */
+@media (max-height: 820px) and (min-width: 1101px) {
+  .view.active.dash {
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+    gap: 10px;
+  }
+
+  .dash > .dash-top,
+  .dash > .dash-actions,
+  .dash > .dash-bottom {
+    flex: 0 0 auto;
+    min-height: auto;
+  }
+
+  .dash-top > .panel,
+  .dash-bottom > .panel {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .dash > .dash-bottom {
+    min-height: 420px;
+  }
 }
