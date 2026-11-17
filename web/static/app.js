@@ -5,6 +5,7 @@ const state = {
   busy: false,
   autoTimer: null,
   view: "actions",
+  configPage: "connect",
   quality: null,
   refreshInFlight: false,
   lb: null,
@@ -40,7 +41,7 @@ const VIEW_META = {
   toolkits: { group: "资源", purpose: "探测与安装训练 / 推理依赖" },
   ops: { group: "运维", purpose: "对多节点执行命令与 Python 脚本" },
   terminal: { group: "运维", purpose: "连上单台节点的 SSH 终端" },
-  config: { group: "系统", purpose: "编辑集群配置并验证就绪" },
+  config: { group: "系统", purpose: "左侧分页编辑配置；检查、接入与参考各自独立" },
 };
 
 /** 顶层导航分组：现在每一项都是独立页面，不再共用子页签 */
@@ -1060,21 +1061,31 @@ function renderAutoOps(info) {
   const fold = $("auto-ai-fold");
   const box = $("auto-ai-box");
   const at = $("auto-ai-at");
+  const now = Date.now() / 1000;
+  const rel = (t) => (t ? `${formatAgeSec(Math.max(0, now - Number(t)))}前` : "");
   if (line) {
     if (!info || info.enabled === false) {
       line.textContent = "自动巡检：已关闭（cluster.health.auto_refresh）";
+      line.title = "";
     } else {
-      const now = Date.now() / 1000;
-      const rel = (t) => (t ? `${formatAgeSec(Math.max(0, now - Number(t)))}前` : "");
-      const bits = [];
-      if (info.last_api?.at_epoch) bits.push(`API ${rel(info.last_api.at_epoch)}`);
-      if (info.last_gpu?.at_epoch) bits.push(`GPU ${rel(info.last_gpu.at_epoch)}`);
-      if (info.ai?.at_epoch) bits.push(`AI ${rel(info.ai.at_epoch)}`);
-      let text = `自动巡检：开启${bits.length ? " · " + bits.join(" · ") : " · 等待首次检查"}`;
-      if (Array.isArray(info.actions) && info.actions.length) {
-        text += ` · 本轮 ${info.actions.join(" / ")}`;
-      }
-      line.textContent = text;
+      const latest = ["last_ssh", "last_host", "last_api", "last_mesh", "last_gpu"]
+        .map((key) => info[key]?.at_epoch)
+        .filter(Boolean)
+        .reduce((max, value) => Math.max(max, Number(value)), 0);
+      line.textContent = latest
+        ? `自动巡检：开启 · 最近刷新 ${rel(latest)}`
+        : "自动巡检：开启 · 等待首次检查";
+      line.title = [
+        ["SSH", info.last_ssh?.at_epoch],
+        ["主机", info.last_host?.at_epoch],
+        ["API", info.last_api?.at_epoch],
+        ["互通", info.last_mesh?.at_epoch],
+        ["GPU", info.last_gpu?.at_epoch],
+        ["AI", info.ai?.at_epoch],
+      ]
+        .filter(([, value]) => value)
+        .map(([label, value]) => `${label} ${rel(value)}`)
+        .join(" · ");
     }
   }
   if (!fold || !box) return;
@@ -3901,7 +3912,7 @@ async function runDoctor() {
     if (box) box.textContent = text;
     toast(data.ok ? "自检通过" : "自检发现问题");
     setView("config");
-    setConfigTab("checklist");
+    setConfigTab("checklist", { updateHash: true });
   } catch (err) {
     writeConsoleText(String(err.message || err), { meta: "Doctor 失败" });
     log(String(err.message || err));
@@ -3927,21 +3938,38 @@ function scrollBehavior() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
 }
 
-function setConfigTab(name, { updateHash = false, focus = false } = {}) {
-  document.querySelectorAll("#config-tabs .tab").forEach((t) => {
-    const active = t.dataset.tab === name;
-    t.classList.toggle("active", active);
-    t.setAttribute("aria-selected", active ? "true" : "false");
-    t.tabIndex = active ? 0 : -1;
-    if (active && focus) t.focus();
+const CONFIG_PAGES = ["connect", "nodes", "jobs", "ops", "auth", "checklist", "integration", "docs", "raw"];
+const CONFIG_ALIASES = {
+  wizard: "connect",
+  "cfg-ssh": "connect",
+  "cfg-cluster": "connect",
+  "cfg-nodes": "nodes",
+  "cfg-job": "jobs",
+  "cfg-watchdog": "ops",
+  "cfg-auth": "auth",
+};
+
+function setConfigTab(name, { updateHash = false, focus = false, scroll = false } = {}) {
+  let page = CONFIG_ALIASES[name] || name || "connect";
+  if (!CONFIG_PAGES.includes(page)) page = "connect";
+  state.configPage = page;
+  document.querySelectorAll("[data-config-nav]").forEach((btn) => {
+    const active = btn.dataset.configNav === page;
+    btn.classList.toggle("active", active);
+    if (active) btn.setAttribute("aria-current", "page");
+    else btn.removeAttribute("aria-current");
+    if (active && focus) btn.focus();
   });
-  document.querySelectorAll("[data-tab-panel]").forEach((p) => {
-    const active = p.dataset.tabPanel === name;
-    p.classList.toggle("active", active);
-    p.hidden = !active;
+  document.querySelectorAll("[data-config-panel]").forEach((panel) => {
+    const active = panel.dataset.configPanel === page;
+    panel.classList.toggle("active", active);
+    panel.hidden = !active;
   });
   if (updateHash && state.view === "config") {
-    history.replaceState(null, "", `#/config/${name}`);
+    history.replaceState(null, "", `#/config/${page}`);
+  }
+  if (scroll) {
+    $("config-main")?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
   }
 }
 
@@ -4003,12 +4031,12 @@ function setView(name, { updateHash = true } = {}) {
   const hint = $("cli-hint-code");
   if (hint) hint.textContent = VIEW_CLI[name] || "gpu-control --help";
   if (updateHash) {
-    const hash =
-      name === "config" && resolved.tab ? `#/config/${resolved.tab}` : `#/${name}`;
+    const tab = name === "config" ? resolved.tab || state.configPage || "connect" : "";
+    const hash = name === "config" ? `#/config/${tab}` : `#/${name}`;
     if (location.hash !== hash) history.pushState(null, "", hash);
   }
-  if (name === "config" && resolved.tab) {
-    setConfigTab(resolved.tab, { updateHash: false });
+  if (name === "config") {
+    setConfigTab(resolved.tab || state.configPage || "connect", { updateHash: false });
   }
   renderView(name);
   if (name === "config" && !stateSetup.data) {
@@ -4532,6 +4560,10 @@ function fillSetupForm(data) {
     )
     .join("");
 
+  renderSetupSteps(data.steps || []);
+  renderConfigNavStatus(data);
+  renderIntegrations(data.integrations || {});
+
   document.getElementById("config-help").textContent = [
     `project: ${data.project}`,
     `local:   ${data.config_local}`,
@@ -4548,6 +4580,208 @@ function fillSetupForm(data) {
     "  gpu-control health",
     "  gpu-control ui --background",
   ].join("\n");
+}
+
+const CONFIG_ANCHORS = {
+  "cfg-ssh": "connect",
+  "cfg-cluster": "connect",
+  "cfg-nodes": "nodes",
+  "cfg-job": "jobs",
+  "cfg-watchdog": "ops",
+  "cfg-auth": "auth",
+};
+
+function renderConfigNavStatus(data) {
+  const checklist = Array.isArray(data?.checklist) ? data.checklist : [];
+  const steps = Array.isArray(data?.steps) ? data.steps : [];
+  const checklistOk = Object.fromEntries(checklist.map((item) => [item.id, !!item.ok]));
+  const stepOk = Object.fromEntries(steps.map((item) => [item.id, item.ok]));
+  const status = {
+    connect: Boolean(checklistOk.cluster && checklistOk.ssh_key),
+    nodes: stepOk.ssh === true,
+    jobs: stepOk.jobs === true,
+    auth: stepOk.auth === true,
+  };
+  document.querySelectorAll("[data-config-state]").forEach((dot) => {
+    const ok = status[dot.dataset.configState];
+    if (ok === undefined) {
+      dot.hidden = true;
+      return;
+    }
+    dot.hidden = false;
+    dot.dataset.state = ok ? "ok" : "warn";
+    dot.textContent = ok ? "✓" : "!";
+    dot.title = ok ? "已就绪" : "待完善";
+  });
+}
+
+function bindConfigPages() {
+  const navs = Array.from(document.querySelectorAll("[data-config-nav]"));
+  navs.forEach((btn, idx) => {
+    btn.addEventListener("click", () => setConfigTab(btn.dataset.configNav, { updateHash: true, scroll: true }));
+    btn.addEventListener("keydown", (ev) => {
+      const delta = ev.key === "ArrowDown" ? 1 : ev.key === "ArrowUp" ? -1 : 0;
+      if (!delta) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const next = navs[(idx + delta + navs.length) % navs.length];
+      setConfigTab(next.dataset.configNav, { updateHash: true, focus: true, scroll: true });
+    });
+  });
+  setConfigTab(state.configPage || "connect");
+}
+
+function renderSetupSteps(steps) {
+  const root = $("setup-steps");
+  if (!root) return;
+  root.innerHTML =
+    (steps || [])
+      .map((step) => {
+        const tone = step.ok === true ? "ok" : step.ok === false ? "warn" : "idle";
+        const action = step.anchor
+          ? `<button type="button" class="ghost tiny" data-setup-jump="${escapeHtml(step.anchor)}">${step.ok === false ? "去配置" : "查看"}</button>`
+          : "";
+        return `<div class="setup-step" data-tone="${tone}"><span class="setup-step-dot"></span>
+          <div class="setup-step-body"><div class="setup-step-title">${escapeHtml(step.title || "")}</div>
+          <div class="meta">${escapeHtml(step.detail || "")}</div></div>${action}</div>`;
+      })
+      .join("") || '<div class="meta">读取配置状态中…</div>';
+  const at = $("setup-steps-at");
+  if (at) at.textContent = `最近检测：${new Date().toLocaleTimeString()}`;
+  root.querySelectorAll("[data-setup-jump]").forEach((btn) => {
+    btn.addEventListener("click", () => jumpSetupAnchor(btn.dataset.setupJump));
+  });
+}
+
+function jumpSetupAnchor(anchor) {
+  if (!anchor) return;
+  if (anchor === "endpoints") {
+    setView("endpoints");
+    return;
+  }
+  if (anchor === "integration") {
+    setConfigTab("integration", { updateHash: true });
+    return;
+  }
+  const page = CONFIG_ANCHORS[anchor] || "connect";
+  setConfigTab(page, { updateHash: true });
+  setTimeout(() => {
+    document.getElementById(anchor)?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
+  }, 40);
+}
+
+function renderIntegrations(data) {
+  const info = data || {};
+  const auth = info.auth || {};
+  const mcp = info.mcp || {};
+  const assistant = info.assistant || {};
+  const base = $("integration-api-base");
+  if (base) base.textContent = info.api_base || "-";
+  const authEl = $("integration-auth");
+  if (authEl) {
+    authEl.textContent = auth.enabled ? `${auth.mode || "enabled"}（已启用）` : "none（仅回环）";
+  }
+  const tokenEl = $("integration-token");
+  if (tokenEl) tokenEl.textContent = auth.api_token_configured ? "已配置" : "未配置";
+  const pathEl = $("integration-mcp-path");
+  if (pathEl) {
+    pathEl.textContent = mcp.path || "-";
+    pathEl.title = mcp.path || "";
+  }
+  const stateEl = $("integration-mcp-state");
+  if (stateEl) {
+    const ready = Boolean(mcp.executable && mcp.module);
+    stateEl.textContent = ready
+      ? "就绪"
+      : !mcp.exists
+        ? "文件不存在"
+        : !mcp.executable
+          ? "不可执行"
+          : "缺少 mcp 依赖";
+    stateEl.classList.toggle("bad", !ready);
+  }
+  const aiState = $("integration-ai-state");
+  if (aiState) aiState.textContent = assistant.ready ? "就绪" : "未配置";
+  const aiModel = $("integration-ai-model");
+  if (aiModel) aiModel.textContent = assistant.model || "-";
+}
+
+async function testIntegrationApi() {
+  const meta = $("integration-api-meta");
+  if (meta) meta.textContent = "检测中…";
+  const started = performance.now();
+  try {
+    const health = await fetch("/api/health", { credentials: "same-origin" });
+    const catalog = await fetch("/api", { credentials: "same-origin" });
+    const ms = Math.round(performance.now() - started);
+    if (meta) meta.textContent = `health ${health.status} · /api ${catalog.status} · ${ms}ms`;
+    toast(health.ok && catalog.ok ? "API 正常" : "API 有异常", { tone: health.ok && catalog.ok ? "ok" : "warn" });
+  } catch (err) {
+    if (meta) meta.textContent = `检测失败：${err.message || err}`;
+    toastBad(`API 检测失败：${err.message || err}`);
+  }
+}
+
+function aiGuide() {
+  const steps = stateSetup.data?.steps || [];
+  const summary = steps
+    .map((step) => `${step.title}：${step.ok === true ? "就绪" : step.ok === false ? "待配置" : "需查看"}`)
+    .join("；");
+  const prompt =
+    `请检查并指导我完成 ComputeDeck 配置。当前步骤：${summary || "尚未读取"}。` +
+    "先读取状态（setup / overview / doctor），指出下一步具体操作；只读操作可以直接执行，写操作先确认。";
+  setAssistantOpen(true);
+  sendAssistant(prompt);
+}
+
+async function copyMcpConfig() {
+  const ok = await confirmDialog({
+    title: "生成 MCP 配置",
+    message: "将生成 / 轮换 API Token 并复制 MCP 配置；旧 Token 会立即失效。",
+    confirmText: "生成并复制",
+  });
+  if (!ok) return;
+  setBusy(true);
+  try {
+    const data = await api("/api/auth/token", {
+      method: "POST",
+      body: JSON.stringify({ action: "issue" }),
+    });
+    const token = data.token || "";
+    const info = stateSetup.data?.integrations || {};
+    const base = info.api_base || location.origin;
+    const mcpPath = info.mcp?.path || "bin/gpu-control-mcp";
+    const client = $("mcp-client")?.value || "cursor";
+    const snippet =
+      client === "codex"
+        ? `[mcp_servers.gpu-control]\ncommand = ${JSON.stringify(mcpPath)}\nenv = { GPU_CONTROL_API_BASE = ${JSON.stringify(base)}, GPU_CONTROL_API_TOKEN = ${JSON.stringify(token)} }\n`
+        : JSON.stringify(
+            {
+              mcpServers: {
+                "gpu-control": {
+                  command: mcpPath,
+                  env: { GPU_CONTROL_API_BASE: base, GPU_CONTROL_API_TOKEN: token },
+                },
+              },
+            },
+            null,
+            2
+          );
+    const copied = await copyText(snippet);
+    const pre = $("integration-mcp-snippet");
+    if (pre) {
+      pre.hidden = false;
+      pre.textContent = snippet;
+    }
+    const meta = $("integration-mcp-meta");
+    if (meta) meta.textContent = copied ? "已复制 MCP 配置；Token 只显示一次。" : "已生成配置，请从下方手动复制。";
+    await loadSetup();
+    toast(copied ? "MCP 配置已复制" : "MCP 配置已生成", { tone: "ok", timeout: 6000 });
+  } catch (err) {
+    toastBad(`生成 MCP 配置失败：${err.message || err}`);
+  } finally {
+    setBusy(false);
+  }
 }
 
 async function loadSetup() {
@@ -4600,7 +4834,7 @@ async function testSsh() {
       )
       .join("");
     toast(data.ok ? "SSH 全部通" : "部分节点不通");
-    setConfigTab("wizard");
+    setConfigTab("connect", { scroll: true });
   } catch (err) {
     log(String(err.message || err));
   } finally {
@@ -4748,6 +4982,7 @@ async function issueAuthToken() {
       meta.innerHTML = `新 Token（只显示一次）：<code>${escapeHtml(data.token || "")}</code>`;
     }
     if (data.auth && state.auth) state.auth = { ...state.auth, ...data.auth };
+    loadSetup().catch(() => {});
     const copied = await copyText(data.token || "");
     toast(copied ? "新 Token 已生成并复制" : "新 Token 已生成，请立即保存", {
       tone: "ok",
@@ -4776,6 +5011,7 @@ async function clearAuthToken() {
     });
     const meta = $("auth-token-meta");
     if (meta) meta.textContent = "Token 已清除；脚本 / MCP 需重新生成。";
+    loadSetup().catch(() => {});
     toastOk("Token 已清除");
   } catch (err) {
     toastBad(`清除 Token 失败：${err.message || err}`);
@@ -4979,23 +5215,6 @@ async function boot() {
       closeNodeDrawer();
     });
   }
-  const configTabs = Array.from(document.querySelectorAll("#config-tabs .tab"));
-  configTabs.forEach((btn, idx) => {
-    btn.addEventListener("click", () => setConfigTab(btn.dataset.tab, { updateHash: true }));
-    btn.addEventListener("keydown", (ev) => {
-      const target =
-        ev.key === "ArrowLeft" ? idx - 1
-          : ev.key === "ArrowRight" ? idx + 1
-            : ev.key === "Home" ? 0
-              : ev.key === "End" ? configTabs.length - 1
-                : null;
-      if (target == null || !configTabs.length) return;
-      ev.preventDefault();
-      ev.stopPropagation();
-      const next = configTabs[(target + configTabs.length) % configTabs.length];
-      setConfigTab(next.dataset.tab, { updateHash: true, focus: true });
-    });
-  });
   const shortcutsDialog = $("shortcuts-dialog");
   const openShortcuts = () => {
     if (!shortcutsDialog) return;
@@ -5234,6 +5453,27 @@ async function boot() {
   document.getElementById("btn-auth-token-issue")?.addEventListener("click", issueAuthToken);
   document.getElementById("btn-auth-token-clear")?.addEventListener("click", clearAuthToken);
   document.getElementById("btn-oidc-check")?.addEventListener("click", checkOidcStatus);
+  document.getElementById("btn-setup-recheck")?.addEventListener("click", async () => {
+    setBusy(true);
+    try {
+      await loadSetup();
+      toastOk("配置状态已更新");
+    } catch (err) {
+      toastBad(`检测失败：${err.message || err}`);
+    } finally {
+      setBusy(false);
+    }
+  });
+  document.getElementById("btn-ai-guide")?.addEventListener("click", aiGuide);
+  document.getElementById("btn-integration-api-test")?.addEventListener("click", testIntegrationApi);
+  document.getElementById("btn-integration-token-issue")?.addEventListener("click", issueAuthToken);
+  document.getElementById("btn-integration-token-clear")?.addEventListener("click", clearAuthToken);
+  document.getElementById("btn-integration-mcp-refresh")?.addEventListener("click", () => loadSetup().catch(() => {}));
+  document.getElementById("btn-integration-mcp-copy")?.addEventListener("click", copyMcpConfig);
+  document.getElementById("btn-integration-ai-open")?.addEventListener("click", () => {
+    setAssistantOpen(true);
+    setAssistantSettingsOpen(true);
+  });
   document.getElementById("btn-add-node-card")?.addEventListener("click", () => addNodeCard());
   document.getElementById("job-runtime")?.addEventListener("change", syncJobRuntimeFields);
   document.getElementById("nodes-editor")?.addEventListener("change", syncNodesCardsFromEditor);
@@ -5626,7 +5866,7 @@ async function boot() {
     if (assistantState.open) return;
     if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
       // 配置页签自己处理左右键，别让全局翻页再抢一次。
-      if (target && target.closest && target.closest("#config-tabs")) return;
+      if (target && target.closest && target.closest("#config-side")) return;
       ev.preventDefault();
       const idx = Math.max(0, VIEW_ORDER.indexOf(state.view));
       const delta = ev.key === "ArrowRight" ? 1 : -1;
@@ -5652,6 +5892,7 @@ async function boot() {
   });
 
   bindAssistant();
+  bindConfigPages();
   bindNotices();
   restoreAiAnalyze();
 
@@ -6037,7 +6278,7 @@ async function restoreAssistantConversation() {
         markdown: msg.role !== "user",
       });
     }
-    renderAssistantPending(data.pending_actions || []);
+    syncAssistantPending(data.pending_actions || []);
   } catch (err) {
     assistantState.restored = false;
     log(`assistant restore: ${err.message || err}`);
@@ -6051,7 +6292,7 @@ function newAssistantConversation() {
   assistantState.restored = true;
   const thread = $("assistant-thread");
   if (thread) thread.innerHTML = "";
-  renderAssistantPending([]);
+  syncAssistantPending([]);
   appendAssistantMsg("bot", "新对话已开始。你可以让我巡检、部署、腾空节点或检查入口。");
 }
 
@@ -6061,8 +6302,19 @@ function setAssistantOpen(open) {
   const fab = $("assistant-fab");
   if (panel) panel.hidden = !open;
   if (fab) fab.setAttribute("aria-expanded", open ? "true" : "false");
+  updateAssistantFabDot();
   if (open) {
-    restoreAssistantConversation().catch(() => {});
+    restoreAssistantConversation()
+      .then(() => {
+        const thread = $("assistant-thread");
+        if (thread && !thread.children.length) {
+          appendAssistantMsg(
+            "bot",
+            "你好，我是 ComputeDeck 助手。可以让我巡检集群、查节点、部署 Job 或检查入口；写操作会先请你确认。"
+          );
+        }
+      })
+      .catch(() => {});
     if (assistantState.settingsOpen) $("assistant-base-url")?.focus();
     else $("assistant-input")?.focus();
   } else {
@@ -6102,7 +6354,7 @@ function fillAssistantSettingsForm(status) {
   if (clearKey) clearKey.checked = false;
   if (preset) {
     const openaiUrl = "https://api.openai.com/v1";
-    preset.value = !base || base === openaiUrl ? "openai" : "custom";
+    preset.value = base === openaiUrl ? "openai" : "custom";
   }
   if (hint) {
     const note = status?.network_note || "请求由控制面主机访问 Base URL（不是浏览器本机）。";
@@ -6148,24 +6400,53 @@ function applyAssistantStatus(data) {
   if (assistantState.settingsOpen) fillAssistantSettingsForm(data);
 }
 
+function assistantAtBottom(slack = 80) {
+  const thread = $("assistant-thread");
+  if (!thread) return true;
+  return thread.scrollHeight - thread.scrollTop - thread.clientHeight <= slack;
+}
+
+function scrollAssistantThread(force = false) {
+  const thread = $("assistant-thread");
+  if (!thread) return;
+  if (force || assistantAtBottom()) thread.scrollTop = thread.scrollHeight;
+}
+
+function assistantThinkingHtml() {
+  return '<span class="assistant-thinking" aria-label="正在处理"><i></i><i></i><i></i></span>';
+}
+
+function assistantMsgAvatar() {
+  const avatar = document.createElement("span");
+  avatar.className = "assistant-msg-avatar";
+  avatar.setAttribute("aria-hidden", "true");
+  avatar.textContent = "✦";
+  return avatar;
+}
+
 function appendAssistantMsg(role, text, extra = {}) {
   const thread = $("assistant-thread");
   if (!thread) return null;
+  const stick = assistantAtBottom();
   const el = document.createElement("div");
   el.className = `assistant-msg ${role === "user" ? "user" : "bot"}`;
+  if (role !== "user") el.appendChild(assistantMsgAvatar());
+  const body = document.createElement("div");
+  body.className = "assistant-msg-body";
+  el.appendChild(body);
   if (extra.markdown && role !== "user") {
-    setMarkdown(el, text || "");
+    setMarkdown(body, text || "");
   } else {
-    el.textContent = text || "";
+    body.textContent = text || "";
   }
   if (extra.warning) {
     const w = document.createElement("span");
     w.className = "warn";
     w.textContent = extra.warning;
-    el.appendChild(w);
+    body.appendChild(w);
   }
   thread.appendChild(el);
-  thread.scrollTop = thread.scrollHeight;
+  if (stick) scrollAssistantThread(true);
   return el;
 }
 
@@ -6174,15 +6455,33 @@ function appendAssistantStreamingMsg() {
   if (!thread) return null;
   const el = document.createElement("div");
   el.className = "assistant-msg bot markdown streaming";
-  el.textContent = "正在处理…";
+  el.appendChild(assistantMsgAvatar());
+  const wrap = document.createElement("div");
+  wrap.className = "assistant-msg-body";
+  const body = document.createElement("div");
+  body.className = "assistant-body";
+  body.innerHTML = assistantThinkingHtml();
+  const steps = document.createElement("div");
+  steps.className = "assistant-steps";
+  steps.hidden = true;
+  wrap.append(body, steps);
+  el.appendChild(wrap);
   thread.appendChild(el);
-  thread.scrollTop = thread.scrollHeight;
+  scrollAssistantThread(true);
   return el;
 }
 
-function scrollAssistantThread() {
-  const thread = $("assistant-thread");
-  if (thread) thread.scrollTop = thread.scrollHeight;
+function appendAssistantStep(stepsEl, label, state) {
+  if (!stepsEl) return;
+  stepsEl.hidden = false;
+  const row = document.createElement("div");
+  row.className = "assistant-step";
+  row.dataset.state = state;
+  row.innerHTML = `<span class="assistant-step-icon" aria-hidden="true"></span>
+    <span class="assistant-step-label">${escapeHtml(label || "工具")}</span>
+    <span class="assistant-step-meta">${state === "pending" ? "等待确认" : "已执行"}</span>`;
+  stepsEl.appendChild(row);
+  scrollAssistantThread();
 }
 
 async function postAssistantStream(payload, onEvent, { timeoutMs = 240000, controller = null } = {}) {
@@ -6261,55 +6560,12 @@ function renderAssistantQuick(actions) {
   });
 }
 
-function renderAssistantPending(pending) {
-  const root = $("assistant-pending");
-  if (!root) return;
-  const items = pending || [];
-  assistantState.pending = items;
-  if (!items.length) {
-    root.hidden = true;
-    root.innerHTML = "";
-    return;
-  }
-  root.hidden = false;
-  root.innerHTML = items
-    .map((row, i) => {
-      const risk = row.risk || "write";
-      const tone = risk === "destructive" ? "bad" : risk === "write" ? "warn" : "info";
-      const target = row.target || {};
-      const targetBits = [];
-      if ((target.nodes || []).length) targetBits.push(`节点：${target.nodes.join("、")}`);
-      if ((target.jobs || []).length) targetBits.push(`Job：${target.jobs.join("、")}`);
-      const warnings = (row.warnings || []).map((w) => `<p class="warn">${escapeHtml(w)}</p>`).join("");
-      const args = row.display_args || row.args || {};
-      return `<div class="assistant-action" data-risk="${escapeHtml(risk)}" data-action-id="${escapeHtml(row.id)}">
-        <div class="assistant-action-h">
-          <strong>${escapeHtml(row.label || row.tool || "操作")}</strong>
-          <span class="chip chip--${tone}">${escapeHtml(risk === "destructive" ? "高风险" : risk === "write" ? "写操作" : "只读")}</span>
-        </div>
-        <p>${escapeHtml(row.summary || "")}</p>
-        ${targetBits.length ? `<p class="meta">${escapeHtml(targetBits.join(" · "))}</p>` : ""}
-        ${warnings}
-        <details><summary>参数</summary><pre>${escapeHtml(JSON.stringify(args, null, 2))}</pre></details>
-        <div class="btn-row">
-          <button type="button" class="ghost tiny" data-pending-cancel="${i}">取消</button>
-          <button type="button" class="${risk === "destructive" ? "danger" : "primary"} tiny" data-pending-ok="${i}">确认执行</button>
-        </div>
-      </div>`;
-    })
-    .join("");
-  root.querySelectorAll("[data-pending-ok]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const row = items[Number(btn.dataset.pendingOk)];
-      if (row) runAssistantPending(row);
-    });
-  });
-  root.querySelectorAll("[data-pending-cancel]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const row = items[Number(btn.dataset.pendingCancel)];
-      if (row) rejectAssistantPending(row);
-    });
-  });
+function assistantRiskTone(risk) {
+  return risk === "destructive" ? "bad" : risk === "write" ? "warn" : "info";
+}
+
+function assistantRiskLabel(risk) {
+  return risk === "destructive" ? "破坏性" : risk === "write" ? "写操作" : "只读";
 }
 
 function assistantTargetText(row) {
@@ -6320,7 +6576,126 @@ function assistantTargetText(row) {
   return bits.join("；");
 }
 
-async function rejectAssistantPending(row) {
+function updateAssistantFabDot() {
+  const dot = $("assistant-fab-dot");
+  if (!dot) return;
+  const count = (assistantState.pending || []).length;
+  dot.hidden = !count || assistantState.open;
+  dot.textContent = count ? String(count) : "";
+  dot.setAttribute("aria-label", count ? `${count} 个操作待确认` : "");
+}
+
+function markAssistantApproval(card, state, text) {
+  if (!card) return;
+  card.dataset.state = state;
+  const allow = card.querySelector("[data-approval-allow]");
+  const reject = card.querySelector("[data-approval-reject]");
+  const hint = card.querySelector(".assistant-approval-hint");
+  if (state === "running") {
+    if (allow) allow.disabled = true;
+    if (reject) reject.disabled = true;
+    if (hint) hint.textContent = "正在执行…";
+    return;
+  }
+  if (state === "pending" || state === "armed") {
+    if (allow) {
+      allow.disabled = false;
+      if (state === "pending" && card.dataset.risk === "destructive") allow.textContent = "允许…";
+    }
+    if (reject) reject.disabled = false;
+    return;
+  }
+  if (["done", "failed", "rejected", "expired"].includes(state)) {
+    allow?.remove();
+    reject?.remove();
+    if (hint) {
+      hint.textContent =
+        text ||
+        {
+          done: "已执行",
+          failed: "执行失败",
+          rejected: "已拒绝，未执行",
+          expired: "确认卡已过期",
+        }[state] ||
+        "";
+    }
+  }
+}
+
+function assistantApprovalCard(row) {
+  const risk = row.risk || "write";
+  const target = assistantTargetText(row);
+  const warnings = (row.warnings || [])
+    .map((w) => `<p class="warn">${escapeHtml(w)}</p>`)
+    .join("");
+  const args = row.display_args || row.args || {};
+  const card = document.createElement("div");
+  card.className = "assistant-approval";
+  card.dataset.risk = risk;
+  card.dataset.state = "pending";
+  card.dataset.actionId = row.id;
+  card.innerHTML = `
+    <div class="assistant-approval-h">
+      <span class="assistant-approval-icon" aria-hidden="true"></span>
+      <strong class="assistant-approval-title">${escapeHtml(row.label || row.tool || "操作")}</strong>
+      <span class="chip chip--${assistantRiskTone(risk)}">${escapeHtml(assistantRiskLabel(risk))}</span>
+    </div>
+    <p class="assistant-approval-summary">${escapeHtml(row.summary || "")}</p>
+    ${target ? `<p class="assistant-approval-meta">${escapeHtml(target)}</p>` : ""}
+    ${warnings}
+    <details class="assistant-approval-args"><summary>查看参数</summary><pre>${escapeHtml(JSON.stringify(args, null, 2))}</pre></details>
+    <div class="assistant-approval-foot">
+      <span class="assistant-approval-hint">${risk === "destructive" ? "破坏性操作：需要点两次确认" : "确认后才会执行"}</span>
+      <div class="btn-row">
+        <button type="button" class="ghost tiny" data-approval-reject>拒绝</button>
+        <button type="button" class="${risk === "destructive" ? "danger" : "primary"} tiny" data-approval-allow>${risk === "destructive" ? "允许…" : "允许"}</button>
+      </div>
+    </div>`;
+  card.querySelector("[data-approval-reject]")?.addEventListener("click", () => rejectAssistantPending(row, card));
+  card.querySelector("[data-approval-allow]")?.addEventListener("click", () => {
+    if (card.dataset.state === "running") return;
+    if (risk === "destructive" && card.dataset.state !== "armed") {
+      card.dataset.state = "armed";
+      const allow = card.querySelector("[data-approval-allow]");
+      const hint = card.querySelector(".assistant-approval-hint");
+      if (allow) allow.textContent = "再次点击执行";
+      if (hint) hint.textContent = "再点一次确认执行该破坏性操作";
+      scrollAssistantThread(true);
+      return;
+    }
+    runAssistantPending(row, card);
+  });
+  return card;
+}
+
+function syncAssistantPending(pending) {
+  const thread = $("assistant-thread");
+  if (!thread) return;
+  const items = (Array.isArray(pending) ? pending : []).filter(Boolean);
+  const keep = new Set(items.map((x) => String(x.id)));
+  thread.querySelectorAll(".assistant-approval").forEach((card) => {
+    if (!["pending", "armed"].includes(card.dataset.state)) return;
+    if (!keep.has(card.dataset.actionId)) card.remove();
+  });
+  assistantState.pending = items;
+  let appended = false;
+  for (const row of items) {
+    if (thread.querySelector(`.assistant-approval[data-action-id="${row.id}"]`)) continue;
+    thread.appendChild(assistantApprovalCard(row));
+    appended = true;
+  }
+  updateAssistantFabDot();
+  if (appended) scrollAssistantThread(true);
+}
+
+function settleAssistantPending(actionId) {
+  assistantState.pending = (assistantState.pending || []).filter((x) => x.id !== actionId);
+  updateAssistantFabDot();
+}
+
+async function rejectAssistantPending(row, card) {
+  markAssistantApproval(card, "rejected", "已拒绝，未执行");
+  settleAssistantPending(row.id);
   try {
     if (assistantState.conversationId) {
       await api("/api/assistant/execute", {
@@ -6336,15 +6711,109 @@ async function rejectAssistantPending(row) {
   } catch (err) {
     log(`assistant reject: ${err.message || err}`);
   }
-  renderAssistantPending((assistantState.pending || []).filter((x) => x.id !== row.id));
-  appendAssistantMsg("bot", "已取消该操作。");
 }
 
-function dropAssistantPending(actionId) {
-  renderAssistantPending((assistantState.pending || []).filter((x) => x.id !== actionId));
+function formatAssistantResult(data) {
+  const payload = data && typeof data === "object" ? data : {};
+  const rawResult = payload.result && typeof payload.result === "object" ? payload.result : {};
+  const merged = { ...rawResult, ...payload };
+  const rows = Array.isArray(payload.results)
+    ? payload.results
+    : Array.isArray(rawResult.results)
+      ? rawResult.results
+      : null;
+  const chunks = [];
+  if (payload.http_status && Number(payload.http_status) >= 400) {
+    chunks.push(`<p class="warn">HTTP ${escapeHtml(payload.http_status)}</p>`);
+  }
+  if (rows) {
+    for (const row of rows.slice(0, 8)) {
+      if (!row || typeof row !== "object") continue;
+      const node = row.node || "节点";
+      const rc = row.rc ?? row.exit_code;
+      const ok = rc === 0 || rc === undefined || rc === null;
+      const out = String(row.stdout || row.output || "").trim();
+      const err = String(row.stderr || "").trim();
+      chunks.push(
+        `<div class="assistant-run-row" data-state="${ok ? "ok" : "bad"}"><span>${escapeHtml(node)}</span><span>${ok ? "成功" : `rc=${escapeHtml(rc)}`}</span></div>`
+      );
+      if (out) {
+        chunks.push(
+          `<details class="assistant-run-output"${out.length <= 600 ? " open" : ""}><summary>输出</summary><pre>${escapeHtml(out.slice(0, 4000))}</pre></details>`
+        );
+      }
+      if (err) {
+        chunks.push(
+          `<details class="assistant-run-output" open><summary>错误输出</summary><pre>${escapeHtml(err.slice(0, 2000))}</pre></details>`
+        );
+      }
+    }
+    return chunks.join("");
+  }
+  const msg = merged.message || merged.detail || merged.error;
+  if (msg) chunks.push(`<p>${escapeHtml(String(msg))}</p>`);
+  const pairs = ["job", "node", "nodes", "gpus", "status", "count", "ok"]
+    .filter((key) => merged[key] !== undefined && merged[key] !== null)
+    .map((key) => {
+      const value = merged[key];
+      return `${key}=${Array.isArray(value) ? value.join(",") : value}`;
+    });
+  if (pairs.length) chunks.push(`<p class="meta">${escapeHtml(pairs.join(" · "))}</p>`);
+  const stdout = String(rawResult.stdout || "").trim();
+  const stderr = String(rawResult.stderr || "").trim();
+  if (stdout) {
+    chunks.push(
+      `<details class="assistant-run-output"${stdout.length <= 800 ? " open" : ""}><summary>命令输出</summary><pre>${escapeHtml(stdout.slice(0, 4000))}</pre></details>`
+    );
+  }
+  if (stderr) {
+    chunks.push(
+      `<details class="assistant-run-output" open><summary>错误输出</summary><pre>${escapeHtml(stderr.slice(0, 2000))}</pre></details>`
+    );
+  }
+  if (!chunks.length) {
+    chunks.push(
+      `<details class="assistant-run-output"><summary>原始结果</summary><pre>${escapeHtml(JSON.stringify(merged, null, 2).slice(0, 4000))}</pre></details>`
+    );
+  }
+  return chunks.join("");
 }
 
-async function runAssistantPending(row) {
+function appendAssistantRun(card, row) {
+  const thread = $("assistant-thread");
+  if (!thread || !card) return null;
+  const run = document.createElement("div");
+  run.className = "assistant-run";
+  run.dataset.state = "running";
+  run.innerHTML = `
+    <div class="assistant-run-h">
+      <span class="assistant-run-icon" aria-hidden="true"></span>
+      <strong>${escapeHtml(row.label || row.tool || "操作")}</strong>
+      <span class="assistant-run-status">执行中…</span>
+    </div>
+    <div class="assistant-run-body"><span class="assistant-thinking"><i></i><i></i><i></i></span></div>`;
+  card.insertAdjacentElement("afterend", run);
+  scrollAssistantThread(true);
+  return run;
+}
+
+function finishAssistantRun(run, data, err) {
+  if (!run) return;
+  const ok = Boolean(data && data.ok);
+  run.dataset.state = err ? "failed" : ok ? "done" : "failed";
+  const status = run.querySelector(".assistant-run-status");
+  if (status) status.textContent = err ? "失败" : ok ? "完成" : "失败";
+  const body = run.querySelector(".assistant-run-body");
+  if (body) {
+    const html = data ? formatAssistantResult(data) : "";
+    body.innerHTML =
+      html ||
+      `<p class="meta">${escapeHtml(err ? err.message || err : (data && data.reply) || "操作已执行")}</p>`;
+  }
+  scrollAssistantThread(true);
+}
+
+async function runAssistantPending(row, card) {
   if (!assistantState.conversationId) {
     toastBad("会话已失效，请重新提问");
     return;
@@ -6354,36 +6823,13 @@ async function runAssistantPending(row) {
     return;
   }
   assistantState.executingAction = row.id;
-  const actionCard = document.querySelector(`[data-action-id="${row.id}"]`);
-  if (actionCard) actionCard.dataset.busy = "1";
-  document
-    .querySelectorAll("#assistant-pending [data-pending-ok], #assistant-pending [data-pending-cancel]")
-    .forEach((btn) => {
-      btn.disabled = true;
-    });
-  const sendBtn = $("assistant-send");
   const destructive = row.risk === "destructive" || row.confirm_level === "confirm_twice";
-  const detail = `${row.summary || ""}${assistantTargetText(row) ? "\n" + assistantTargetText(row) : ""}`;
+  markAssistantApproval(card, "running");
+  const run = appendAssistantRun(card, row);
+  const sendBtn = $("assistant-send");
+  if (sendBtn) sendBtn.disabled = true;
+  assistantState.busy = true;
   try {
-    const ok = await confirmDialog({
-      title: `确认：${row.label || row.tool}`,
-      message: detail,
-      tone: destructive ? "danger" : "primary",
-      confirmText: "执行",
-    });
-    if (!ok) return;
-    if (destructive) {
-      const again = await confirmDialog({
-        title: "再次确认（破坏性操作）",
-        message: `${row.label || row.tool}\n${detail}\n\n该操作会停止任务或结束进程，确认继续？`,
-        tone: "danger",
-        confirmText: "我确认执行",
-      });
-      if (!again) return;
-    }
-    if (sendBtn) sendBtn.disabled = true;
-    assistantState.busy = true;
-    appendAssistantMsg("bot", `正在执行：${row.label || row.tool}…`);
     const data = await api("/api/assistant/execute", {
       method: "POST",
       body: JSON.stringify({
@@ -6394,47 +6840,49 @@ async function runAssistantPending(row) {
       timeoutMs: 1900000,
     });
     if (data.conversation_id) setAssistantConversation(data.conversation_id);
+    settleAssistantPending(row.id);
     if (data.already) {
-      dropAssistantPending(row.id);
-      appendAssistantMsg("bot", data.reply || "该操作已经执行过，确认卡已移除。");
-      toastOk("操作已执行");
+      markAssistantApproval(card, "done", "此前已执行");
+      finishAssistantRun(run, { ok: true, reply: "该操作此前已经执行过。" });
+      appendAssistantMsg("bot", data.reply || "该操作此前已经执行过。", { markdown: true });
+      syncAssistantPending(data.pending_actions || []);
       await refresh(false, { light: true });
       return;
     }
+    markAssistantApproval(card, data.ok ? "done" : "failed", data.ok ? "已执行" : "执行失败");
+    finishAssistantRun(run, data);
     const reply = data.reply || (data.ok ? "操作已执行。" : "执行失败。");
     appendAssistantMsg("bot", reply, { markdown: true });
     assistantState.messages.push({ role: "assistant", content: reply });
-    renderAssistantPending(data.pending_actions || []);
-    if (data.ok) toastOk("操作已执行");
-    else toastBad("操作失败");
+    syncAssistantPending(data.pending_actions || []);
     await refresh(false, { light: true });
   } catch (err) {
     const code = (err && err.data && err.data.error) || "";
-    if (code === "action_not_pending" || code === "action_expired") {
-      dropAssistantPending(row.id);
-      appendAssistantMsg(
-        "bot",
-        code === "action_expired"
-          ? "确认卡已过期，已自动移除。请重新提问。"
-          : "该操作已经执行过，确认卡已移除。"
-      );
-      toastOk("操作已处理");
+    if (code === "action_in_progress") {
+      markAssistantApproval(card, "pending");
+      const hint = card.querySelector(".assistant-approval-hint");
+      if (hint) hint.textContent = "该操作正在执行，请稍候";
+      finishAssistantRun(run, null, { message: "该操作正在执行，请稍候。" });
+    } else if (code === "action_not_pending" || code === "action_expired") {
+      const expired = code === "action_expired";
+      settleAssistantPending(row.id);
+      markAssistantApproval(card, "expired", expired ? "确认卡已过期" : "已处理过");
+      finishAssistantRun(run, null, {
+        message: expired ? "确认卡已过期，请重新提问。" : "该操作已经执行过。",
+      });
       await refresh(false, { light: true }).catch(() => {});
-    } else if (code === "action_in_progress") {
-      appendAssistantMsg("bot", "该操作正在执行，请稍候，不要重复点击。");
-      toast("正在执行", { tone: "warn" });
     } else {
-      appendAssistantMsg("bot", `执行失败：${err.message || err}`);
+      markAssistantApproval(card, "pending");
+      const hint = card.querySelector(".assistant-approval-hint");
+      if (hint) hint.textContent = "执行失败，可重试或拒绝";
+      finishAssistantRun(run, null, err);
       toastBad(`执行失败：${err.message || err}`);
     }
   } finally {
     assistantState.busy = false;
     assistantState.executingAction = null;
     if (sendBtn) sendBtn.disabled = false;
-    if (actionCard) delete actionCard.dataset.busy;
-    if ((assistantState.pending || []).some((x) => x.id === row.id)) {
-      renderAssistantPending(assistantState.pending);
-    }
+    updateAssistantFabDot();
   }
 }
 
@@ -6547,6 +6995,13 @@ async function saveAssistantConfig() {
   }
 }
 
+function autoGrowAssistantInput() {
+  const input = $("assistant-input");
+  if (!input) return;
+  input.style.height = "auto";
+  input.style.height = `${Math.min(input.scrollHeight, 148)}px`;
+}
+
 async function sendAssistant(text) {
   const content = (text || "").trim();
   if (!content || assistantState.busy) return;
@@ -6555,7 +7010,10 @@ async function sendAssistant(text) {
     return;
   }
   const input = $("assistant-input");
-  if (input) input.value = "";
+  if (input) {
+    input.value = "";
+    autoGrowAssistantInput();
+  }
   assistantState.messages.push({ role: "user", content });
   appendAssistantMsg("user", content);
   assistantState.busy = true;
@@ -6569,29 +7027,29 @@ async function sendAssistant(text) {
   const stopBtn = $("assistant-stop");
   if (stopBtn) stopBtn.hidden = false;
   const bubble = appendAssistantStreamingMsg();
+  const bubbleBody = bubble?.querySelector(".assistant-body");
+  const bubbleSteps = bubble?.querySelector(".assistant-steps");
   let streamed = "";
   let donePayload = null;
-  const toolLabels = [];
 
   const finish = (data) => {
     if (data?.conversation_id) setAssistantConversation(data.conversation_id);
     const reply = data?.reply || data?.error || "（无回复）";
     if (bubble && bubble.isConnected) {
       bubble.classList.remove("streaming");
-      setMarkdown(bubble, reply);
-      if (toolLabels.length) {
-        const trace = document.createElement("div");
-        trace.className = "assistant-traces";
-        trace.textContent = `工具：${toolLabels.join(" · ")}`;
-        bubble.appendChild(trace);
+      if (bubbleBody) {
+        bubbleBody.innerHTML = "";
+        if (reply) setMarkdown(bubbleBody, reply);
+        else bubbleBody.remove();
       }
+      if (bubbleSteps && !bubbleSteps.children.length) bubbleSteps.remove();
       scrollAssistantThread();
     } else {
       appendAssistantMsg("bot", reply, { markdown: true, warning: data?.warning });
     }
     assistantState.messages.push({ role: "assistant", content: reply });
     if (data?.quick_actions) renderAssistantQuick(data.quick_actions);
-    renderAssistantPending(data?.pending_actions || []);
+    if (Array.isArray(data?.pending_actions)) syncAssistantPending(data.pending_actions);
     if (data?.open_settings) setAssistantSettingsOpen(true);
   };
 
@@ -6603,15 +7061,15 @@ async function sendAssistant(text) {
         const piece = String(data.text || "");
         if (!piece) return;
         streamed += piece;
-        if (bubble) {
-          if (streamed === piece) bubble.textContent = "";
-          bubble.textContent = streamed;
+        if (bubbleBody) {
+          if (streamed === piece) bubbleBody.textContent = "";
+          bubbleBody.textContent = streamed;
           scrollAssistantThread();
         }
       } else if (event === "tool") {
         const label = data.label || data.tool || "工具";
-        if (!toolLabels.includes(label)) toolLabels.push(label);
-        if (bubble && !streamed) bubble.textContent = `正在调用 ${label}…`;
+        const state = data.status === "deferred" ? "pending" : "done";
+        appendAssistantStep(bubbleSteps, label, state);
       } else if (event === "done") {
         donePayload = data;
       } else if (event === "error") {
@@ -6648,7 +7106,8 @@ async function sendAssistant(text) {
     finish({ ok: true, reply: streamed });
   } else if (bubble) {
     bubble.classList.remove("streaming");
-    bubble.textContent = "（上游没有返回内容）";
+    const body = bubble.querySelector(".assistant-body");
+    if (body) body.textContent = "（上游没有返回内容）";
   }
 
   assistantState.busy = false;
@@ -6669,6 +7128,24 @@ function bindAssistant() {
   const saveBtn = $("assistant-save-config");
   const preset = $("assistant-preset");
   const modelSelect = $("assistant-model-select");
+  const assistantInput = $("assistant-input");
+  if (assistantInput) {
+    assistantInput.addEventListener("input", autoGrowAssistantInput);
+    assistantInput.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) {
+        ev.preventDefault();
+        form?.requestSubmit();
+      }
+    });
+  }
+  document.addEventListener("keydown", (ev) => {
+    if (!(ev.metaKey || ev.ctrlKey) || ev.altKey) return;
+    if (ev.key !== "k" && ev.key !== "K") return;
+    ev.preventDefault();
+    const next = !assistantState.open;
+    setAssistantOpen(next);
+    if (next && !assistantState.status) loadAssistantStatus();
+  });
   if (fab) {
     fab.addEventListener("click", () => {
       setAssistantOpen(!assistantState.open);
@@ -6681,6 +7158,13 @@ function bindAssistant() {
   document.addEventListener("keydown", (ev) => {
     if (ev.key !== "Escape" || !assistantState.open) return;
     if (document.querySelector("dialog[open]")) return;
+    const armed = document.querySelector('.assistant-approval[data-state="armed"]');
+    if (armed) {
+      markAssistantApproval(armed, "pending");
+      const hint = armed.querySelector(".assistant-approval-hint");
+      if (hint) hint.textContent = "已取消这次确认，可重新点「允许」";
+      return;
+    }
     setAssistantOpen(false);
     document.getElementById("assistant-fab")?.focus();
   });

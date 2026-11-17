@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -23,9 +24,12 @@ from pathlib import Path
 from typing import Any
 import urllib.error
 import urllib.request
-from urllib.parse import parse_qs, quote, unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+from json_util import loads_relaxed  # noqa: E402
+from pydantic import ValidationError  # noqa: E402
+from schemas import AuthTokenRequest, LiteLLMModelRequest  # noqa: E402
 from paths import (  # noqa: E402
     CLI,
     CONFIG_DIR,
@@ -55,7 +59,6 @@ import liveness  # noqa: E402
 import assistant_session  # noqa: E402
 import remote_access  # noqa: E402
 from assistant_tools import route_for as assistant_route_for  # noqa: E402
-from assistant_validate import args_hash as assistant_args_hash  # noqa: E402
 from assistant_validate import validate_call as assistant_validate_call  # noqa: E402
 from static_util import resolve_help_target  # noqa: E402
 from jobs_util import (  # noqa: E402
@@ -205,7 +208,7 @@ def _gateway_status_fresh(*, allow_cli: bool = True) -> dict:
     if allow_cli:
         result = run_cli(["gateway", "status"], timeout=20, log=False)
         try:
-            parsed = json.loads(result.get("stdout") or "{}")
+            parsed = loads_relaxed(result.get("stdout") or "{}")
             if isinstance(parsed, dict) and parsed.get("ok") is not None:
                 payload = parsed
         except json.JSONDecodeError:
@@ -338,7 +341,7 @@ def _litellm_admin_request(method: str, path: str, body: dict | None = None, *, 
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         raw = resp.read().decode("utf-8")
-    return json.loads(raw) if raw else {}
+    return loads_relaxed(raw) if raw else {}
 
 
 def _safe_inference_base(value: str) -> str:
@@ -763,7 +766,7 @@ def run_liveness_check() -> dict:
 def _cli_json_result(args: list[str], timeout: int = 60) -> Any:
     result = run_cli(args, timeout=timeout, log=False)
     try:
-        return json.loads(result.get("stdout") or "{}")
+        return loads_relaxed(result.get("stdout") or "{}")
     except json.JSONDecodeError:
         return {
             "ok": False,
@@ -1400,6 +1403,65 @@ def build_setup_status() -> dict:
             else None,
         })
 
+    auth_state = auth_status_payload(cfg=load_auth_config())
+    mcp_path = PROJECT_DIR / "bin" / "gpu-control-mcp"
+    mcp_exists = mcp_path.is_file()
+    mcp_exec = mcp_exists and os.access(mcp_path, os.X_OK)
+    mcp_module = importlib.util.find_spec("mcp") is not None
+    assistant = assistant_status(cluster)
+    control = cluster.get("control") or {}
+    api_host = str(control.get("host") or "127.0.0.1")
+    api_port = int(control.get("ui_port") or 8787)
+    nodes_count = len(nodes_doc.get("nodes") or {})
+    key_ok = bool(key_path) and Path(key_path).is_file()
+    steps = [
+        {
+            "id": "auth",
+            "title": "主控与鉴权",
+            "ok": bool(cluster) and (bool(auth_state.get("enabled")) or not control.get("ui_host") or control.get("ui_host") in {"127.0.0.1", "localhost"}),
+            "detail": f"鉴权 {auth_state.get('mode') or 'none'} · UI :{api_port}",
+            "anchor": "cfg-auth",
+        },
+        {
+            "id": "ssh",
+            "title": "SSH 与节点",
+            "ok": nodes_count > 0 and key_ok and INVENTORY_FILE.is_file(),
+            "detail": f"{nodes_count} 个节点 · inventory {'已生成' if INVENTORY_FILE.is_file() else '未生成'}",
+            "anchor": "cfg-nodes",
+        },
+        {
+            "id": "jobs",
+            "title": "Job 与模型",
+            "ok": bool(jobs),
+            "detail": f"{len(jobs)} 个已安装 Job",
+            "anchor": "cfg-job",
+        },
+        {
+            "id": "gateway",
+            "title": "入口与 LiteLLM",
+            "ok": None,
+            "detail": "到「入口与网关」查看 Edge / LiteLLM / 模型",
+            "anchor": "endpoints",
+        },
+        {
+            "id": "integration",
+            "title": "AI 与 MCP",
+            "ok": bool(mcp_exec and mcp_module and assistant.get("ready")),
+            "detail": f"MCP {'就绪' if mcp_exec and mcp_module else '待配置'} · AI {'就绪' if assistant.get('ready') else '待配置'}",
+            "anchor": "integration",
+        },
+    ]
+    integrations = {
+        "api_base": f"http://{api_host}:{api_port}",
+        "auth": auth_state,
+        "mcp": {
+            "path": str(mcp_path),
+            "exists": mcp_exists,
+            "executable": mcp_exec,
+            "module": mcp_module,
+        },
+        "assistant": assistant,
+    }
     checklist = [
         {"id": "cluster", "ok": bool(cluster), "label": "cluster.json"},
         {"id": "nodes", "ok": bool(nodes_doc.get("nodes")), "label": "nodes.json"},
@@ -1434,6 +1496,8 @@ def build_setup_status() -> dict:
         "jobs": jobs,
         "ssh_keys": discover_ssh_keys(),
         "checklist": checklist,
+        "steps": steps,
+        "integrations": integrations,
         "guide": SETUP_GUIDE,
         "ready": all(item["ok"] for item in checklist),
     }
@@ -1667,7 +1731,6 @@ def build_quality_report() -> dict:
     else:
         grade = "优秀" if score >= 90 else "良好" if score >= 75 else "一般" if score >= 50 else "较差"
     stale_components = [name for name, item in components.items() if not item.get("fresh")]
-    stale_labels = {"ssh": "SSH", "api": "API", "mesh": "互通", "snapshots": "GPU 快照"}
     if offline:
         hint = f"离线：{', '.join(offline)}"
     elif stale_components:
@@ -1766,7 +1829,7 @@ def run_oneclick(action: str, body: dict | None = None) -> dict:
     def doctor_json():
         raw = run_cli(["doctor", "--json"], timeout=30)
         try:
-            payload = json.loads(raw["stdout"] or "{}")
+            payload = loads_relaxed(raw["stdout"] or "{}")
         except json.JSONDecodeError:
             payload = {"ok": False, "error": "doctor 解析失败", "result": raw}
         return payload
@@ -2096,14 +2159,14 @@ class Handler(BaseHTTPRequestHandler):
             with urllib.request.urlopen(req, timeout=max(5, timeout)) as resp:
                 raw = resp.read().decode("utf-8", errors="replace")
                 try:
-                    payload = json.loads(raw) if raw else {}
+                    payload = loads_relaxed(raw) if raw else {}
                 except json.JSONDecodeError:
                     payload = {"raw": raw[:2000]}
                 return {"ok": True, "status": resp.status, "data": payload}
         except urllib.error.HTTPError as exc:
             raw = exc.read().decode("utf-8", errors="replace")
             try:
-                payload = json.loads(raw) if raw else {}
+                payload = loads_relaxed(raw) if raw else {}
             except json.JSONDecodeError:
                 payload = {"error": raw[:1000]}
             return {"ok": False, "status": exc.code, "data": payload}
@@ -2464,7 +2527,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/doctor":
             result = run_cli(["doctor", "--json"], timeout=30)
             try:
-                payload = json.loads(result["stdout"] or "{}")
+                payload = loads_relaxed(result["stdout"] or "{}")
             except json.JSONDecodeError:
                 payload = {"ok": False, "error": "doctor parse failed", "result": result}
             self._json(200, payload)
@@ -2482,7 +2545,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/diagnose":
             result = run_cli(["diagnose", "check"], timeout=60)
             try:
-                payload = json.loads(result["stdout"] or "{}")
+                payload = loads_relaxed(result["stdout"] or "{}")
             except json.JSONDecodeError:
                 payload = {"ok": False, "error": "diagnose parse failed", "result": result}
             findings = payload.get("findings") if isinstance(payload, dict) else None
@@ -2499,7 +2562,7 @@ class Handler(BaseHTTPRequestHandler):
                 rows = overview_to_notices(overview)
                 result = run_cli(["diagnose", "check"], timeout=60)
                 try:
-                    diag = json.loads(result["stdout"] or "{}")
+                    diag = loads_relaxed(result["stdout"] or "{}")
                 except json.JSONDecodeError:
                     diag = {}
                 findings = diag.get("findings") if isinstance(diag, dict) else None
@@ -2799,8 +2862,13 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/auth/token":
+            try:
+                req = AuthTokenRequest.model_validate(body)
+            except ValidationError as exc:
+                self._json(400, {"ok": False, "error": exc.errors()[0].get("msg", "invalid body")})
+                return
             cfg = load_auth_config()
-            action = str(body.get("action") or "issue").strip().lower()
+            action = req.action
             if action == "clear":
                 if cfg.api_token_file.is_file():
                     cfg.api_token_file.unlink()
@@ -2915,7 +2983,7 @@ class Handler(BaseHTTPRequestHandler):
             upsert_notices(overview_to_notices(overview))
             result = run_cli(["diagnose", "check"], timeout=60)
             try:
-                diag = json.loads(result["stdout"] or "{}")
+                diag = loads_relaxed(result["stdout"] or "{}")
             except json.JSONDecodeError:
                 diag = {}
             findings = diag.get("findings") if isinstance(diag, dict) else []
@@ -3738,7 +3806,7 @@ class Handler(BaseHTTPRequestHandler):
             with _action_lock:
                 result = run_cli(args, timeout=60)
             try:
-                payload = json.loads(result["stdout"] or "{}")
+                payload = loads_relaxed(result["stdout"] or "{}")
             except json.JSONDecodeError:
                 payload = {"ok": False, "result": result}
             self._json(200 if result["rc"] == 0 else 500, {**payload, "result": result})
@@ -3749,20 +3817,25 @@ class Handler(BaseHTTPRequestHandler):
             with _action_lock:
                 result = run_cli(["gateway", "stop", "--kind", kind], timeout=30)
             try:
-                payload = json.loads(result["stdout"] or "{}")
+                payload = loads_relaxed(result["stdout"] or "{}")
             except json.JSONDecodeError:
                 payload = {"ok": False, "result": result}
             self._json(200 if result["rc"] == 0 else 500, {**payload, "result": result})
             return
 
         if path == "/api/gateway/litellm/models":
-            action = str(body.get("action") or "add").strip().lower()
+            try:
+                req = LiteLLMModelRequest.model_validate(body)
+            except ValidationError as exc:
+                self._json(400, {"ok": False, "error": exc.errors()[0].get("msg", "invalid body")})
+                return
+            payload = req.model_dump(exclude_none=True)
             try:
                 with _action_lock:
                     result = (
-                        delete_litellm_model(body)
-                        if action == "delete"
-                        else add_litellm_model(body)
+                        delete_litellm_model(payload)
+                        if req.action == "delete"
+                        else add_litellm_model(payload)
                     )
             except ValueError as exc:
                 self._json(400, {"ok": False, "error": str(exc)})
@@ -4199,7 +4272,7 @@ class Handler(BaseHTTPRequestHandler):
             with _action_lock:
                 result = run_cli(args, timeout=120)
             try:
-                payload = json.loads(result["stdout"] or "{}")
+                payload = loads_relaxed(result["stdout"] or "{}")
             except json.JSONDecodeError:
                 payload = {"ok": False, "error": "repair parse failed", "result": result}
             payload["result"] = result
@@ -4224,7 +4297,7 @@ class Handler(BaseHTTPRequestHandler):
                     timeout=120,
                 )
             try:
-                report = json.loads(completed.stdout or "{}")
+                report = loads_relaxed(completed.stdout or "{}")
             except json.JSONDecodeError:
                 report = {
                     "ok": False,
@@ -4325,19 +4398,38 @@ def start_liveness_monitor(stop_event: threading.Event) -> threading.Thread | No
 
 
 def _auto_ops_cfg(cluster: dict) -> dict:
-    """自动巡检配置：cluster.health.auto_refresh + cluster.assistant.auto_insight。"""
+    """自动巡检配置：按各健康信号的 TTL 在过期前采集。"""
     health = (cluster.get("health") or {}) if isinstance(cluster, dict) else {}
     raw = health.get("auto_refresh", True)
     if raw is False:
         return {"enabled": False}
     cfg = raw if isinstance(raw, dict) else {}
+    ttls = liveness.load_ttls(cluster)
+
+    def due(key: str, ttl: float, floor: int = 60) -> int:
+        value = cfg.get(key)
+        try:
+            seconds = int(value) if value not in (None, "") else int(float(ttl) * 0.6)
+        except (TypeError, ValueError):
+            seconds = int(float(ttl) * 0.6)
+        return max(floor, seconds)
+
+    gpu_stale = due("gpu_stale_sec", ttls["snapshot_ttl_sec"], 120)
+    gpu_min = cfg.get("gpu_min_interval_sec")
+    try:
+        gpu_min_sec = max(60, int(gpu_min)) if gpu_min not in (None, "") else gpu_stale
+    except (TypeError, ValueError):
+        gpu_min_sec = gpu_stale
     assistant = (cluster.get("assistant") or {}) if isinstance(cluster, dict) else {}
     return {
         "enabled": bool(cfg.get("enabled", True)),
         "interval_sec": max(20, int(cfg.get("interval_sec") or 60)),
-        "api_stale_sec": max(30, int(cfg.get("api_stale_sec") or 300)),
-        "gpu_stale_sec": max(60, int(cfg.get("gpu_stale_sec") or 1800)),
-        "gpu_min_interval_sec": max(60, int(cfg.get("gpu_min_interval_sec") or 1800)),
+        "ssh_stale_sec": due("ssh_stale_sec", ttls["ssh_ttl_sec"], 60),
+        "host_stale_sec": due("host_stale_sec", ttls["host_ttl_sec"], 60),
+        "api_stale_sec": due("api_stale_sec", ttls["api_ttl_sec"], 60),
+        "mesh_stale_sec": due("mesh_stale_sec", ttls["mesh_ttl_sec"], 120),
+        "gpu_stale_sec": gpu_stale,
+        "gpu_min_interval_sec": gpu_min_sec,
         "ai_enabled": bool(assistant.get("auto_insight", True)),
         "ai_interval_sec": max(300, int(assistant.get("auto_insight_interval_sec") or 1800)),
     }
@@ -4350,8 +4442,12 @@ def _age_sec(path) -> float | None:
         return None
 
 
+def _due(age: float | None, stale_sec: int) -> bool:
+    return age is None or age > stale_sec
+
+
 def _auto_ops_tick(cluster: dict, cfg: dict, state: dict) -> dict:
-    """一轮自动巡检：数据过期才采集；有异常才让 AI 做只读解读。"""
+    """一轮自动巡检：在各类健康信号过期前采集；有异常才让 AI 做只读解读。"""
     now_epoch = time.time()
     stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_epoch))
     actions: list[str] = []
@@ -4365,16 +4461,42 @@ def _auto_ops_tick(cluster: dict, cfg: dict, state: dict) -> dict:
     if not cfg.get("enabled"):
         return state
 
-    api_age = _age_sec(ENDPOINT_HEALTH_FILE)
-    if api_age is None or api_age > cfg["api_stale_sec"]:
-        result = run_cli(["health", "--json"], timeout=120)
-        state["last_api"] = {
+    def record(name: str, ok: bool, age: float | None) -> None:
+        state[f"last_{name}"] = {
             "at": stamp,
             "at_epoch": now_epoch,
-            "ok": result.get("rc") == 0,
-            "age_sec": round(api_age, 1) if api_age is not None else None,
+            "ok": bool(ok),
+            "age_sec": round(age, 1) if age is not None else None,
         }
-        actions.append("api")
+        actions.append(name)
+
+    ssh_path = STATE_DIR / "ssh_quality.json"
+    ssh_age = _age_sec(ssh_path)
+    if _due(ssh_age, cfg["ssh_stale_sec"]):
+        result = test_ssh_connectivity(timeout=6)
+        record("ssh", bool(result.get("ok")), ssh_age)
+
+    host_age = _age_sec(HOST_METRICS_FILE)
+    if _due(host_age, cfg["host_stale_sec"]):
+        completed = subprocess.run(
+            [str(VENV_PYTHON), str(PROJECT_DIR / "scripts" / "collect_host_metrics.py")],
+            cwd=PROJECT_DIR,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=120,
+        )
+        record("host", completed.returncode == 0, host_age)
+
+    api_age = _age_sec(ENDPOINT_HEALTH_FILE)
+    if _due(api_age, cfg["api_stale_sec"]):
+        result = run_cli(["health", "--json"], timeout=120)
+        record("api", result.get("rc") == 0, api_age)
+
+    mesh_age = _age_sec(PROBE_FILE)
+    if _due(mesh_age, cfg["mesh_stale_sec"]):
+        result = run_cli(["probe", "--quiet"], timeout=180)
+        record("mesh", result.get("rc") == 0, mesh_age)
 
     overview = build_overview(light=True)
     summary = overview.get("summary") or {}
@@ -4386,16 +4508,12 @@ def _auto_ops_tick(cluster: dict, cfg: dict, state: dict) -> dict:
     last_gpu = (state.get("last_gpu") or {}).get("at_epoch") or 0
     if gpu_stale and now_epoch - last_gpu > cfg["gpu_min_interval_sec"]:
         result = run_cli(["gpu", "refresh", "--quiet"], timeout=180)
-        state["last_gpu"] = {
-            "at": stamp,
-            "at_epoch": now_epoch,
-            "ok": result.get("rc") == 0,
-            "age_sec": round(gpu_age, 1) if gpu_age is not None else None,
-        }
-        invalidate_overview_cache()
-        actions.append("gpu")
+        record("gpu", result.get("rc") == 0, gpu_age)
         overview = build_overview(light=True)
         summary = overview.get("summary") or {}
+
+    if actions:
+        invalidate_overview_cache()
 
     anomalies = bool(
         actions
@@ -4416,7 +4534,7 @@ def _auto_ops_tick(cluster: dict, cfg: dict, state: dict) -> dict:
         findings = []
         try:
             diag = run_cli(["diagnose", "check"], timeout=60)
-            parsed = json.loads(diag.get("stdout") or "{}")
+            parsed = loads_relaxed(diag.get("stdout") or "{}")
             findings = parsed.get("findings") if isinstance(parsed, dict) else []
         except (json.JSONDecodeError, TypeError):
             findings = []

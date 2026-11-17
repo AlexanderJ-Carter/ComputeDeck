@@ -6,8 +6,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ComputeDeck — 多节点 GPU 控制面</title>
   <meta name="description" content="ComputeDeck：多节点 GPU 控制面 · 看板助手 · 命令补全 · 监管公告 · MCP。" />
-  <meta property="og:title" content="ComputeDeck" />
+  <meta property="og:title" content="ComputeDeck — 多节点 GPU 控制面" />
   <meta property="og:description" content="多节点 GPU 控制面 · Web · CLI · AI 助手 · MCP" />
+  <meta property="og:url" content="https://compute.alexander.xin/" />
+  <meta property="og:image" content="https://compute.alexander.xin/assets/architecture-overview.svg" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="canonical" href="https://compute.alexander.xin/" />
   <meta name="theme-color" content="#eef3f0" />
   <link rel="icon" href="assets/logo.svg" type="image/svg+xml" />
   <link rel="preload" href="styles.css" as="style" />
@@ -213,22 +217,22 @@ GPU 3  76%  PID  9921  ???</pre>
       <div class="slide-inner split edge-split">
         <div>
           <p class="eyebrow reveal">控制面能力 · 推理入口</p>
-          <h2 class="reveal d1">健康上游才进池，挂了就换路</h2>
-          <p class="body reveal d2">ComputeDeck 自带轻量 Edge（轮询 / least-conn、重试、冷却），给推理 Job 一个对内入口；要对外再叠 nginx 或
-            LiteLLM。它是控制面的一块能力，不是单独的网关产品。</p>
+          <h2 class="reveal d1">LiteLLM 是唯一节点 LB，18080 只做前置</h2>
+          <p class="body reveal d2">LiteLLM 直连每个节点端口，统一模型名、虚拟密钥、预算与重试/冷却；Edge 或 nginx 只负责 18080 的
+            TLS/域名前置，不再重复选节点。</p>
           <div class="flow reveal d3" aria-hidden="true">
-            <span>Client</span><i></i><span>Edge</span><i></i><span class="ok">健康池</span><i></i><span>节点 API</span>
+            <span>Client</span><i></i><span>nginx / Edge</span><i></i><span class="ok">LiteLLM</span><i></i><span>节点 API</span>
           </div>
           <ul class="bullet reveal d4">
-            <li><code>gateway ensure</code> 规整入口与上游</li>
-            <li>端点健康探测；也可导出客户端 LB 片段</li>
-            <li>TLS、对外 URL 可配；生产常再挂反代</li>
+            <li><code>gateway litellm-db init</code> 内置 Postgres</li>
+            <li>模型别名在控制面添加，复杂治理回 Admin</li>
+            <li>逐节点 deployment，失败由 LiteLLM 重试/冷却</li>
           </ul>
         </div>
         <div class="lb-stage reveal d3" aria-hidden="true">
           <div class="lb-edge">
-            <strong>Edge</strong>
-            <span class="lb-mode">least-conn · retry</span>
+            <strong>LiteLLM</strong>
+            <span class="lb-mode">least-busy · retry</span>
             <i class="lb-pulse"></i>
           </div>
           <div class="lb-links">
@@ -278,9 +282,9 @@ GPU 3  76%  PID  9921  ???</pre>
       <div class="slide-bg mesh-a"></div>
       <div class="slide-inner">
         <p class="eyebrow reveal">AI · Agent</p>
-        <h2 class="reveal d1">看板里就能问、补全、盯异常</h2>
-        <p class="body narrow reveal d2">助手对话解读集群；远程命令智能补全；规则告警进公告栏，一键 AI
-          解读。Cursor / Claude Code 仍走同一 <code>bin/gpu-control-mcp</code>。</p>
+        <h2 class="reveal d1">AI 自动巡检，配置也能一步一步带你</h2>
+        <p class="body narrow reveal d2">SSH / 主机 / API / 互通 / GPU 在过期前自动采集；异常时 AI 生成只读建议。「配置就绪」逐步检查并让 AI
+          指导下一步；Cursor / Claude Code 仍走同一 <code>bin/gpu-control-mcp</code>。</p>
         <div class="ai-stage reveal d3" aria-hidden="true">
           <div class="ai-demo">
             <article class="ai-card glow">
@@ -319,6 +323,7 @@ GPU 3  76%  PID  9921  ???</pre>
               <ul class="ai-notices">
                 <li data-sev="warn"><b>Watchdog 未在运行</b><span>巡检进程未检测到</span></li>
                 <li data-sev="error"><b>健康评分偏低</b><span>SSH / API 需关注</span></li>
+                <li data-sev="ok"><b>自动巡检已开启</b><span>最近刷新 1m 前</span></li>
                 <li class="ai-insight" id="ai-insight-line">AI：优先恢复 watchdog，再探测失败端点。</li>
               </ul>
             </article>

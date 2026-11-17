@@ -237,10 +237,15 @@ class ClusterProvider {
         tooltip: String(this.lastError.message || this.lastError),
         command: { command: 'computedeck.login', title: '登录' },
       });
+      const guide = makeItem('打开上手引导', vscode.TreeItemCollapsibleState.None, {
+        description: '5 步了解插件',
+        iconPath: new vscode.ThemeIcon('book'),
+        command: { command: 'computedeck.openWalkthrough', title: '打开上手引导' },
+      });
       return [
         makeItem('连接', vscode.TreeItemCollapsibleState.Expanded, {
           iconPath: new vscode.ThemeIcon('plug'),
-          children: [row],
+          children: [row, guide],
         }),
       ];
     }
@@ -393,6 +398,7 @@ class ClusterProvider {
       ['腾空节点', 'computedeck.freeNode', 'debug-stop'],
       ['注册 MCP Server', 'computedeck.installMcp', 'extensions'],
       ['打开 Web 控制面', 'computedeck.openDashboard', 'globe'],
+      ['上手引导', 'computedeck.openWalkthrough', 'book'],
     ].map(([label, command, icon]) =>
       makeItem(label, vscode.TreeItemCollapsibleState.None, {
         iconPath: new vscode.ThemeIcon(icon),
@@ -749,6 +755,13 @@ function registerCommands(context) {
   });
   cmd('computedeck.openDashboard', async () => {
     await vscode.env.openExternal(vscode.Uri.parse(client.base()));
+  });
+  cmd('computedeck.openWalkthrough', async () => {
+    await vscode.commands.executeCommand(
+      'workbench.action.openWalkthrough',
+      'computedeck.computedeck-vscode#computedeck.getStarted',
+      false
+    );
   });
   cmd('computedeck.login', async () => {
     const password = await vscode.window.showInputBox({

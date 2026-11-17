@@ -21,12 +21,15 @@ keywords = [
 dependencies = [
   "ansible>=9.0.0",
   "paramiko>=3.0.0",
+  "json-repair>=0.30.0",
+  "pydantic>=2.6.0",
 ]
 
 [project.optional-dependencies]
 mcp = ["mcp>=2.0.0"]
 docs = ["mkdocs>=1.6.0", "mkdocs-material>=9.5.0", "pymdown-extensions>=10.0.0"]
 models-worker = ["huggingface_hub>=0.24.0", "modelscope>=1.18.0"]
+dev = ["ruff>=0.6.0"]
 
 [project.urls]
 Homepage = "https://github.com/AlexanderJ-Carter/ComputeDeck"
@@ -38,3 +41,11 @@ Security = "https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/SECURITY.
 
 [tool.uv]
 package = false
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = [".venv", "web/static", "demo", "state", "snapshots"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]

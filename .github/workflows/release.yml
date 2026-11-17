@@ -86,9 +86,10 @@ jobs:
             echo
             echo "### 安装"
             echo
-            echo "- 源码：\`git clone\` 后 \`uv pip install -r requirements.txt\`"
+            echo "- 源码：附件 \`computedeck-${{ steps.ver.outputs.version }}.tar.gz\`，或 \`git clone\` 后 \`uv pip install -r requirements.txt\`"
             echo "- 容器：\`docker pull ghcr.io/alexanderj-carter/computedeck:${{ steps.ver.outputs.version }}\`"
             echo "- Compose：复制 \`.env.example\` → \`.env\` 后 \`docker compose up -d\`"
+            echo "- VS Code：附件 \`computedeck-vscode-${{ steps.ver.outputs.version }}.vsix\`（\`code --install-extension\`）"
             echo "- MCP：\`uv pip install -r requirements-mcp.txt\` · 示例 \`config/examples/mcp.*\`"
             echo "- 展板：https://compute.alexander.xin/"
             echo
@@ -113,6 +114,20 @@ jobs:
             --notes-file /tmp/github-release.md \
             --verify-tag \
             "${EXTRA[@]}"
+
+      - name: Attach source archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ver="${{ steps.ver.outputs.version }}"
+          git archive --format=tar.gz --prefix="computedeck-$ver/" \
+            -o "/tmp/computedeck-$ver.tar.gz" HEAD
+          ( cd /tmp && sha256sum "computedeck-$ver.tar.gz" > "computedeck-$ver.tar.gz.sha256" )
+          gh release upload "${GITHUB_REF_NAME}" \
+            "/tmp/computedeck-$ver.tar.gz" \
+            "/tmp/computedeck-$ver.tar.gz.sha256" \
+            --clobber
 
   vscode:
     name: VS Code VSIX

@@ -1,3 +1,5 @@
 # 主控 control 平面（UI / CLI / Ansible / 终端）
 ansible>=9.0.0
 paramiko>=3.0.0
+json-repair>=0.30.0
+pydantic>=2.6.0

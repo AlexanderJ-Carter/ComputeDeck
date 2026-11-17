@@ -24,6 +24,18 @@ gpu-control auth status
 - WebSocket 终端：使用 Session Cookie 或 `Authorization` 头；出于安全考虑不接受 URL 里的 `?access_token=`
 - 公开发现路径（无需登录）：`/api` · `/api/openapi.json` · `/api/docs` · `/api/health` · `/api/auth/*` · `/api/assistant/policy`
 
+## 控制面里的接入向导
+
+配置页有两块直接服务于 AI / MCP 接入：
+
+- **配置 → 就绪检查**：配置页左侧分为「配置 / 检查与接入 / 参考」三组，一次只显示一页；「就绪检查」汇总主控与鉴权、SSH 与节点、Job 与模型、入口与 LiteLLM、AI 与 MCP 状态，可跳回对应分页，或点「重新检测」重新读取。
+- **配置 → AI / MCP**：
+  - API 接入：Base URL、鉴权模式、Token 是否已配置；「测试 API」同时检查 `/api/health` 与 `/api`。
+  - MCP 接入：检查 `bin/gpu-control-mcp` 与 `mcp` 依赖；选择客户端后「复制 MCP 配置」会生成 / 轮换 Token 并复制可粘贴的 JSON / TOML。
+  - AI 助手：显示是否就绪、当前模型，直接打开设置。
+
+「让 AI 指导」会把当前步骤状态发给助手；助手读取 setup / overview / doctor 后给出下一步操作，只读操作直接执行，写操作先确认。
+
 ---
 
 ## 1. 三条接入路径
@@ -115,6 +127,8 @@ POST /api/assistant/execute
 ```
 
 服务端会重新校验节点 / Job 是否仍存在、目标是否离线、参数哈希是否被篡改，然后回调已有 `/api/*` 执行；执行结果以 `role:"tool"` 写回会话，再让模型总结并给出下一步。`stage:"reject"` 可取消。坏参数、未知目标、离线目标都会被拒绝并返回结构化错误，不会产生任何写操作。
+
+**UI 交互**：确认卡内联在对话流中。普通写操作点一次「允许」即执行；破坏性操作需要在同一张卡上再点一次（Esc 可取消这次确认）。执行时卡片下方出现运行块，节点结果与命令输出就地展开，随后由模型给出总结。只读工具不弹确认，直接在回答上方以步骤形式显示。
 
 完整列表以 `GET /api` 或 `/api/docs` 为准。
 

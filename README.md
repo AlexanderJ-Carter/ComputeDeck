@@ -113,6 +113,7 @@ gpu-control auth issue-token   # → GPU_CONTROL_API_TOKEN
 ```
 
 发版准备：`python scripts/prepare_release.py --bump minor`（不 push）。  
+本地一键打包（源码包 / VSIX / 镜像 / 文档 / 校验和）：`./scripts/package_all.sh`，见 [`docs/打包与发布.md`](docs/打包与发布.md)。  
 同步到已有 control：`CONTROL_HOST=<host> ./scripts/deploy_control.sh`。
 
 ## 常用命令

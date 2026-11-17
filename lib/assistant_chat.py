@@ -23,9 +23,9 @@ from assistant_tools import (
     confirm_level,
     public_specs,
     risk_for_call,
-    summary_for,
 )
 from assistant_validate import args_hash, validate_call
+from json_util import loads_relaxed
 from paths import PROJECT_DIR, cluster_file, expand_path, write_secret_file
 from state_util import atomic_write_json
 
@@ -372,7 +372,7 @@ def assistant_status(cluster: dict[str, Any] | None = None, *, context: dict[str
             },
         ],
         "network_note": (
-            "拉取模型与对话由**控制面主机**访问 Base URL，不是浏览器本机。"
+            "拉取模型与对话由控制面主机访问 Base URL，不是浏览器本机。"
             "内网常见无法解析 api.openai.com：请填可达的兼容网关（含 /v1），或先点「连通探测」。"
         ),
         "quick_actions": quick_actions(ready=cfg["ready"], context=context),
@@ -732,10 +732,7 @@ def _normalize_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _parse_call_args(raw_args: Any) -> dict[str, Any]:
     if isinstance(raw_args, dict):
         return dict(raw_args)
-    try:
-        parsed = json.loads(raw_args or "{}")
-    except (TypeError, json.JSONDecodeError):
-        return {}
+    parsed = loads_relaxed(raw_args or "{}", default={})
     return parsed if isinstance(parsed, dict) else {}
 
 

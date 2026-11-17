@@ -41,4 +41,29 @@ assert not missing, f"JS references missing ids: {missing}"
 assert "fonts.googleapis.com" not in html and "cdn.jsdelivr.net" not in html
 print(f"ok: {len(ids)} ids, {len(refs)} js refs")
 PY
+
+echo "== VS Code 扩展清单 =="
+"$PY" - <<'PY'
+import json
+from pathlib import Path
+
+pkg_path = Path("extensions/vscode/package.json")
+pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
+base = pkg_path.parent
+contributes = pkg.get("contributes") or {}
+commands = {row.get("command") for row in contributes.get("commands") or []}
+steps = 0
+for wt in contributes.get("walkthroughs") or []:
+    rows = wt.get("steps") or []
+    assert rows, f"walkthrough {wt.get('id')} 没有 steps"
+    steps += len(rows)
+    for step in rows:
+        md = (step.get("media") or {}).get("markdown")
+        if md:
+            assert (base / md).is_file(), f"缺少 walkthrough 媒体文件: {md}"
+        for event in step.get("completionEvents") or []:
+            if event.startswith("onCommand:"):
+                assert event.split(":", 1)[1] in commands, f"completionEvent 引用了未注册命令: {event}"
+print(f"ok: {len(commands)} commands, {steps} walkthrough steps")
+PY
 echo "all checks passed"

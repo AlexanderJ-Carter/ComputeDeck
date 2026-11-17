@@ -2627,3 +2627,19 @@ h3 {
     display: none;
   }
 }
+.ai-notices li[data-sev="ok"] {
+  border-color: color-mix(in srgb, #2f9e7a 40%, var(--line));
+  box-shadow: inset 3px 0 0 #2f9e7a;
+}
+
+.ai-notices li[data-sev="ok"] b::after {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: #2f9e7a;
+  animation: pulse 1.8s ease-in-out infinite;
+  vertical-align: middle;
+}

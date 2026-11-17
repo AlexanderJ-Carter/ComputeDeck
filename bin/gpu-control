@@ -1015,7 +1015,7 @@ def cmd_probe(args: argparse.Namespace) -> int:
     peers = inventory_hosts()
     if len(peers) < 2:
         die("探测互通至少需要 inventory 中 2 个节点")
-    code = ansible_playbook(
+    ansible_playbook(
         "probe-network.yml",
         extra={
             "peer_map": peers,
@@ -1441,7 +1441,6 @@ def cmd_liveness(args: argparse.Namespace) -> int:
 
     persisted = liveness.read_snapshot(snapshot_path)
     cluster = load_cluster()
-    nodes_doc = json.loads(nodes_file().read_text(encoding="utf-8")) if nodes_file().is_file() else {"nodes": {}}
     resources = load_resources()
     view = liveness.cluster_view(
         node_names=inventory_nodes(),

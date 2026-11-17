@@ -21,7 +21,18 @@ Web 看板适合大屏与完整操作；VS Code 插件适合“边写代码边�
 - 自动注册 MCP Server：VS Code / Copilot 可直接使用 `gc_*` 工具
 - 打开 Web 控制面：完整看板、AI 助手、趋势仍在浏览器
 
-## 2. 安装
+## 2. 上手引导（Walkthrough）
+
+首次安装后从 VS Code 欢迎页进入 **「开始使用 ComputeDeck」**，或随时执行：
+
+- 命令面板 → `ComputeDeck: 打开上手引导`
+- 侧栏标题栏 → 书本图标
+- 未连接时，集群树「连接」分区 → 打开上手引导
+
+五步依次是：连接控制面 → 读懂集群树 → 节点终端与诊断 → 部署与启停 Job → MCP 与 Web 看板。  
+每步都有可直接点击的命令链接，完成后自动勾选；媒体内容在 `extensions/vscode/media/walkthrough/`。
+
+## 3. 安装
 
 开发模式：
 
@@ -39,7 +50,7 @@ code --install-extension extensions/vscode/computedeck-vscode-*.vsix
 
 CI：`.github/workflows/vscode.yml` 会在 `extensions/vscode/**` 变更时打包 VSIX 并上传 artifact；打 `v*` tag 时由 `.github/workflows/release.yml` 重新打包并把 VSIX 附加到对应 GitHub Release（扩展版本与主版本同步）。
 
-## 3. 连接与鉴权
+## 4. 连接与鉴权
 
 设置（VS Code Settings）：
 
@@ -58,7 +69,7 @@ CI：`.github/workflows/vscode.yml` 会在 `extensions/vscode/**` 变更时打�
 
 MCP 走 HTTP 用 API Token；密码登录只覆盖浏览器会话。
 
-## 4. MCP / Copilot
+## 5. MCP / Copilot
 
 插件注册 `computedeck.mcp` provider，启动 `bin/gpu-control-mcp`，并注入：
 
@@ -69,7 +80,7 @@ GPU_CONTROL_API_TOKEN=<SecretStorage 中的 token>
 
 在支持 MCP 的 Copilot Chat 中即可使用 `gc_overview` · `gc_liveness` · `gc_deploy` · `gc_exec_preset` 等现有工具。
 
-## 5. 与 Web 的分工
+## 6. 与 Web 的分工
 
 | 场景 | 推荐 |
 |---|---|

@@ -10,6 +10,12 @@
 - 入口分层：显示 LiteLLM 节点 LB、Edge/nginx 前置与重复 LB 告警
 - 自动注册 MCP Server：VS Code / Copilot 可以直接使用 `gc_*` 工具
 - 打开 Web 控制面：完整看板、AI 助手、趋势图仍在浏览器里
+- 内置 5 步上手引导（Walkthrough）：连接 → 集群树 → 节点 → Job → MCP
+
+## 上手引导
+
+首次安装后从 VS Code 欢迎页进入 **「开始使用 ComputeDeck」**，或执行
+`ComputeDeck: 打开上手引导`。每一步都有可直接点击的命令链接，完成后自动勾选。
 
 ## 安装
 
@@ -58,6 +64,7 @@ code --install-extension computedeck-vscode-*.vsix
 - `ComputeDeck: 部署 Job`
 - `ComputeDeck: 腾空节点`
 - `ComputeDeck: 注册 MCP Server`
+- `ComputeDeck: 打开上手引导`
 
 节点和 Job 树项上也有内联按钮。
 

@@ -48,3 +48,6 @@ docs/superpowers/
 
 # VS Code extension build output
 *.vsix
+
+# 本地打包产物（scripts/package_all.sh）
+/dist/

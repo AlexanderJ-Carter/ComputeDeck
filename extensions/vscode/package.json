@@ -123,6 +123,88 @@
       {
         "command": "computedeck.installMcp",
         "title": "ComputeDeck: 注册 MCP Server"
+      },
+      {
+        "command": "computedeck.openWalkthrough",
+        "title": "ComputeDeck: 打开上手引导",
+        "icon": "$(book)"
+      }
+    ],
+    "walkthroughs": [
+      {
+        "id": "computedeck.getStarted",
+        "title": "开始使用 ComputeDeck",
+        "description": "连接控制面，读懂集群树，然后在 VS Code 里开终端、跑诊断、部署 Job。",
+        "steps": [
+          {
+            "id": "connect",
+            "title": "连接控制面",
+            "description": "填写控制面地址并登录；Remote SSH 场景通常就是 127.0.0.1。\n[密码登录](command:computedeck.login)\n[设置 API Token](command:computedeck.setToken)",
+            "media": {
+              "markdown": "media/walkthrough/01-connect.md",
+              "altText": "连接 ComputeDeck 控制面"
+            },
+            "completionEvents": [
+              "onCommand:computedeck.login",
+              "onCommand:computedeck.setToken",
+              "onCommand:computedeck.refresh"
+            ]
+          },
+          {
+            "id": "cluster",
+            "title": "读懂集群树",
+            "description": "总览、节点、Job、队列租约、入口五个分区；状态栏常驻节点与空闲 GPU。",
+            "media": {
+              "markdown": "media/walkthrough/02-cluster.md",
+              "altText": "ComputeDeck 集群树"
+            },
+            "completionEvents": [
+              "onCommand:computedeck.refresh"
+            ]
+          },
+          {
+            "id": "nodes",
+            "title": "节点终端与诊断",
+            "description": "右键或行内按钮打开 SSH 终端、跑只读诊断、隔离或腾空节点。\n[节点操作](command:computedeck.nodeMenu)",
+            "media": {
+              "markdown": "media/walkthrough/03-nodes.md",
+              "altText": "节点操作"
+            },
+            "completionEvents": [
+              "onCommand:computedeck.nodeMenu",
+              "onCommand:computedeck.nodeTerminal",
+              "onCommand:computedeck.nodePreset"
+            ]
+          },
+          {
+            "id": "jobs",
+            "title": "部署与启停 Job",
+            "description": "按 GPU 数自动选节点，或指定节点部署；Job 行内可直接启动、重启、停止。\n[部署 Job](command:computedeck.deployJob)",
+            "media": {
+              "markdown": "media/walkthrough/04-jobs.md",
+              "altText": "Job 操作"
+            },
+            "completionEvents": [
+              "onCommand:computedeck.deployJob",
+              "onCommand:computedeck.jobStart",
+              "onCommand:computedeck.jobStop",
+              "onCommand:computedeck.jobRestart"
+            ]
+          },
+          {
+            "id": "mcp",
+            "title": "接入 Copilot 与 Web 看板",
+            "description": "注册 MCP Server 后，Copilot / Claude 等 Agent 可直接调用 gc_* 工具；完整看板在浏览器。\n[注册 MCP Server](command:computedeck.installMcp)\n[打开 Web 控制面](command:computedeck.openDashboard)",
+            "media": {
+              "markdown": "media/walkthrough/05-mcp.md",
+              "altText": "MCP 与 Web 看板"
+            },
+            "completionEvents": [
+              "onCommand:computedeck.installMcp",
+              "onCommand:computedeck.openDashboard"
+            ]
+          }
+        ]
       }
     ],
     "viewsContainers": {
@@ -154,6 +236,11 @@
           "command": "computedeck.openDashboard",
           "when": "view == computedeck.cluster",
           "group": "navigation@2"
+        },
+        {
+          "command": "computedeck.openWalkthrough",
+          "when": "view == computedeck.cluster",
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [

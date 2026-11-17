@@ -8,7 +8,7 @@
   <link rel="icon" href="/static/logo.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/vendor/xterm/xterm-6.1.0.css" />
   <link rel="stylesheet" href="/static/tokens.css?v=__UI_VERSION__" />
-  <link rel="stylesheet" href="/static/style.css?v=__UI_VERSION__.dash3" />
+  <link rel="stylesheet" href="/static/style.css?v=__UI_VERSION__.dash4" />
   <script src="/static/theme-boot.js?v=__UI_VERSION__"></script>
 </head>
 
@@ -691,270 +691,406 @@ gpu-control jobs install vllm-serve --name vllm</pre>
       </section>
 
       <section class="view" data-view-panel="config">
-        <div class="tabs" id="config-tabs" role="tablist" aria-label="配置分区">
-          <button class="tab active" id="tab-wizard" role="tab" aria-selected="true"
-            aria-controls="tabpanel-wizard" tabindex="0" data-tab="wizard" data-keep-enabled="1">配置向导</button>
-          <button class="tab" id="tab-checklist" role="tab" aria-selected="false" aria-controls="tabpanel-checklist"
-            tabindex="-1" data-tab="checklist" data-keep-enabled="1">检查清单</button>
-          <button class="tab" id="tab-docs" role="tab" aria-selected="false" aria-controls="tabpanel-docs"
-            tabindex="-1" data-tab="docs" data-keep-enabled="1">文档与 API</button>
-          <button class="tab" id="tab-raw" role="tab" aria-selected="false" aria-controls="tabpanel-raw"
-            tabindex="-1" data-tab="raw" data-keep-enabled="1">高级配置</button>
-        </div>
+        <div class="config-shell">
+          <aside class="config-side" aria-label="配置分页">
+            <div class="config-side-group">
+              <p class="config-side-label">配置</p>
+              <button type="button" class="config-nav active" data-config-nav="connect" aria-current="page">
+                <span class="config-nav-num">1</span>
+                <span class="config-nav-text"><span class="config-nav-title">基础连接</span><span class="config-nav-sub">SSH · 集群策略</span></span>
+                <span class="config-nav-state" data-config-state="connect" hidden></span>
+              </button>
+              <button type="button" class="config-nav" data-config-nav="nodes">
+                <span class="config-nav-num">2</span>
+                <span class="config-nav-text"><span class="config-nav-title">节点清单</span><span class="config-nav-sub">主机 · GPU · 标签</span></span>
+                <span class="config-nav-state" data-config-state="nodes" hidden></span>
+              </button>
+              <button type="button" class="config-nav" data-config-nav="jobs">
+                <span class="config-nav-num">3</span>
+                <span class="config-nav-text"><span class="config-nav-title">Job 模板</span><span class="config-nav-sub">启停命令 · 运行时</span></span>
+                <span class="config-nav-state" data-config-state="jobs" hidden></span>
+              </button>
+              <button type="button" class="config-nav" data-config-nav="ops">
+                <span class="config-nav-num">4</span>
+                <span class="config-nav-text"><span class="config-nav-title">巡检与守护</span><span class="config-nav-sub">Watchdog</span></span>
+                <span class="config-nav-state" data-config-state="ops" hidden></span>
+              </button>
+              <button type="button" class="config-nav" data-config-nav="auth">
+                <span class="config-nav-num">5</span>
+                <span class="config-nav-text"><span class="config-nav-title">鉴权与访问</span><span class="config-nav-sub">密码 · OIDC · Token</span></span>
+                <span class="config-nav-state" data-config-state="auth" hidden></span>
+              </button>
+            </div>
+            <div class="config-side-group">
+              <p class="config-side-label">检查与接入</p>
+              <button type="button" class="config-nav" data-config-nav="checklist">
+                <span class="config-nav-num config-nav-num--icon">✓</span>
+                <span class="config-nav-text"><span class="config-nav-title">就绪检查</span><span class="config-nav-sub">配置清单 · doctor</span></span>
+              </button>
+              <button type="button" class="config-nav" data-config-nav="integration">
+                <span class="config-nav-num config-nav-num--icon">⇄</span>
+                <span class="config-nav-text"><span class="config-nav-title">AI / MCP</span><span class="config-nav-sub">API · Token · MCP</span></span>
+              </button>
+            </div>
+            <div class="config-side-group">
+              <p class="config-side-label">参考</p>
+              <button type="button" class="config-nav" data-config-nav="docs">
+                <span class="config-nav-num config-nav-num--icon">?</span>
+                <span class="config-nav-text"><span class="config-nav-title">文档与 API</span><span class="config-nav-sub">命令 · Swagger · MkDocs</span></span>
+              </button>
+              <button type="button" class="config-nav" data-config-nav="raw">
+                <span class="config-nav-num config-nav-num--icon">{ }</span>
+                <span class="config-nav-text"><span class="config-nav-title">高级配置</span><span class="config-nav-sub">路径 · 查找顺序</span></span>
+              </button>
+            </div>
+            <div class="config-side-foot">
+              <button type="button" id="btn-setup-recheck" class="ghost tiny" data-keep-enabled="1">重新检测</button>
+              <button type="button" id="btn-ai-guide" class="primary tiny" data-keep-enabled="1">让 AI 指导</button>
+            </div>
+          </aside>
 
-        <div class="tab-panel active" id="tabpanel-wizard" role="tabpanel" aria-labelledby="tab-wizard"
-          tabindex="0" data-tab-panel="wizard">
-          <div class="config-hero">
-            <div>
-              <h2>配置向导</h2>
-              <p class="meta">按块编辑、分别保存；节点清单保存后自动生成 inventory。</p>
-            </div>
-            <div class="config-jumps" role="group" aria-label="配置区块">
-              <button type="button" data-config-jump="cfg-ssh">SSH</button>
-              <button type="button" data-config-jump="cfg-cluster">集群</button>
-              <button type="button" data-config-jump="cfg-nodes">节点</button>
-              <button type="button" data-config-jump="cfg-job">Job</button>
-              <button type="button" data-config-jump="cfg-watchdog">Watchdog</button>
-              <button type="button" data-config-jump="cfg-auth">鉴权</button>
-            </div>
-          </div>
-          <section class="config-section" id="cfg-conn">
-            <header class="config-section-h">
-              <h2>连接与集群</h2>
-            </header>
-            <div class="setup-grid">
-            <div class="panel" id="cfg-ssh">
-              <div class="panel-h">
-                <h2>SSH 连接</h2>
-                <button id="btn-test-ssh" class="ghost tiny" data-keep-enabled="1">测试连通</button>
-              </div>
-              <p class="path-line" id="setup-nodes-path">config/local/nodes.json</p>
-              <label class="field"><span>SSH 私钥路径</span><input id="ssh-key" placeholder="~/.ssh/id_ed25519" /></label>
-              <div class="key-chips" id="ssh-key-chips"></div>
-              <label class="field"><span>用户</span><input id="ssh-user" placeholder="ubuntu" /></label>
-              <label class="field"><span>端口</span><input id="ssh-port" type="number" placeholder="22" /></label>
-              <div class="btn-row">
-                <button id="btn-save-ssh" class="primary" data-keep-enabled="1">保存并生成 inventory</button>
-                <button id="btn-render" class="ghost" data-keep-enabled="1">仅重新生成</button>
-              </div>
-              <div id="ssh-test-result" class="ssh-result"></div>
-            </div>
+          <div class="config-main" id="config-main">
+            <section class="config-page active" data-config-panel="connect" aria-labelledby="config-title-connect">
+              <header class="config-page-h">
+                <div>
+                  <p class="config-page-kicker">配置 · 1 / 5</p>
+                  <h2 id="config-title-connect">基础连接</h2>
+                  <p class="meta">先让主控能 SSH 到节点，再确认集群名、默认任务与端口范围。</p>
+                </div>
+              </header>
+              <div class="setup-grid">
+                <div class="panel" id="cfg-ssh">
+                  <div class="panel-h">
+                    <h2>SSH 连接</h2>
+                    <button id="btn-test-ssh" class="ghost tiny" data-keep-enabled="1">测试连通</button>
+                  </div>
+                  <p class="path-line" id="setup-nodes-path">config/local/nodes.json</p>
+                  <label class="field"><span>SSH 私钥路径</span><input id="ssh-key" placeholder="~/.ssh/id_ed25519" /></label>
+                  <div class="key-chips" id="ssh-key-chips"></div>
+                  <label class="field"><span>用户</span><input id="ssh-user" placeholder="ubuntu" /></label>
+                  <label class="field"><span>端口</span><input id="ssh-port" type="number" placeholder="22" /></label>
+                  <div class="btn-row">
+                    <button id="btn-save-ssh" class="primary" data-keep-enabled="1">保存并生成 inventory</button>
+                    <button id="btn-render" class="ghost" data-keep-enabled="1">仅重新生成</button>
+                  </div>
+                  <div id="ssh-test-result" class="ssh-result"></div>
+                </div>
 
-            <div class="panel" id="cfg-cluster">
-              <div class="panel-h">
-                <h2>集群策略</h2>
-                <button id="btn-save-cluster" class="primary tiny" data-keep-enabled="1">保存</button>
-              </div>
-              <p class="path-line" id="setup-cluster-path">config/local/cluster.json</p>
-              <label class="field"><span>集群名</span><input id="cluster-name" /></label>
-              <label class="field"><span>默认任务</span><input id="cluster-job" /></label>
-              <label class="field"><span>API 起始端口</span><input id="cluster-base-port" type="number" /></label>
-              <label class="field"><span>每节点端口数</span><input id="cluster-ports" type="number" /></label>
-              <details class="fold">
-                <summary>高级：API 密钥 / 调度标签</summary>
-                <label class="field"><span>API 密钥文件</span><input id="cluster-api-key" /></label>
-                <label class="field"><span>优先标签</span><input id="cluster-prefer" placeholder="serving" /></label>
-                <label class="field"><span>避开标签</span><input id="cluster-avoid" placeholder="shared" /></label>
-              </details>
-              <details class="fold">
-                <summary>入口与网关 · 域名 / HTTPS（可选）</summary>
-                <label class="field"><span>域名</span><input id="cluster-domain" placeholder="api.example.com" /></label>
-                <label class="field"><span>对外 URL</span><input id="cluster-public-url"
-                    placeholder="https://api.example.com" /></label>
-                <label class="field switch-field">
-                  <span>启用 HTTPS</span>
-                  <input type="checkbox" id="cluster-tls-enabled" data-keep-enabled="1" />
-                </label>
-                <label class="field"><span>证书 cert</span><input id="cluster-tls-cert"
-                    placeholder="config/local/secrets/ingress.crt" /></label>
-                <label class="field"><span>私钥 key</span><input id="cluster-tls-key"
-                    placeholder="config/local/secrets/ingress.key" /></label>
-                <label class="field"><span>CA（可选）</span><input id="cluster-tls-ca"
-                    placeholder="config/local/secrets/ca.crt" /></label>
-              </details>
-            </div>
-          </div>
-          </section>
-
-          <section class="config-section" id="cfg-resources">
-            <header class="config-section-h">
-              <h2>节点与任务</h2>
-            </header>
-            <div class="setup-grid">
-            <div class="panel" id="cfg-nodes">
-              <div class="panel-h">
-                <h2>节点清单</h2>
-                <div class="btn-row">
-                  <span class="meta" id="nodes-count">0 台</span>
-                  <button type="button" id="btn-add-node-card" class="ghost tiny" data-keep-enabled="1">加节点</button>
-                  <button id="btn-save-nodes-json" class="primary tiny" data-keep-enabled="1">保存并生成</button>
+                <div class="panel" id="cfg-cluster">
+                  <div class="panel-h">
+                    <h2>集群策略</h2>
+                    <button id="btn-save-cluster" class="primary tiny" data-keep-enabled="1">保存</button>
+                  </div>
+                  <p class="path-line" id="setup-cluster-path">config/local/cluster.json</p>
+                  <label class="field"><span>集群名</span><input id="cluster-name" /></label>
+                  <label class="field"><span>默认任务</span><input id="cluster-job" /></label>
+                  <label class="field"><span>API 起始端口</span><input id="cluster-base-port" type="number" /></label>
+                  <label class="field"><span>每节点端口数</span><input id="cluster-ports" type="number" /></label>
+                  <details class="fold">
+                    <summary>高级：API 密钥 / 调度标签</summary>
+                    <label class="field"><span>API 密钥文件</span><input id="cluster-api-key" /></label>
+                    <label class="field"><span>优先标签</span><input id="cluster-prefer" placeholder="serving" /></label>
+                    <label class="field"><span>避开标签</span><input id="cluster-avoid" placeholder="shared" /></label>
+                  </details>
+                  <details class="fold">
+                    <summary>入口与网关 · 域名 / HTTPS（可选）</summary>
+                    <label class="field"><span>域名</span><input id="cluster-domain" placeholder="api.example.com" /></label>
+                    <label class="field"><span>对外 URL</span><input id="cluster-public-url"
+                        placeholder="https://api.example.com" /></label>
+                    <label class="field switch-field">
+                      <span>启用 HTTPS</span>
+                      <input type="checkbox" id="cluster-tls-enabled" data-keep-enabled="1" />
+                    </label>
+                    <label class="field"><span>证书 cert</span><input id="cluster-tls-cert"
+                        placeholder="config/local/secrets/ingress.crt" /></label>
+                    <label class="field"><span>私钥 key</span><input id="cluster-tls-key"
+                        placeholder="config/local/secrets/ingress.key" /></label>
+                    <label class="field"><span>CA（可选）</span><input id="cluster-tls-ca"
+                        placeholder="config/local/secrets/ca.crt" /></label>
+                  </details>
                 </div>
               </div>
-              <div class="nodes-toolbar">
-                <input id="nodes-filter" type="search" placeholder="筛选名称 / 地址 / 标签" autocomplete="off"
-                  data-keep-enabled="1" />
-                <select id="nodes-density" data-keep-enabled="1" title="列表密度">
-                  <option value="auto">自适应</option>
-                  <option value="cards">卡片</option>
-                  <option value="compact">紧凑行</option>
-                </select>
-              </div>
-              <p class="meta" id="nodes-filter-meta" hidden></p>
-              <div id="nodes-cards" class="nodes-cards" data-density="auto"></div>
-              <details class="fold">
-                <summary>高级：文本行批量编辑</summary>
-                <p class="muted">适合大批导入；每行：<code>名称 地址 [GPU数] [标签] [# 备注]</code></p>
-                <textarea id="nodes-editor" spellcheck="false"></textarea>
-              </details>
-            </div>
+            </section>
 
-            <div class="panel" id="cfg-job">
-              <div class="panel-h">
-                <h2>Job 编辑</h2>
-                <button id="btn-save-job" class="primary tiny" data-keep-enabled="1">保存</button>
-              </div>
-              <p class="muted" style="margin-top:0">
-                表单覆盖契约字段；未列出的键（如 model / distributed）保存时保留。
-              </p>
-              <label class="field">
-                <span>选择已有</span>
-                <select id="setup-job-pick" data-keep-enabled="1"></select>
-              </label>
-              <label class="field"><span>Job 名</span><input id="job-name" placeholder="my-service" /></label>
-              <p class="path-line" id="setup-job-path">config/local/jobs/&lt;name&gt;.json</p>
-              <label class="field"><span>描述</span><input id="job-desc" /></label>
-              <div class="field-row">
-                <label class="field"><span>类型 kind</span>
-                  <select id="job-kind" data-keep-enabled="1">
-                    <option value="service">service</option>
-                    <option value="train">train</option>
+            <section class="config-page" data-config-panel="nodes" aria-labelledby="config-title-nodes" hidden>
+              <header class="config-page-h">
+                <div>
+                  <p class="config-page-kicker">配置 · 2 / 5</p>
+                  <h2 id="config-title-nodes">节点清单</h2>
+                  <p class="meta">每台机器的地址、GPU 数与标签。保存后会自动生成 inventory；SSH 凭据在「基础连接」统一配置。</p>
+                </div>
+              </header>
+              <div class="panel" id="cfg-nodes">
+                <div class="panel-h">
+                  <h2>节点</h2>
+                  <div class="btn-row">
+                    <span class="meta" id="nodes-count">0 台</span>
+                    <button type="button" id="btn-add-node-card" class="ghost tiny" data-keep-enabled="1">加节点</button>
+                    <button id="btn-save-nodes-json" class="primary tiny" data-keep-enabled="1">保存并生成</button>
+                  </div>
+                </div>
+                <div class="nodes-toolbar">
+                  <input id="nodes-filter" type="search" placeholder="筛选名称 / 地址 / 标签" autocomplete="off"
+                    data-keep-enabled="1" />
+                  <select id="nodes-density" data-keep-enabled="1" title="列表密度">
+                    <option value="auto">自适应</option>
+                    <option value="cards">卡片</option>
+                    <option value="compact">紧凑行</option>
                   </select>
-                </label>
-                <label class="field"><span>运行时</span>
-                  <select id="job-runtime" data-keep-enabled="1">
-                    <option value="process">process</option>
-                    <option value="docker">docker</option>
-                  </select>
-                </label>
-                <label class="field"><span>每节点 GPU</span><input id="job-gpus" type="number" /></label>
+                </div>
+                <p class="meta" id="nodes-filter-meta" hidden></p>
+                <div id="nodes-cards" class="nodes-cards" data-density="auto"></div>
+                <details class="fold">
+                  <summary>高级：文本行批量编辑</summary>
+                  <p class="muted">适合大批导入；每行：<code>名称 地址 [GPU数] [标签] [# 备注]</code></p>
+                  <textarea id="nodes-editor" spellcheck="false"></textarea>
+                </details>
               </div>
-              <div id="job-process-fields">
-                <label class="field"><span>Python 路径</span><input id="job-python" /></label>
-                <label class="field"><span>脚本路径</span><input id="job-script" /></label>
-              </div>
-              <div id="job-docker-fields" hidden>
-                <label class="field"><span>Docker 镜像</span><input id="job-docker-image"
-                    placeholder="registry/image:tag" /></label>
-              </div>
-              <details class="fold">
-                <summary>高级：额外参数 / 环境变量</summary>
-                <label class="field"><span>额外参数（空格分隔）</span><input id="job-extra" placeholder="--flag value" /></label>
-                <label class="field"><span>环境变量（KEY=VAL 每行）</span><textarea id="job-env" rows="3" spellcheck="false"
-                    placeholder="CUDA_VISIBLE_DEVICES=0"></textarea></label>
-              </details>
-            </div>
-          </div>
-          </section>
+            </section>
 
-          <section class="config-section" id="cfg-ops">
-            <header class="config-section-h">
-              <h2>巡检与安全</h2>
-            </header>
-            <div class="setup-grid">
-            <div class="panel" id="cfg-watchdog">
-              <div class="panel-h">
-                <h2>Watchdog</h2>
-                <button id="btn-save-watchdog" class="primary tiny" data-keep-enabled="1">保存</button>
-              </div>
-              <label class="field switch-field">
-                <span>启用自动巡检重启</span>
-                <input type="checkbox" id="wd-enabled" data-keep-enabled="1" />
-              </label>
-              <label class="field"><span>监控 Job（逗号分隔，空=默认 Job）</span><input id="wd-jobs"
-                  placeholder="shell-job" /></label>
-              <details class="fold">
-                <summary>高级：间隔 / 重启次数 / 节点范围</summary>
+            <section class="config-page" data-config-panel="jobs" aria-labelledby="config-title-jobs" hidden>
+              <header class="config-page-h">
+                <div>
+                  <p class="config-page-kicker">配置 · 3 / 5</p>
+                  <h2 id="config-title-jobs">Job 模板</h2>
+                  <p class="meta">表单覆盖契约字段；未列出的键（如 model / distributed）保存时保留。</p>
+                </div>
+              </header>
+              <div class="panel" id="cfg-job">
+                <div class="panel-h">
+                  <h2>Job 编辑</h2>
+                  <button id="btn-save-job" class="primary tiny" data-keep-enabled="1">保存</button>
+                </div>
+                <label class="field">
+                  <span>选择已有</span>
+                  <select id="setup-job-pick" data-keep-enabled="1"></select>
+                </label>
+                <label class="field"><span>Job 名</span><input id="job-name" placeholder="my-service" /></label>
+                <p class="path-line" id="setup-job-path">config/local/jobs/&lt;name&gt;.json</p>
+                <label class="field"><span>描述</span><input id="job-desc" /></label>
                 <div class="field-row">
-                  <label class="field"><span>间隔秒</span><input id="wd-interval" type="number" /></label>
-                  <label class="field"><span>最大重启</span><input id="wd-max-restarts" type="number" /></label>
-                  <label class="field"><span>失败阈值</span><input id="wd-failure-threshold" type="number" /></label>
+                  <label class="field"><span>类型 kind</span>
+                    <select id="job-kind" data-keep-enabled="1">
+                      <option value="service">service</option>
+                      <option value="train">train</option>
+                    </select>
+                  </label>
+                  <label class="field"><span>运行时</span>
+                    <select id="job-runtime" data-keep-enabled="1">
+                      <option value="process">process</option>
+                      <option value="docker">docker</option>
+                    </select>
+                  </label>
+                  <label class="field"><span>每节点 GPU</span><input id="job-gpus" type="number" /></label>
                 </div>
-                <label class="field"><span>节点范围</span><input id="wd-nodes" placeholder="all" /></label>
-              </details>
-            </div>
-            <div class="panel" id="cfg-auth">
-              <div class="panel-h">
-                <h2>鉴权</h2>
-                <button id="btn-save-auth" class="primary tiny" data-keep-enabled="1">保存</button>
+                <div id="job-process-fields">
+                  <label class="field"><span>Python 路径</span><input id="job-python" /></label>
+                  <label class="field"><span>脚本路径</span><input id="job-script" /></label>
+                </div>
+                <div id="job-docker-fields" hidden>
+                  <label class="field"><span>Docker 镜像</span><input id="job-docker-image"
+                      placeholder="registry/image:tag" /></label>
+                </div>
+                <details class="fold">
+                  <summary>高级：额外参数 / 环境变量</summary>
+                  <label class="field"><span>额外参数（空格分隔）</span><input id="job-extra" placeholder="--flag value" /></label>
+                  <label class="field"><span>环境变量（KEY=VAL 每行）</span><textarea id="job-env" rows="3" spellcheck="false"
+                      placeholder="CUDA_VISIBLE_DEVICES=0"></textarea></label>
+                </details>
               </div>
-              <label class="field"><span>模式</span>
-                <select id="auth-mode" data-keep-enabled="1">
-                  <option value="none">none（关闭）</option>
-                  <option value="password">password</option>
-                  <option value="oidc">oidc</option>
-                </select>
-              </label>
-              <label class="field"><span>Session TTL（小时）</span><input id="auth-ttl" type="number" /></label>
-              <label class="field"><span>密码哈希文件</span><input id="auth-password-hash" /></label>
-              <label class="field"><span>Session 密钥文件</span><input id="auth-session-secret" /></label>
-              <label class="field"><span>API Token 文件</span><input id="auth-api-token" /></label>
-              <div class="btn-row">
-                <button id="btn-auth-token-issue" class="primary tiny" data-keep-enabled="1">生成 / 轮换 Token</button>
-                <button id="btn-auth-token-clear" class="ghost tiny" data-keep-enabled="1">清除 Token</button>
-              </div>
-              <p class="meta" id="auth-token-meta" role="status" aria-live="polite">Token 只在生成时显示一次；脚本 / MCP 需同步更新。</p>
-              <details class="fold">
-                <summary>OIDC / 免密登录</summary>
-                <label class="field"><span>Issuer</span><input id="auth-oidc-issuer" placeholder="https://login.example.com" /></label>
-                <label class="field"><span>Client ID</span><input id="auth-oidc-client-id" /></label>
-                <label class="field"><span>Client Secret 文件</span><input id="auth-oidc-secret" /></label>
-                <label class="field"><span>允许邮箱（逗号分隔）</span><input id="auth-oidc-allowed-emails"
-                    placeholder="you@corp.com,ops@corp.com" /></label>
-                <label class="field"><span>用户名 Claim</span><input id="auth-oidc-username-claim" placeholder="email" /></label>
-                <label class="field"><span>Scopes</span><input id="auth-oidc-scopes" placeholder="openid,profile,email" /></label>
+            </section>
+
+            <section class="config-page" data-config-panel="ops" aria-labelledby="config-title-ops" hidden>
+              <header class="config-page-h">
+                <div>
+                  <p class="config-page-kicker">配置 · 4 / 5</p>
+                  <h2 id="config-title-ops">巡检与守护</h2>
+                  <p class="meta">Watchdog 负责自动巡检与有限次重启；鉴权在下一分页单独配置。</p>
+                </div>
+              </header>
+              <div class="panel" id="cfg-watchdog">
+                <div class="panel-h">
+                  <h2>Watchdog</h2>
+                  <button id="btn-save-watchdog" class="primary tiny" data-keep-enabled="1">保存</button>
+                </div>
                 <label class="field switch-field">
-                  <span>允许密码回落</span>
-                  <input type="checkbox" id="auth-oidc-password-fallback" data-keep-enabled="1" />
+                  <span>启用自动巡检重启</span>
+                  <input type="checkbox" id="wd-enabled" data-keep-enabled="1" />
                 </label>
-                <div class="btn-row">
-                  <button id="btn-oidc-check" class="ghost tiny" data-keep-enabled="1">测试 OIDC</button>
-                  <span class="meta" id="oidc-check-meta" role="status" aria-live="polite"></span>
-                </div>
-                <p class="meta">IdP 回调地址：<code id="oidc-redirect-hint">/api/auth/oidc/callback</code></p>
-              </details>
-            </div>
-          </div>
-          </section>
-        </div>
-
-        <div class="tab-panel" id="tabpanel-checklist" role="tabpanel" aria-labelledby="tab-checklist" tabindex="0"
-          data-tab-panel="checklist">
-          <div class="panel">
-            <div class="panel-h">
-              <h2>就绪检查</h2>
-              <div class="btn-row">
-                <button id="btn-reload-setup" class="ghost tiny" data-keep-enabled="1">刷新</button>
-                <button id="btn-doctor-2" class="primary tiny" data-keep-enabled="1">运行自检</button>
+                <label class="field"><span>监控 Job（逗号分隔，空=默认 Job）</span><input id="wd-jobs"
+                    placeholder="shell-job" /></label>
+                <details class="fold">
+                  <summary>高级：间隔 / 重启次数 / 节点范围</summary>
+                  <div class="field-row">
+                    <label class="field"><span>间隔秒</span><input id="wd-interval" type="number" /></label>
+                    <label class="field"><span>最大重启</span><input id="wd-max-restarts" type="number" /></label>
+                    <label class="field"><span>失败阈值</span><input id="wd-failure-threshold" type="number" /></label>
+                  </div>
+                  <label class="field"><span>节点范围</span><input id="wd-nodes" placeholder="all" /></label>
+                </details>
               </div>
-            </div>
-            <div id="setup-checklist" class="checklist"></div>
-            <pre class="snippet" id="doctor-box">点击「运行自检」或顶部「自检」。</pre>
-          </div>
-        </div>
+            </section>
 
-        <div class="tab-panel" id="tabpanel-docs" role="tabpanel" aria-labelledby="tab-docs" tabindex="0"
-          data-tab-panel="docs">
-          <div class="panel">
-            <div class="panel-h">
-              <h2>上手步骤</h2>
-            </div>
-            <div id="guide-steps" class="guide-steps"></div>
-          </div>
-          <div class="panel">
-            <div class="panel-h">
-              <h2>常用命令</h2>
-            </div>
-            <pre class="snippet" id="guide-cli">gpu-control doctor
+            <section class="config-page" data-config-panel="auth" aria-labelledby="config-title-auth" hidden>
+              <header class="config-page-h">
+                <div>
+                  <p class="config-page-kicker">配置 · 5 / 5</p>
+                  <h2 id="config-title-auth">鉴权与访问</h2>
+                  <p class="meta">建议先开启鉴权再对外开放；API Token 供脚本与 MCP 使用。</p>
+                </div>
+              </header>
+              <div class="panel" id="cfg-auth">
+                <div class="panel-h">
+                  <h2>鉴权</h2>
+                  <button id="btn-save-auth" class="primary tiny" data-keep-enabled="1">保存</button>
+                </div>
+                <label class="field"><span>模式</span>
+                  <select id="auth-mode" data-keep-enabled="1">
+                    <option value="none">none（关闭）</option>
+                    <option value="password">password</option>
+                    <option value="oidc">oidc</option>
+                  </select>
+                </label>
+                <label class="field"><span>Session TTL（小时）</span><input id="auth-ttl" type="number" /></label>
+                <label class="field"><span>密码哈希文件</span><input id="auth-password-hash" /></label>
+                <label class="field"><span>Session 密钥文件</span><input id="auth-session-secret" /></label>
+                <label class="field"><span>API Token 文件</span><input id="auth-api-token" /></label>
+                <div class="btn-row">
+                  <button id="btn-auth-token-issue" class="primary tiny" data-keep-enabled="1">生成 / 轮换 Token</button>
+                  <button id="btn-auth-token-clear" class="ghost tiny" data-keep-enabled="1">清除 Token</button>
+                </div>
+                <p class="meta" id="auth-token-meta" role="status" aria-live="polite">Token 只在生成时显示一次；脚本 / MCP 需同步更新。</p>
+                <details class="fold">
+                  <summary>OIDC / 免密登录</summary>
+                  <label class="field"><span>Issuer</span><input id="auth-oidc-issuer" placeholder="https://login.example.com" /></label>
+                  <label class="field"><span>Client ID</span><input id="auth-oidc-client-id" /></label>
+                  <label class="field"><span>Client Secret 文件</span><input id="auth-oidc-secret" /></label>
+                  <label class="field"><span>允许邮箱（逗号分隔）</span><input id="auth-oidc-allowed-emails"
+                      placeholder="you@corp.com,ops@corp.com" /></label>
+                  <label class="field"><span>用户名 Claim</span><input id="auth-oidc-username-claim" placeholder="email" /></label>
+                  <label class="field"><span>Scopes</span><input id="auth-oidc-scopes" placeholder="openid,profile,email" /></label>
+                  <label class="field switch-field">
+                    <span>允许密码回落</span>
+                    <input type="checkbox" id="auth-oidc-password-fallback" data-keep-enabled="1" />
+                  </label>
+                  <div class="btn-row">
+                    <button id="btn-oidc-check" class="ghost tiny" data-keep-enabled="1">测试 OIDC</button>
+                    <span class="meta" id="oidc-check-meta" role="status" aria-live="polite"></span>
+                  </div>
+                  <p class="meta">IdP 回调地址：<code id="oidc-redirect-hint">/api/auth/oidc/callback</code></p>
+                </details>
+              </div>
+            </section>
+
+            <section class="config-page" data-config-panel="checklist" aria-labelledby="config-title-checklist" hidden>
+              <header class="config-page-h">
+                <div>
+                  <p class="config-page-kicker">检查</p>
+                  <h2 id="config-title-checklist">就绪检查</h2>
+                  <p class="meta">汇总配置文件、SSH、inventory、Job 与运行环境；异常可跳回对应分页。</p>
+                </div>
+                <div class="btn-row">
+                  <button id="btn-reload-setup" class="ghost tiny" data-keep-enabled="1">刷新</button>
+                  <button id="btn-doctor-2" class="primary tiny" data-keep-enabled="1">运行自检</button>
+                </div>
+              </header>
+              <section class="panel setup-steps-card" aria-labelledby="setup-steps-title">
+                <div class="panel-h">
+                  <h2 id="setup-steps-title">总体状态</h2>
+                  <span class="meta" id="setup-steps-at" role="status" aria-live="polite"></span>
+                </div>
+                <div id="setup-steps" class="setup-steps-list"></div>
+              </section>
+              <div class="panel">
+                <div class="panel-h">
+                  <h2>文件与依赖检查</h2>
+                </div>
+                <div id="setup-checklist" class="checklist"></div>
+                <pre class="snippet" id="doctor-box">点击「运行自检」或顶部「自检」。</pre>
+              </div>
+            </section>
+
+            <section class="config-page" data-config-panel="integration" aria-labelledby="config-title-integration" hidden>
+              <header class="config-page-h">
+                <div>
+                  <p class="config-page-kicker">接入</p>
+                  <h2 id="config-title-integration">AI / MCP</h2>
+                  <p class="meta">给脚本、MCP 客户端与 Web 小助手配置访问方式。</p>
+                </div>
+              </header>
+              <div class="split">
+                <div class="panel">
+                  <div class="panel-h">
+                    <h2>API 接入</h2>
+                    <button type="button" id="btn-integration-api-test" class="ghost tiny"
+                      data-keep-enabled="1">测试 API</button>
+                  </div>
+                  <div class="kv"><b>Base URL</b> <span id="integration-api-base">-</span></div>
+                  <div class="kv"><b>鉴权</b> <span id="integration-auth">-</span></div>
+                  <div class="kv"><b>Token</b> <span id="integration-token">-</span></div>
+                  <div class="btn-row">
+                    <button type="button" id="btn-integration-token-issue" class="primary tiny"
+                      data-keep-enabled="1">生成 / 轮换 Token</button>
+                    <button type="button" id="btn-integration-token-clear" class="ghost tiny"
+                      data-keep-enabled="1">清除 Token</button>
+                  </div>
+                  <p class="meta" id="integration-api-meta" role="status" aria-live="polite">浏览器用 Session；脚本 / MCP 用 Bearer Token。</p>
+                </div>
+                <div class="panel">
+                  <div class="panel-h">
+                    <h2>MCP 接入</h2>
+                    <button type="button" id="btn-integration-mcp-refresh" class="ghost tiny"
+                      data-keep-enabled="1">检测</button>
+                  </div>
+                  <div class="kv"><b>可执行文件</b> <span id="integration-mcp-path">-</span></div>
+                  <div class="kv"><b>状态</b> <span id="integration-mcp-state">-</span></div>
+                  <label class="field"><span>客户端</span>
+                    <select id="mcp-client" data-keep-enabled="1">
+                      <option value="cursor">Cursor / Claude Code（JSON）</option>
+                      <option value="codex">Codex（TOML）</option>
+                      <option value="generic">通用 JSON</option>
+                    </select>
+                  </label>
+                  <div class="btn-row">
+                    <button type="button" id="btn-integration-mcp-copy" class="primary tiny"
+                      data-keep-enabled="1">复制 MCP 配置</button>
+                    <a class="btn ghost tiny" href="/help/ai-接入/" target="_blank" rel="noopener">接入文档</a>
+                  </div>
+                  <p class="meta" id="integration-mcp-meta">复制时会生成 / 轮换 Token 并写入片段（旧 Token 立即失效）。</p>
+                  <pre id="integration-mcp-snippet" class="snippet" hidden></pre>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-h">
+                  <h2>AI 助手</h2>
+                  <button type="button" id="btn-integration-ai-open" class="ghost tiny"
+                    data-keep-enabled="1">打开设置</button>
+                </div>
+                <div class="kv"><b>状态</b> <span id="integration-ai-state">-</span></div>
+                <div class="kv"><b>模型</b> <span id="integration-ai-model">-</span></div>
+                <p class="meta">助手读取 overview / diagnose / 配置；只读工具自动执行，写操作先确认。</p>
+              </div>
+            </section>
+
+            <section class="config-page" data-config-panel="docs" aria-labelledby="config-title-docs" hidden>
+              <header class="config-page-h">
+                <div>
+                  <p class="config-page-kicker">参考</p>
+                  <h2 id="config-title-docs">文档与 API</h2>
+                  <p class="meta">上手步骤、常用命令与接口入口。</p>
+                </div>
+              </header>
+              <div class="panel">
+                <div class="panel-h">
+                  <h2>上手步骤</h2>
+                </div>
+                <div id="guide-steps" class="guide-steps"></div>
+              </div>
+              <div class="panel">
+                <div class="panel-h">
+                  <h2>常用命令</h2>
+                </div>
+                <pre class="snippet" id="guide-cli">gpu-control doctor
 gpu-control auth issue-token
 gpu-control jobs templates
 gpu-control gateway status
@@ -962,32 +1098,40 @@ gpu-control gateway start --kind litellm
 gpu-control deploy &lt;job&gt; --nodes … --gpus …
 gpu-control free --node 名称 --wait 30
 gpu-control ui --background</pre>
-          </div>
-          <div class="panel">
-            <div class="panel-h">
-              <h2>API / 文档（附属链接 · 不是业务入口）</h2>
-            </div>
-            <div class="btn-row">
-              <a class="btn primary" href="/api/docs" target="_blank" rel="noopener">API / Swagger</a>
-              <a class="btn ghost" href="/help/" target="_blank" rel="noopener">文档站 /help</a>
-              <a class="btn ghost" href="/api/openapi.json" target="_blank" rel="noopener">openapi.json</a>
-              <a class="btn ghost" href="/api" target="_blank" rel="noopener">/api 目录</a>
-            </div>
-            <p class="meta" style="margin-top:10px">端口心智：控制面 <code>:8787</code> · 推理主入口 <code>:18080</code>（Edge）· 可选
-              LiteLLM <code>:4000</code>。节点 GPU 端口只给入口当上游。</p>
-            <p class="meta">快捷键：<kbd>1</kbd>–<kbd>9</kbd> 切页 · <kbd>←</kbd>/<kbd>→</kbd> 翻页 ·
-              <kbd>r</kbd> 刷新 · <kbd>h</kbd> 探测 API · <kbd>?</kbd> 帮助。</p>
-          </div>
-        </div>
+              </div>
+              <div class="panel">
+                <div class="panel-h">
+                  <h2>API / 文档（附属链接 · 不是业务入口）</h2>
+                </div>
+                <div class="btn-row">
+                  <a class="btn primary" href="/api/docs" target="_blank" rel="noopener">API / Swagger</a>
+                  <a class="btn ghost" href="/help/" target="_blank" rel="noopener">文档站 /help</a>
+                  <a class="btn ghost" href="/api/openapi.json" target="_blank" rel="noopener">openapi.json</a>
+                  <a class="btn ghost" href="/api" target="_blank" rel="noopener">/api 目录</a>
+                </div>
+                <p class="meta" style="margin-top:10px">端口心智：控制面 <code>:8787</code> · 推理主入口 <code>:18080</code>（Edge）· 可选
+                  LiteLLM <code>:4000</code>。节点 GPU 端口只给入口当上游。</p>
+                <p class="meta">快捷键：<kbd>1</kbd>–<kbd>9</kbd> 切页 · <kbd>←</kbd>/<kbd>→</kbd> 翻页 ·
+                  <kbd>r</kbd> 刷新 · <kbd>h</kbd> 探测 API · <kbd>?</kbd> 帮助。</p>
+              </div>
+            </section>
 
-        <div class="tab-panel" id="tabpanel-raw" role="tabpanel" aria-labelledby="tab-raw" tabindex="0"
-          data-tab-panel="raw">
-          <div class="panel">
-            <div class="panel-h">
-              <h2>配置说明</h2>
-              <button id="btn-reload" class="ghost tiny" data-keep-enabled="1">重新加载</button>
-            </div>
-            <pre class="snippet" id="config-help">加载中…</pre>
+            <section class="config-page" data-config-panel="raw" aria-labelledby="config-title-raw" hidden>
+              <header class="config-page-h">
+                <div>
+                  <p class="config-page-kicker">参考</p>
+                  <h2 id="config-title-raw">高级配置</h2>
+                  <p class="meta">只在排查路径与查找顺序时使用；日常配置请回到左侧分页。</p>
+                </div>
+              </header>
+              <div class="panel">
+                <div class="panel-h">
+                  <h2>配置说明</h2>
+                  <button id="btn-reload" class="ghost tiny" data-keep-enabled="1">重新加载</button>
+                </div>
+                <pre class="snippet" id="config-help">加载中…</pre>
+              </div>
+            </section>
           </div>
         </div>
       </section>
@@ -1024,17 +1168,25 @@ gpu-control ui --background</pre>
     <div id="notices-pop-list" class="notices-list"></div>
   </div>
   <button type="button" id="assistant-fab" class="assistant-fab" data-keep-enabled="1" aria-expanded="false"
-    aria-controls="assistant-panel" title="小助手">助手</button>
+    aria-controls="assistant-panel" title="小助手（Ctrl/⌘ + K）">
+    <span class="assistant-fab-icon" aria-hidden="true">✦</span>
+    <span>助手</span>
+    <span id="assistant-fab-dot" class="assistant-fab-dot" hidden aria-hidden="true"></span>
+  </button>
   <section id="assistant-panel" class="assistant-panel" hidden aria-label="控制面小助手">
     <header class="assistant-h">
-      <div>
-        <strong>ComputeDeck 助手</strong>
-        <span class="meta" id="assistant-mode">加载中…</span>
+      <div class="assistant-brand">
+        <span class="assistant-avatar" aria-hidden="true">✦</span>
+        <div class="assistant-brand-text">
+          <strong>ComputeDeck 助手</strong>
+          <span class="meta" id="assistant-mode">加载中…</span>
+        </div>
       </div>
       <div class="assistant-h-actions">
         <button type="button" id="assistant-new" class="ghost tiny" data-keep-enabled="1" title="清空当前对话">新对话</button>
-        <button type="button" id="assistant-settings-btn" class="ghost tiny" data-keep-enabled="1">设置</button>
-        <button type="button" id="assistant-close" class="ghost tiny" data-keep-enabled="1">关闭</button>
+        <button type="button" id="assistant-settings-btn" class="ghost tiny" data-keep-enabled="1"
+          title="上游 / 模型设置">设置</button>
+        <button type="button" id="assistant-close" class="ghost tiny" data-keep-enabled="1" title="关闭（Esc）">关闭</button>
       </div>
     </header>
     <div id="assistant-settings" class="assistant-settings" hidden>
@@ -1081,12 +1233,16 @@ gpu-control ui --background</pre>
     <div id="assistant-chat-view" class="assistant-chat-view">
       <div id="assistant-quick" class="assistant-quick"></div>
       <div id="assistant-thread" class="assistant-thread" role="log" aria-live="polite"></div>
-      <div id="assistant-pending" class="assistant-pending" hidden></div>
       <form id="assistant-form" class="assistant-form">
-        <input id="assistant-input" type="text" placeholder="问状态、用法，或让我建议操作…" autocomplete="off"
-          data-keep-enabled="1" />
-        <button type="button" class="ghost" id="assistant-stop" data-keep-enabled="1" hidden>停止</button>
-        <button type="submit" class="primary" id="assistant-send" data-keep-enabled="1">发送</button>
+        <div class="assistant-compose">
+          <textarea id="assistant-input" rows="1" placeholder="问状态、用法，或让我执行操作…" autocomplete="off"
+            data-keep-enabled="1"></textarea>
+          <div class="assistant-compose-actions">
+            <button type="button" class="ghost tiny" id="assistant-stop" data-keep-enabled="1" hidden>停止</button>
+            <button type="submit" class="primary" id="assistant-send" data-keep-enabled="1">发送</button>
+          </div>
+        </div>
+        <p class="assistant-compose-hint">Enter 发送 · Shift+Enter 换行 · 写操作会先征求确认</p>
       </form>
     </div>
   </section>
@@ -1108,6 +1264,8 @@ gpu-control ui --background</pre>
         <dd>探测 API 健康</dd>
         <dt><kbd>?</kbd></dt>
         <dd>打开本帮助</dd>
+        <dt><kbd>Ctrl/⌘</kbd> + <kbd>K</kbd></dt>
+        <dd>打开 / 收起小助手</dd>
         <dt><kbd>Esc</kbd></dt>
         <dd>关闭弹层 / 助手面板</dd>
         <dt><kbd>Tab</kbd></dt>
@@ -1142,7 +1300,7 @@ gpu-control ui --background</pre>
   </div>
   <script src="/static/vendor/xterm/xterm-6.1.0.min.js"></script>
   <script src="/static/xterm-fit.js?v=__UI_VERSION__"></script>
-  <script src="/static/app.js?v=__UI_VERSION__"></script>
+  <script src="/static/app.js?v=__UI_VERSION__.dash4"></script>
 </body>
 
 </html>
