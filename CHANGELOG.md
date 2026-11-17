@@ -11,12 +11,15 @@
 
 ## [Unreleased]
 
+---
+
+## [1.0.2] - 2026-11-17
+
 ### Fixed
 
 - 容器镜像 `org.opencontainers.image.version` 被 metadata-action 的默认标签覆盖成 `1.0`；现在显式写入完整版本与 revision
 
 ---
-
 ## [1.0.1] - 2026-11-17
 
 ### Fixed
@@ -576,6 +579,7 @@ ComputeDeck **1.0 先导测试版**：控制面 / CLI / MCP / 展板已可日常
 4. 版本锚点见下方；具备远程后可改为 compare URL。
 
 [Unreleased]: #unreleased
+[1.0.2]: #102---2026-11-17
 [1.0.1]: #101---2026-11-17
 [1.0.0]: #100---2026-11-17
 [1.0.0-beta.14]: #100-beta14---2026-11-17
