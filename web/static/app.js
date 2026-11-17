@@ -247,6 +247,163 @@ function splitList(value) {
     .filter(Boolean);
 }
 
+/* 原生 select 在窄框/缩放下会截断选中项；统一包一层可换行的自定义下拉。 */
+let _cdSelectPatched = false;
+function patchSelectValueEvents() {
+  if (_cdSelectPatched || typeof HTMLSelectElement === "undefined") return;
+  const proto = HTMLSelectElement.prototype;
+  for (const prop of ["value", "selectedIndex"]) {
+    const desc = Object.getOwnPropertyDescriptor(proto, prop);
+    if (!desc || !desc.set) continue;
+    Object.defineProperty(proto, prop, {
+      ...desc,
+      set(value) {
+        desc.set.call(this, value);
+        this.dispatchEvent(new Event("cd-sync"));
+      },
+    });
+  }
+  _cdSelectPatched = true;
+}
+
+function closeCdSelects(except) {
+  document.querySelectorAll(".cd-select .job-picker-menu").forEach((menu) => {
+    if (menu === except || menu.hidden) return;
+    menu.hidden = true;
+    menu.parentElement?.querySelector(".job-picker-btn")?.setAttribute("aria-expanded", "false");
+  });
+}
+
+function enhanceSelect(sel) {
+  if (!(sel instanceof HTMLSelectElement)) return;
+  if (sel.dataset.cdEnhanced === "1") return;
+  if (sel.classList.contains("job-picker-native") || sel.classList.contains("cd-select-native")) return;
+  if (sel.multiple || Number(sel.size || 0) > 1) return;
+  sel.dataset.cdEnhanced = "1";
+
+  const wrap = document.createElement("div");
+  wrap.className = "job-picker cd-select";
+  wrap.innerHTML =
+    '<button type="button" class="job-picker-btn" aria-haspopup="listbox" aria-expanded="false">' +
+    '<span class="cd-select-label"></span><span class="job-picker-caret" aria-hidden="true">▾</span></button>' +
+    '<div class="job-picker-menu" role="listbox" hidden></div>';
+  const btn = wrap.querySelector(".job-picker-btn");
+  const menu = wrap.querySelector(".job-picker-menu");
+  const label = wrap.querySelector(".cd-select-label");
+  sel.parentNode.insertBefore(wrap, sel.nextSibling);
+  sel.classList.add("cd-select-native");
+  sel.setAttribute("tabindex", "-1");
+  sel.setAttribute("aria-hidden", "true");
+  const fieldLabel =
+    sel.getAttribute("aria-label") ||
+    sel.closest("label")?.querySelector(":scope > span")?.textContent.trim() ||
+    "";
+
+  const sync = () => {
+    const current = sel.selectedOptions && sel.selectedOptions[0];
+    const text = current ? current.textContent.trim() || "—" : "—";
+    label.textContent = text;
+    label.title = current ? current.textContent.trim() : "";
+    btn.setAttribute("aria-label", fieldLabel ? `${fieldLabel}：${text}` : text);
+    const options = Array.from(sel.options || []).filter((o) => !o.hidden);
+    menu.innerHTML = options.length
+      ? options
+          .map(
+            (o) =>
+              `<button type="button" class="job-option" role="option" data-cd-value="${escapeHtml(o.value)}" aria-selected="${o.value === sel.value}" ${o.disabled ? "disabled" : ""}><strong>${escapeHtml(o.textContent.trim() || "—")}</strong></button>`
+          )
+          .join("")
+      : '<div class="job-option" aria-disabled="true"><span class="meta">无选项</span></div>';
+    btn.disabled = sel.disabled;
+  };
+
+  const open = () => {
+    sync();
+    const next = menu.hidden;
+    closeCdSelects(next ? menu : null);
+    menu.hidden = !next;
+    btn.setAttribute("aria-expanded", next ? "true" : "false");
+    if (next) {
+      const rect = btn.getBoundingClientRect();
+      menu.classList.toggle("drop-up", rect.bottom + 260 > window.innerHeight && rect.top > 260);
+      (menu.querySelector('.job-option[aria-selected="true"]') || menu.querySelector(".job-option"))?.focus();
+    }
+  };
+
+  sel.addEventListener("change", sync);
+  sel.addEventListener("cd-sync", sync);
+  new MutationObserver(sync).observe(sel, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["selected", "disabled", "label", "value"],
+  });
+  btn.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    open();
+  });
+  btn.addEventListener("keydown", (ev) => {
+    if (["ArrowDown", "Enter", " "].includes(ev.key)) {
+      ev.preventDefault();
+      open();
+    } else if (ev.key === "Escape") {
+      closeCdSelects();
+    }
+  });
+  menu.addEventListener("click", (ev) => {
+    const opt = ev.target.closest ? ev.target.closest("[data-cd-value]") : null;
+    if (!opt || opt.disabled) return;
+    sel.value = opt.dataset.cdValue;
+    sel.dispatchEvent(new Event("change", { bubbles: true }));
+    sync();
+    menu.hidden = true;
+    btn.setAttribute("aria-expanded", "false");
+    btn.focus();
+  });
+  menu.addEventListener("keydown", (ev) => {
+    const options = [...menu.querySelectorAll(".job-option[data-cd-value]")];
+    const idx = options.indexOf(document.activeElement);
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      const next = ev.key === "ArrowDown" ? Math.min(options.length - 1, idx + 1) : Math.max(0, idx - 1);
+      options[next]?.focus();
+    } else if (ev.key === "Home") {
+      ev.preventDefault();
+      options[0]?.focus();
+    } else if (ev.key === "End") {
+      ev.preventDefault();
+      options[options.length - 1]?.focus();
+    } else if (ev.key === "Enter" || ev.key === " ") {
+      ev.preventDefault();
+      if (document.activeElement?.dataset?.cdValue != null) {
+        document.activeElement.click();
+      }
+    } else if (ev.key === "Escape") {
+      ev.preventDefault();
+      menu.hidden = true;
+      btn.setAttribute("aria-expanded", "false");
+      btn.focus();
+    }
+  });
+  sync();
+}
+
+function enhanceSelects(root = document) {
+  root.querySelectorAll("select").forEach(enhanceSelect);
+}
+
+function observeNewSelects() {
+  new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes || []) {
+        if (node.nodeType !== 1) continue;
+        if (node.tagName === "SELECT") enhanceSelect(node);
+        else if (node.querySelectorAll) node.querySelectorAll("select").forEach(enhanceSelect);
+      }
+    }
+  }).observe(document.body, { childList: true, subtree: true });
+}
+
 function escapeHtml(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch]);
 }
@@ -4800,6 +4957,9 @@ document.addEventListener("visibilitychange", () => {
 
 async function boot() {
   initTheme();
+  patchSelectValueEvents();
+  enhanceSelects();
+  observeNewSelects();
   document.querySelectorAll(".nav-item").forEach((btn) => {
     btn.addEventListener("click", () => setView(btn.dataset.view));
   });

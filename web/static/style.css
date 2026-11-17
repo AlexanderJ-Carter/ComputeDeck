@@ -5312,3 +5312,41 @@ a[aria-disabled="true"]:hover {
     min-height: 42px;
   }
 }
+
+/* 通用自定义下拉（自动增强原生 select） */
+.cd-select {
+  width: 100%;
+  min-width: 0;
+}
+
+.cd-select-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.btn-row > .cd-select,
+.panel-h .cd-select,
+.snippet-controls .cd-select,
+.nodes-toolbar .cd-select {
+  width: auto;
+  min-width: 140px;
+}
+
+.snippet-controls .cd-select {
+  flex: 1 1 auto;
+}
+
+@media (max-width: 767px) {
+  .snippet-controls .cd-select {
+    min-width: 0;
+    flex: 1 1 140px;
+  }
+}
+
+.job-picker-menu.drop-up {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
