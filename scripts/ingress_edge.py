@@ -97,6 +97,13 @@ class UpstreamPool:
         now = time.time()
         if not force and (now - self._loaded_at) < self.reload_interval:
             return
+        proxy_to = str(self.settings.get("proxy_to") or "").strip()
+        if proxy_to:
+            # 前置代理模式：单一上游（通常是 LiteLLM），节点 LB 由下游负责。
+            with self._lock:
+                self._urls = [proxy_to]
+                self._loaded_at = now
+            return
         catalog = _load_json(ENDPOINTS_FILE, {"endpoints": []})
         health = _load_json(HEALTH_FILE, {})
         by_key = {(r.get("node"), r.get("gpu")): r for r in health.get("results") or []}
@@ -193,12 +200,17 @@ def landing_html(*, snap: dict, listen: str = "", public_base_url: str = "") -> 
     raw_base = (public_base_url or "").rstrip("/") or (f"http://{listen}" if listen else "")
     base = escape(raw_base)
     health = f"{base}/_gpu_control/health" if base else "/_gpu_control/health"
-    status = "上游就绪" if available > 0 else "暂无可用上游"
-    hint = (
-        "把 OpenAI 兼容请求打到下方路径，并带上推理服务要求的 Authorization。"
-        if available > 0
-        else "当前没有健康上游：请在控制面配置端点并完成健康探测后再访问。"
-    )
+    proxy_to = str(SETTINGS.get("proxy_to") or "").strip()
+    if proxy_to:
+        status = f"前置代理 → {proxy_to}"
+        hint = "Edge 只把请求转发到 LiteLLM；节点 LB、模型名、虚拟密钥都在 LiteLLM。"
+    else:
+        status = "上游就绪" if available > 0 else "暂无可用上游"
+        hint = (
+            "把 OpenAI 兼容请求打到下方路径，并带上推理服务要求的 Authorization。"
+            if available > 0
+            else "当前没有健康上游：请在控制面配置端点并完成健康探测后再访问。"
+        )
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -263,7 +275,7 @@ def landing_html(*, snap: dict, listen: str = "", public_base_url: str = "") -> 
   <main>
     <div class="eyebrow">ComputeDeck · Edge</div>
     <h1>统一推理入口</h1>
-    <p>这是控制面内置的反向代理（不是 nginx 默认页）。浏览器打开根路径只会看到本页；真正的推理流量走 API 路径。</p>
+    <p>这是控制面内置的反向代理（不是 nginx 默认页）。浏览器打开根路径只会看到本页；推理流量走 API 路径。</p>
     <div class="status"><span class="dot"></span>{escape(status)} · {available}/{total} 上游 · {strategy}</div>
     <p>{escape(hint)}</p>
     <pre>POST {base or ""}/v1/chat/completions
@@ -271,7 +283,7 @@ Authorization: Bearer &lt;推理密钥&gt;</pre>
     <ul>
       <li>健康检查：<a href="{health}"><code>/_gpu_control/health</code></a></li>
       <li>控制面 UI：通常在同一主机的 <code>:8787</code></li>
-      <li>可选 AI Gateway（LiteLLM）另占 <code>:4000</code>，与本入口独立</li>
+      <li>LiteLLM（唯一节点 LB / Admin）：<code>:4000/ui</code></li>
     </ul>
   </main>
 </body>
@@ -287,6 +299,7 @@ def _write_status(listen: str, extra: dict | None = None) -> None:
         "pid": os.getpid(),
         "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "settings": {
+            "proxy_to": SETTINGS.get("proxy_to") or None,
             "strategy": SETTINGS.get("strategy"),
             "retries": SETTINGS.get("retries"),
             "cooldown_sec": SETTINGS.get("cooldown_sec"),

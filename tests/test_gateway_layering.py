@@ -80,6 +80,28 @@ class LayeringDetectionTests(unittest.TestCase):
             str(topo["layers"]["ai_gateway"]["api_base"]).endswith("18080/v1")
         )
 
+    def test_proxy_to_removes_duplicate_warning(self) -> None:
+        cluster = {
+            "default_job": "decider",
+            "gateway": {
+                "ingress": {
+                    "enabled": True,
+                    "kind": "edge",
+                    "port": 18080,
+                    "proxy_to": "http://127.0.0.1:4000",
+                },
+                "openai_proxy_dir": "/tmp/gateway",
+                "litellm_upstream": "nodes",
+                "model_name": "gpu-pool",
+                "litellm_model": "openai/decider",
+            },
+        }
+        topo = rg.build_topology(cluster, {"by_node": {}, "endpoints": [], "count": 0}, {})
+        self.assertFalse(topo["layering"]["duplicate_node_lb"])
+        self.assertTrue(topo["layering"]["edge_front"])
+        self.assertEqual(topo["layers"]["edge_lb"]["upstream"], "litellm")
+        self.assertIn("LiteLLM 是唯一节点 LB", topo["layering"]["summary"])
+
 
 class NginxLayeringTests(unittest.TestCase):
     def test_edge_front_has_single_upstream(self) -> None:
@@ -94,6 +116,14 @@ class NginxLayeringTests(unittest.TestCase):
         conf = rg.render_nginx(UPSTREAMS, listen=18080)
         self.assertIn("least_conn", conf)
         self.assertIn("10.0.0.1:30000", conf)
+
+    def test_litellm_front_has_single_upstream(self) -> None:
+        conf = rg.render_nginx(UPSTREAMS, listen=18080, litellm_url="http://127.0.0.1:4000")
+        self.assertIn("server 127.0.0.1:4000;", conf)
+        self.assertNotIn("10.0.0.1", conf)
+        self.assertNotIn("least_conn", conf)
+        self.assertIn("/health/readiness", conf)
+        self.assertIn("LiteLLM owns the node LB", conf)
 
 
 if __name__ == "__main__":

@@ -13,6 +13,20 @@
 
 ---
 
+## [1.1.0] - 2026-11-17
+
+### Changed
+
+- 推理入口收敛为 **LiteLLM 单层**：model_list 直连每个节点端口，重试/冷却/虚拟密钥/预算统一在 LiteLLM；Edge / nginx 只做 18080 的前置反代（`ingress.proxy_to` / `nginx_upstream="litellm"`）
+- 部署文档重组：新增《部署总览》，入口分层、生产部署、配置参考同步到 LiteLLM 单层
+- 移除旧 hash 路由别名（`#/guide`、`#/nodes`、`#/runtime`、`#/shell`）
+
+### Added
+
+- 入口页与 `gateway status` 显示 `edge_front` / `edge_proxy_to`；Edge 前置模式只报一个上游
+- nginx 产物支持 `nginx_upstream="litellm"`（单 upstream → 127.0.0.1:4000）
+
+---
 ## [1.0.4] - 2026-11-17
 
 ### Added
@@ -612,6 +626,7 @@ ComputeDeck **1.0 先导测试版**：控制面 / CLI / MCP / 展板已可日常
 4. 版本锚点见下方；具备远程后可改为 compare URL。
 
 [Unreleased]: #unreleased
+[1.1.0]: #110---2026-11-17
 [1.0.4]: #104---2026-11-17
 [1.0.3]: #103---2026-11-17
 [1.0.2]: #102---2026-11-17

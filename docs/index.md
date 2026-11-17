@@ -10,12 +10,13 @@
 
 | 入口 | 说明 |
 |------|------|
+| [部署总览](部署总览.md) | 拓扑选择、安装、入口、验证与发布检查 |
 | [上手与运维手册](手册.md) | 安装、节点、Job、Gateway、腾空 |
 | [生产部署](生产部署.md) | systemd、端口、发布清单 |
 | [安全加固](安全加固.md) | 鉴权、Token、TLS |
 | [配置参考](配置参考.md) | cluster / nodes / jobs / models |
 | [分布式与推理](分布式与推理.md) | DeepSpeed、Ray、vLLM、微调 |
-| [高可用与负载均衡](高可用与负载均衡.md) | Edge、watchdog、AI Gateway |
+| [高可用与负载均衡](高可用与负载均衡.md) | LiteLLM / Edge、watchdog、AI Gateway |
 | [升级与备份](升级与备份.md) | 升级、回滚、迁移 |
 | [故障排查](故障排查.md) | 常见症状 |
 | [AI / MCP 接入](ai-接入.md) | Cursor / Claude Code / Codex 等 Agent、Bearer、助手 |

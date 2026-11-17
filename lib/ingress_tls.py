@@ -40,6 +40,8 @@ def normalize_ingress(raw: dict | None, *, gateway: dict | None = None) -> dict[
         "bind": str(raw.get("bind") or "0.0.0.0"),
         "port": int(raw.get("port") or gateway.get("nginx_listen") or 18080),
         "kind": str(raw.get("kind") or "edge"),
+        # 前置代理模式：设置后 Edge 只转发到一个上游（例如 LiteLLM :4000），不再做节点 LB。
+        "proxy_to": str(raw.get("proxy_to") or "").strip(),
         "public_base_url": str(raw.get("public_base_url") or "").rstrip("/"),
         "domain": domains[0] if domains else "",
         "domains": domains,

@@ -48,14 +48,6 @@ const VIEW_GROUPS = {};
 /** 子页签：保留给 config 之外的未来扩展 */
 const VIEW_SUBNAV = {};
 
-/** 旧 hash 别名 → 现行视图（及可选配置 Tab） */
-const VIEW_ALIASES = {
-  guide: { view: "config", tab: "docs" },
-  nodes: { view: "cluster" },
-  runtime: { view: "models" },
-  shell: { view: "ops" },
-};
-
 const VIEW_CLI = {
   actions: "gpu-control overview && gpu-control toolkits probe",
   cluster: "gpu-control get nodes",
@@ -1555,13 +1547,17 @@ function renderIngressDuo(status) {
     urlEl.textContent = publicUrl || "-";
     urlEl.href = publicUrl || "#";
   }
+  const proxyTo = edge.proxy_to || status?.layering?.edge_proxy_to || "";
   const poolEl = document.getElementById("edge-card-pool");
   if (poolEl) {
-    poolEl.textContent =
-      pool.upstream_count != null ? `${pool.available ?? "?"}/${pool.upstream_count} 可用` : "-";
+    poolEl.textContent = proxyTo
+      ? `前置代理 → ${proxyTo}`
+      : pool.upstream_count != null
+        ? `${pool.available ?? "?"}/${pool.upstream_count} 可用`
+        : "-";
   }
   const stratEl = document.getElementById("edge-card-strategy");
-  if (stratEl) stratEl.textContent = settings.strategy || "-";
+  if (stratEl) stratEl.textContent = proxyTo ? "单上游转发" : settings.strategy || "-";
   const openEl = document.getElementById("edge-card-open");
   if (openEl) openEl.href = edgeOpen;
   const healthEl = document.getElementById("edge-card-health");
@@ -1580,8 +1576,8 @@ function renderIngressDuo(status) {
     const edgeUrl = status?.layering?.edge_url || "";
     llUp.textContent =
       upstream === "edge"
-        ? `Edge ${edgeUrl}（推荐：节点 LB 由 Edge 负责）`
-        : "节点直连（与 Edge 重复 LB）";
+        ? `Edge ${edgeUrl}（LiteLLM 经 Edge 治理）`
+        : "逐节点直连（LiteLLM 是唯一节点 LB）";
   }
   const binEl = document.getElementById("litellm-card-bin");
   if (binEl) {
@@ -3563,8 +3559,6 @@ function setConfigTab(name, { updateHash = false, focus = false } = {}) {
 }
 
 function resolveViewName(name) {
-  const alias = VIEW_ALIASES[name];
-  if (alias) return alias;
   if (VIEW_TITLE[name]) return { view: name, tab: "" };
   return { view: "actions", tab: "" };
 }
@@ -5142,7 +5136,7 @@ async function boot() {
       return;
     }
     const map = Object.fromEntries(VIEW_ORDER.map((view, index) => [String(index + 1), view]));
-    Object.assign(map, { g: "guide", G: "guide", c: "config", C: "config" });
+    Object.assign(map, { g: "config", G: "config", c: "config", C: "config" });
     if (map[ev.key]) {
       ev.preventDefault();
       setView(map[ev.key]);

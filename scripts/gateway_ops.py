@@ -1032,11 +1032,18 @@ def status_payload() -> dict:
     if litellm_upstream not in {"nodes", "edge"}:
         litellm_upstream = "nodes"
     edge_active = bool(edge_running or edge_port_open)
+    edge_front = bool(str(ingress.get("proxy_to") or "").strip())
     litellm_active = litellm_phase in {"running", "starting", "ready", "unmanaged"}
-    duplicate_node_lb = bool(edge_active and litellm_active and litellm_upstream == "nodes")
+    duplicate_node_lb = bool(
+        edge_active and not edge_front and litellm_active and litellm_upstream == "nodes"
+    )
     edge_url = f"http://127.0.0.1:{int(ingress.get('port') or 18080)}"
     if litellm_upstream == "edge" and not edge_active:
         layering_summary = "LiteLLM 配置为经 Edge，但 Edge 未运行"
+    elif litellm_upstream == "nodes" and litellm_active and edge_active and edge_front:
+        layering_summary = "LiteLLM 是唯一节点 LB；Edge 仅反代到 LiteLLM"
+    elif litellm_upstream == "nodes" and litellm_active:
+        layering_summary = "LiteLLM 是唯一节点 LB（直连节点端口）"
     elif duplicate_node_lb:
         layering_summary = "Edge 与 LiteLLM 都在对节点做负载均衡（重复）"
     elif edge_active:
@@ -1045,13 +1052,15 @@ def status_payload() -> dict:
         layering_summary = "未检测到节点 LB（Edge 未运行）"
     layering = {
         "edge_active": edge_active,
+        "edge_front": edge_front,
+        "edge_proxy_to": ingress.get("proxy_to") or None,
         "edge_url": edge_url,
         "litellm_active": litellm_active,
         "litellm_upstream": litellm_upstream,
         "duplicate_node_lb": duplicate_node_lb,
         "summary": layering_summary,
         "recommendation": (
-            "建议 cluster.gateway.litellm_upstream=\"edge\"，由 Edge 统一选节点"
+            f"让 Edge 只做前置代理：cluster.gateway.ingress.proxy_to=\"http://127.0.0.1:{litellm_port}\"，或停用 Edge"
             if duplicate_node_lb
             else None
         ),
@@ -1080,7 +1089,8 @@ def status_payload() -> dict:
             "log": str(EDGE_LOG),
             "healthz": f"{public}/_gpu_control/health",
             "url": public,
-            "role": "primary",
+            "role": "front" if edge_front else "primary",
+            "proxy_to": ingress.get("proxy_to") or None,
             "scheme": "https" if tls_status.get("ready") else "http",
         },
         "litellm": {

@@ -54,7 +54,7 @@
 | 单屏看板 | 健康评分、GPU 池、Edge / TLS / Gateway 状态 |
 | Job 插件 | JSON 描述启停；`jobs install --recommended` 一键装推理 / 训练 / Ray / Docker 模板 |
 | 路径异构 | `defaults.paths`、节点覆盖、`${paths.*}` |
-| 统一入口 | 内置 Edge 为唯一节点 LB（重试、冷却）；nginx 为同层替代或 Web/TLS 前端；LiteLLM 为可选 OpenAI 层，与 Edge 共存时指向 Edge |
+| 统一入口 | LiteLLM 为唯一节点 LB（逐节点 model_list、重试/冷却、虚拟密钥/预算）；Edge / nginx 只做 18080 的 TLS/Web 前置；不用 LiteLLM 时内置 Edge 直接做节点 LB |
 | Agent | OpenAPI + `gc_*` MCP，与 CLI 同一能力面 |
 | 可靠性 | 状态 flock 原子写、watchdog、diagnose（含租约漂移提示） |
 
@@ -64,7 +64,7 @@
   <img src="docs/assets/architecture-overview.svg" alt="ComputeDeck 架构：使用者、Control 主机与 GPU Workers" width="900" />
 </p>
 
-控制面在 Control（Web / CLI / MCP / Edge + `state/`）；Worker 只跑 Job。编排走 Ansible/SSH，推理走 Edge 健康转发。
+控制面在 Control（Web / CLI / MCP / LiteLLM + `state/`）；Worker 只跑 Job。编排走 Ansible/SSH，推理走 LiteLLM → 节点端口。
 
 ## 客户端
 
@@ -126,7 +126,7 @@ gpu-control gateway ensure
 curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8787/api
 ```
 
-文档：[手册](docs/手册.md) · [配置参考](docs/配置参考.md) · [分布式](docs/分布式与推理.md) · [高可用](docs/高可用与负载均衡.md) · [AI/MCP](docs/ai-接入.md)
+文档：[部署总览](docs/部署总览.md) · [手册](docs/手册.md) · [配置参考](docs/配置参考.md) · [分布式](docs/分布式与推理.md) · [高可用](docs/高可用与负载均衡.md) · [AI/MCP](docs/ai-接入.md)
 
 ## 环境与校验
 

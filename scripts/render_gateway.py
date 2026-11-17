@@ -6,9 +6,12 @@ gpu-control 是**控制面**：库存、健康、配置片段；**不**代理推
 推荐分层（节点 LB 只保留一层）：
 
 1. Backends — 每 GPU HTTP 服务（Job 端点）
-2. 节点 LB — 内置 Edge（唯一节点选择层）；nginx 仅作为同层替代或 Web/TLS 反代
-3. OpenAI 层（可选）— LiteLLM；与 Edge 共存时必须指向 Edge，不再直连节点
-4. Control — 本工具（仅渲染与探测）
+2. 节点 LB — **LiteLLM 直连各节点端口**（启用 LiteLLM 时唯一节点选择层）
+3. 前置代理 — nginx / 内置 Edge 只做 18080 的 TLS/Web 反代 → LiteLLM，不再选节点
+4. OpenAI 治理 — LiteLLM 的模型名 / 虚拟密钥 / 预算
+5. Control — 本工具（渲染与探测）
+
+不使用 LiteLLM 的轻量部署才由内置 Edge 直接做节点 LB。
 
 同一批节点只能有一层做负载均衡；重复时 ``topology.layering`` 会给出告警。
 
@@ -87,6 +90,14 @@ def _upstream_mode(value, default: str = "nodes") -> str:
     return default
 
 
+def _nginx_upstream_mode(value, default: str = "nodes") -> str:
+    """nginx 上游：nodes（自己 LB）/ edge（反代 Edge）/ litellm（反代 LiteLLM）。"""
+    text = str(value or "").strip().lower()
+    if text in {"litellm", "openai", "proxy"}:
+        return "litellm"
+    return _upstream_mode(value, default)
+
+
 def _edge_url(gateway: dict, *, tls_ready: bool = False) -> str:
     override = str(gateway.get("litellm_edge_url") or "").strip()
     if override:
@@ -127,18 +138,22 @@ def build_topology(cluster: dict, catalog: dict, health: dict) -> dict:
         tls_ready=bool(tls_cfg.get("enabled") and tls_cfg.get("cert_file") and tls_cfg.get("key_file")),
     )
     litellm_upstream = _upstream_mode(gateway.get("litellm_upstream"), "nodes")
-    nginx_upstream = _upstream_mode(gateway.get("nginx_upstream"), "nodes")
+    nginx_upstream = _nginx_upstream_mode(gateway.get("nginx_upstream"), "nodes")
     litellm_configured = bool(
         gateway.get("openai_proxy_dir") or gateway.get("litellm_dir") or gateway.get("litellm_bin")
     )
-    duplicate_node_lb = bool(edge_enabled and litellm_configured and litellm_upstream == "nodes")
+    proxy_to = str(ingress.get("proxy_to") or "").strip()
+    edge_front = bool(proxy_to)
+    duplicate_node_lb = bool(
+        edge_enabled and not edge_front and litellm_configured and litellm_upstream == "nodes"
+    )
     layering_warnings = []
     if duplicate_node_lb:
         layering_warnings.append({
             "code": "duplicate_node_lb",
             "severity": "warn",
-            "message": "Edge 与 LiteLLM 都在对节点端口做负载均衡；建议 litellm_upstream=edge，由 Edge 统一选节点。",
-            "fix": "cluster.gateway.litellm_upstream=\"edge\"，然后 gateway render + restart --kind litellm",
+            "message": "Edge 与 LiteLLM 都在对节点端口做负载均衡；LiteLLM 单层时让 Edge 只做前置反代（ingress.proxy_to）或停用 Edge。",
+            "fix": "cluster.gateway.ingress.proxy_to=\"http://127.0.0.1:4000\"（或 ingress.enabled=false），然后 gateway render + 重启 Edge/LiteLLM",
         })
     if litellm_upstream == "edge" and not edge_enabled:
         layering_warnings.append({
@@ -180,8 +195,12 @@ def build_topology(cluster: dict, catalog: dict, health: dict) -> dict:
             "edge_enabled": edge_enabled,
             "edge_url": edge_base,
             "edge_port": edge_port,
-            "node_lb_owner": "edge" if edge_enabled and litellm_upstream == "edge" else (
-                "litellm" if litellm_upstream == "nodes" else "edge"
+            "edge_front": edge_front,
+            "edge_proxy_to": proxy_to or None,
+            "node_lb_owner": (
+                "litellm" if litellm_configured and litellm_upstream == "nodes"
+                else "edge" if edge_enabled
+                else "none"
             ),
             "litellm_upstream": litellm_upstream,
             "nginx_upstream": nginx_upstream,
@@ -189,7 +208,11 @@ def build_topology(cluster: dict, catalog: dict, health: dict) -> dict:
             "single_node_lb": not duplicate_node_lb,
             "warnings": layering_warnings,
             "summary": (
-                "Edge 是唯一节点 LB；LiteLLM 经 Edge 做 OpenAI 治理层"
+                "LiteLLM 是唯一节点 LB；Edge :18080 仅反代到 LiteLLM"
+                if litellm_configured and litellm_upstream == "nodes" and edge_enabled and edge_front
+                else "LiteLLM 是唯一节点 LB（直连节点端口）"
+                if litellm_configured and litellm_upstream == "nodes"
+                else "Edge 是唯一节点 LB；LiteLLM 经 Edge 做 OpenAI 治理层"
                 if edge_enabled and litellm_upstream == "edge"
                 else "Edge 与 LiteLLM 都在对节点做 LB（重复）"
                 if duplicate_node_lb
@@ -202,7 +225,11 @@ def build_topology(cluster: dict, catalog: dict, health: dict) -> dict:
                 "endpoint_count": endpoint_count,
             },
             "edge_lb": {
-                "role": "control-host raw HTTP LB (Edge is the single node-LB layer)",
+                "role": (
+                    "front proxy only (targets LiteLLM; no node LB)"
+                    if edge_front
+                    else "control-host raw HTTP LB (Edge is the single node-LB layer)"
+                ),
                 "builtin": "gpu-control gateway start --kind edge",
                 "artifact": str(OUT_DIR / "nginx-inference-pool.conf"),
                 "listen": int(
@@ -211,8 +238,8 @@ def build_topology(cluster: dict, catalog: dict, health: dict) -> dict:
                     or 18080
                 ),
                 "ingress": gateway.get("ingress") or {},
-                "upstream": "nodes",
-                "upstream_count": endpoint_count,
+                "upstream": "litellm" if edge_front else "nodes",
+                "upstream_count": 1 if edge_front else endpoint_count,
                 "edge_url": edge_base,
             },
             "ai_gateway": {
@@ -285,10 +312,16 @@ def build_topology(cluster: dict, catalog: dict, health: dict) -> dict:
                 "role": gateway.get("extra_http_role") or "optional extra HTTP service",
             },
             "nginx": {
-                "role": "alternative to builtin Edge LB",
+                "role": (
+                    "Web/TLS front to LiteLLM"
+                    if nginx_upstream == "litellm"
+                    else "alternative to builtin Edge LB"
+                ),
                 "installed": bool(shutil.which("nginx")),
                 "status_label": (
-                    "已装"
+                    "已装（→ LiteLLM）"
+                    if shutil.which("nginx") and nginx_upstream == "litellm"
+                    else "已装"
                     if shutil.which("nginx")
                     else "不必装（主入口用内置 Edge）"
                 ),
@@ -306,15 +339,29 @@ def render_nginx(
     server_name: str = "_",
     tls: dict | None = None,
     edge_url: str | None = None,
+    litellm_url: str | None = None,
 ) -> str:
     """渲染 nginx 产物。
 
+    - ``litellm_url`` 有值：nginx 做 Web/TLS 前端，单 upstream 指向 LiteLLM；
     - ``edge_url`` 有值：nginx 只做 Web/TLS 前端，单 upstream 指向 Edge；
-    - 否则：nginx 作为 Edge 的同层替代，直接对节点端口 ``least_conn``。
+    - 否则：nginx 作为节点 LB 的同层替代，直接对节点端口 ``least_conn``。
     """
     tls = tls or {}
     proxy_buffering = "        proxy_buffering off;\n        proxy_next_upstream error timeout http_502 http_503 http_504;"
-    if edge_url:
+    if litellm_url:
+        parts = urlsplit(litellm_url)
+        host = parts.hostname or "127.0.0.1"
+        port = parts.port or 4000
+        servers = f"    server {host}:{port};"
+        upstream_name = "gpu_control_litellm"
+        least_conn = ""
+        comment = (
+            "# nginx is only TLS/domain front; LiteLLM owns the node LB.\n"
+            "# Recommended: nginx :18080 -> LiteLLM :4000, clients use LiteLLM model names."
+        )
+        health_path = "/health/readiness"
+    elif edge_url:
         parts = urlsplit(edge_url)
         host = parts.hostname or "127.0.0.1"
         port = parts.port or (443 if parts.scheme == "https" else 80)
@@ -472,8 +519,8 @@ def render_litellm_yaml(upstreams: list[dict], pool: dict) -> str:
         return "\n".join(lines)
     lines = [
         "# Generated by gpu-control — layering: litellm_upstream=nodes",
-        "# Warning: if Edge is also running, you have TWO node-LB layers.",
-        "# Prefer litellm_upstream=edge and let Edge pick nodes.",
+        "# LiteLLM is the ONLY node-LB layer: one deployment per node/GPU endpoint.",
+        "# Edge should run in front-proxy mode (ingress.proxy_to) or stay stopped.",
         "model_list:",
     ]
     if not upstreams:
@@ -590,6 +637,13 @@ def render_snippets(
     tls = cluster_ingress.get("tls") if isinstance(cluster_ingress.get("tls"), dict) else {}
     cluster_gateway = (cluster_doc.get("gateway") or {}) if isinstance(cluster_doc, dict) else {}
     nginx_listen = int(cluster_gateway.get("nginx_listen") or 18443)
+    nginx_upstream = str(pool.get("nginx_upstream") or "nodes")
+    litellm_url = None
+    if nginx_upstream == "litellm":
+        litellm_port = int(
+            cluster_gateway.get("openai_proxy_port") or cluster_gateway.get("litellm_port") or 4000
+        )
+        litellm_url = f"http://127.0.0.1:{litellm_port}"
     return {
         "python": render_python_client(upstreams),
         "nginx": render_nginx(
@@ -598,11 +652,8 @@ def render_snippets(
             health_path=str(pool.get("health_path") or "/health"),
             server_name=server_name,
             tls=tls,
-            edge_url=(
-                pool.get("edge_url")
-                if str(pool.get("nginx_upstream") or "nodes") == "edge"
-                else None
-            ),
+            edge_url=pool.get("edge_url") if nginx_upstream == "edge" else None,
+            litellm_url=litellm_url,
         ),
         "curl": render_curl(upstreams, pool),
         "litellm": litellm,

@@ -77,7 +77,8 @@
         "ca_file": "",
         "require_client_cert": false,
         "min_version": "TLSv1.2"
-      }
+      },
+      "proxy_to": ""
     },
     "model_name": "gpu-pool",
     "litellm_model": "openai/local-model",
@@ -89,12 +90,12 @@
     "litellm_database_url_file": "",
     "litellm_database_mode": "external",
     "openai_proxy_dir": "",
-    "openai_proxy_role": "optional LiteLLM（OpenAI 层）；优先 litellm_bin / PATH / ~/.local/bin，装好后 gateway ensure 可随入口启动",
+    "openai_proxy_role": "LiteLLM 节点 LB + OpenAI 治理层；启用后把 ingress.proxy_to 指向 http://127.0.0.1:4000",
     "extra_http_port": 8080,
     "extra_http_role": "optional extra HTTP service",
     "nginx_listen": 18080,
-    "litellm_upstream": "edge",
-    "nginx_upstream": "nodes",
+    "litellm_upstream": "nodes",
+    "nginx_upstream": "litellm",
     "litellm_edge_url": ""
   },
   "watchdog": {
