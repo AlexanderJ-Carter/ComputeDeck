@@ -66,6 +66,12 @@
 
 控制面在 Control（Web / CLI / MCP / Edge + `state/`）；Worker 只跑 Job。编排走 Ansible/SSH，推理走 Edge 健康转发。
 
+## 客户端
+
+- Web 控制面：`:8787`
+- VS Code 插件：`extensions/vscode/`（集群树、状态栏、节点/Job 操作、终端、MCP）
+- MCP：`bin/gpu-control-mcp`
+
 ## 快速开始
 
 ```bash

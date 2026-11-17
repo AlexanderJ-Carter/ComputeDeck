@@ -13,6 +13,17 @@
 
 ---
 
+## [1.0.0-beta.14] - 2026-11-17
+
+### Added
+
+- VS Code 插件原型 `extensions/vscode/`：集群树、状态栏、节点/Job 操作、SSH 终端、只读诊断、入口分层、自动注册 MCP、打开 Web 控制面
+- VS Code 插件打包流水线 `.github/workflows/vscode.yml`：扩展变更时打包 VSIX，tag 时附加到 GitHub Release
+- `scripts/package_extension.sh` 本地打包脚本；`scripts/check.sh` 增加扩展语法检查
+- 新文档《VS Code 插件》
+
+
+---
 ## [1.0.0-beta.13] - 2026-11-17
 
 ### Added
@@ -529,6 +540,7 @@ ComputeDeck **1.0 先导测试版**：控制面 / CLI / MCP / 展板已可日常
 4. 版本锚点见下方；具备远程后可改为 compare URL。
 
 [Unreleased]: #unreleased
+[1.0.0-beta.14]: #100-beta14---2026-11-17
 [1.0.0-beta.13]: #100-beta13---2026-11-17
 [1.0.0-beta.12]: #100-beta12---2026-11-17
 [1.0.0-beta.11]: #100-beta11---2026-11-17

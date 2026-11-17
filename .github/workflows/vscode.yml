@@ -1,0 +1,77 @@
+name: VS Code extension
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "extensions/vscode/**"
+      - ".github/workflows/vscode.yml"
+    tags:
+      - "v*"
+  pull_request:
+    paths:
+      - "extensions/vscode/**"
+      - ".github/workflows/vscode.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Syntax check
+        working-directory: extensions/vscode
+        run: node --check extension.js
+
+      - name: Package VSIX
+        working-directory: extensions/vscode
+        run: |
+          npx --yes @vscode/vsce package --allow-missing-repository
+          ls -lh *.vsix
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: computedeck-vscode
+          path: extensions/vscode/*.vsix
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download VSIX
+        uses: actions/download-artifact@v4
+        with:
+          name: computedeck-vscode
+          path: dist
+
+      - name: Attach VSIX to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          file="$(find dist -name '*.vsix' -print -quit)"
+          test -n "$file"
+          # release.yml 也在同一 tag 上创建 Release；等待它出现再附加。
+          for i in $(seq 1 20); do
+            if gh release view "$tag" >/dev/null 2>&1; then
+              gh release upload "$tag" "$file" --clobber
+              echo "attached $file to $tag"
+              exit 0
+            fi
+            echo "waiting for release $tag ($i/20)…"
+            sleep 15
+          done
+          echo "release $tag not found; VSIX remains available as workflow artifact" >&2
+          exit 1

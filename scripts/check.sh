@@ -17,6 +17,7 @@ if [[ -n "$NODE_BIN" ]] && "$NODE_BIN" -e 'process.exit(Number(process.versions.
   echo "== javascript syntax =="
   "$NODE_BIN" --check web/static/app.js
   "$NODE_BIN" --check web/static/xterm-fit.js
+  "$NODE_BIN" --check extensions/vscode/extension.js
 else
   echo "== javascript syntax skipped (need Node >= 16; set NODE_BIN) =="
 fi

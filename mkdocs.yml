@@ -70,6 +70,7 @@ nav:
   - 分布式与推理: 分布式与推理.md
   - 高可用与负载均衡: 高可用与负载均衡.md
   - 入口分层与 nginx: 入口分层与nginx.md
+  - VS Code 插件: vscode插件.md
   - 远程接入: 远程接入.md
   - AI / MCP 接入: ai-接入.md
   - 宣传站自定义域名: 自定义域名.md

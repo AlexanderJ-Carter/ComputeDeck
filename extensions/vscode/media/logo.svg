@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img">
+  <title>ComputeDeck</title>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#14b8a6"/>
+      <stop offset="55%" stop-color="#0d9488"/>
+      <stop offset="100%" stop-color="#0f766e"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#g)"/>
+  <!-- stacked deck plates -->
+  <rect x="28" y="34" width="72" height="16" rx="4" fill="#fff" opacity="0.95"/>
+  <rect x="34" y="56" width="60" height="16" rx="4" fill="#ccfbf1" opacity="0.95"/>
+  <rect x="40" y="78" width="48" height="16" rx="4" fill="#99f6e4" opacity="0.95"/>
+  <!-- compute accent -->
+  <circle cx="92" cy="42" r="5" fill="#f97316"/>
+</svg>
