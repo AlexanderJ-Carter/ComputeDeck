@@ -546,6 +546,29 @@ gpu-control jobs install vllm-serve --name vllm</pre>
                 <button id="btn-litellm-key-clear" class="ghost tiny" data-keep-enabled="1" data-action="1">清除</button>
               </div>
               <p class="meta" id="litellm-key-reveal" hidden></p>
+              <details class="fold" style="margin-top:8px" id="litellm-models-fold">
+                <summary>模型（简化管理）<span class="meta" id="litellm-models-meta">加载中…</span></summary>
+                <div class="btn-row" style="margin:8px 0">
+                  <button type="button" id="btn-litellm-models-refresh" class="ghost tiny"
+                    data-keep-enabled="1">刷新模型</button>
+                </div>
+                <div id="litellm-models" class="list"></div>
+                <p class="meta">这里加简单模型别名；虚拟密钥、预算、团队等高级配置去 Admin。</p>
+                <div class="compact-fields" style="margin-top:8px">
+                  <label class="field"><span>模型名</span><input id="litellm-model-name" placeholder="my-model"
+                      data-keep-enabled="1" /></label>
+                  <label class="field"><span>上游模型</span><input id="litellm-model-upstream"
+                      placeholder="openai/decider" data-keep-enabled="1" /></label>
+                  <label class="field"><span>API Base</span><input id="litellm-model-base"
+                      placeholder="http://10.x.x.x:30000/v1" data-keep-enabled="1" /></label>
+                  <label class="field"><span>Key 环境变量</span><input id="litellm-model-key-env"
+                      value="INFERENCE_API_KEY" data-keep-enabled="1" /></label>
+                </div>
+                <div class="btn-row">
+                  <button type="button" id="btn-litellm-model-add" class="primary tiny"
+                    data-keep-enabled="1">添加模型</button>
+                </div>
+              </details>
               <details class="fold" style="margin-top:8px">
                 <summary>诊断：原因 / 日志尾</summary>
                 <p class="meta" id="litellm-card-reasons">-</p>
@@ -885,15 +908,29 @@ gpu-control jobs install vllm-serve --name vllm</pre>
               <label class="field"><span>密码哈希文件</span><input id="auth-password-hash" /></label>
               <label class="field"><span>Session 密钥文件</span><input id="auth-session-secret" /></label>
               <label class="field"><span>API Token 文件</span><input id="auth-api-token" /></label>
+              <div class="btn-row">
+                <button id="btn-auth-token-issue" class="primary tiny" data-keep-enabled="1">生成 / 轮换 Token</button>
+                <button id="btn-auth-token-clear" class="ghost tiny" data-keep-enabled="1">清除 Token</button>
+              </div>
+              <p class="meta" id="auth-token-meta" role="status" aria-live="polite">Token 只在生成时显示一次；脚本 / MCP 需同步更新。</p>
               <details class="fold">
-                <summary>OIDC</summary>
-                <label class="field"><span>Issuer</span><input id="auth-oidc-issuer" /></label>
+                <summary>OIDC / 免密登录</summary>
+                <label class="field"><span>Issuer</span><input id="auth-oidc-issuer" placeholder="https://login.example.com" /></label>
                 <label class="field"><span>Client ID</span><input id="auth-oidc-client-id" /></label>
                 <label class="field"><span>Client Secret 文件</span><input id="auth-oidc-secret" /></label>
+                <label class="field"><span>允许邮箱（逗号分隔）</span><input id="auth-oidc-allowed-emails"
+                    placeholder="you@corp.com,ops@corp.com" /></label>
+                <label class="field"><span>用户名 Claim</span><input id="auth-oidc-username-claim" placeholder="email" /></label>
+                <label class="field"><span>Scopes</span><input id="auth-oidc-scopes" placeholder="openid,profile,email" /></label>
                 <label class="field switch-field">
                   <span>允许密码回落</span>
                   <input type="checkbox" id="auth-oidc-password-fallback" data-keep-enabled="1" />
                 </label>
+                <div class="btn-row">
+                  <button id="btn-oidc-check" class="ghost tiny" data-keep-enabled="1">测试 OIDC</button>
+                  <span class="meta" id="oidc-check-meta" role="status" aria-live="polite"></span>
+                </div>
+                <p class="meta">IdP 回调地址：<code id="oidc-redirect-hint">/api/auth/oidc/callback</code></p>
               </details>
             </div>
           </div>

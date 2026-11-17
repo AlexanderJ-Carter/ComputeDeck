@@ -115,7 +115,17 @@ LiteLLM 的 Python 侧仍需要 `prisma==0.11.0` 与预生成的客户端/查询
 >
 > 更推荐容器部署使用**外部 Postgres**，避免把数据库进程塞进控制面容器。
 
-#### 3.1.2 外部数据库
+#### 3.1.2 控制面里的模型管理
+
+入口页 LiteLLM 卡片的「模型（简化管理）」直接调用 LiteLLM Admin API：
+
+- 列出模型与 deployment（配置生成的逐节点 deployment + 数据库里的别名）；
+- 添加模型别名：模型名、上游 `openai/<model>`、`api_base`、Key 环境变量；
+- 删除数据库模型；虚拟密钥、预算、团队、日志等高级配置回 LiteLLM Admin。
+
+Master Key 只保留在控制面服务端，浏览器不接触；模型写入需要 `STORE_MODEL_IN_DB=True`（embedded 模式启动 LiteLLM 时自动设置）。
+
+#### 3.1.3 外部数据库
 
 已有 Postgres 时直接配连接串即可：
 

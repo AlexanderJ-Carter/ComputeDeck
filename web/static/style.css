@@ -5157,3 +5157,18 @@ a[aria-disabled="true"]:hover {
     min-height: 34px;
   }
 }
+
+/* 任务选择：短标签 + 完整说明放在下一行，避免窄屏把选项文字截断 */
+#job-select {
+  width: 100%;
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+
+#job-select-hint {
+  display: block;
+  margin-top: 4px;
+  line-height: 1.5;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}

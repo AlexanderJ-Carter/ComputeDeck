@@ -1577,6 +1577,8 @@ def _start_litellm(gateway: dict) -> dict:
             )
     if db_ok:
         env[DATABASE_URL_ENV] = db_url
+        # 允许控制面 / Admin 通过 /model/new 增加持久化模型别名。
+        env.setdefault("STORE_MODEL_IN_DB", "True")
     else:
         env.pop(DATABASE_URL_ENV, None)
     # LiteLLM model_list 用 os.environ/<auth_env> 引用上游推理密钥；启动时注入，

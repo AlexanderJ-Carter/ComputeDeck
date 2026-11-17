@@ -220,6 +220,23 @@ _BODY: dict[str, dict[str, Any]] = {
             },
         },
     },
+    "auth_token": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["issue", "clear"], "default": "issue"},
+        },
+    },
+    "litellm_model": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["add", "delete"], "default": "add"},
+            "model_name": {"type": "string", "description": "对外模型名"},
+            "model": {"type": "string", "description": "上游模型，如 openai/decider"},
+            "api_base": {"type": "string", "description": "http(s):// 节点推理地址"},
+            "key_env": {"type": "string", "description": "上游密钥环境变量名"},
+            "id": {"type": "string", "description": "删除时传 deployment id"},
+        },
+    },
     "install_template": {
         "type": "object",
         "properties": {
@@ -437,6 +454,12 @@ def http_endpoints() -> list[dict[str, Any]]:
             "method": "GET",
             "path": "/api/gateway/litellm/master-key",
             "summary": "LiteLLM Master Key 是否已配置（不回显明文）",
+            "group": "read",
+        },
+        {
+            "method": "GET",
+            "path": "/api/gateway/litellm/models",
+            "summary": "LiteLLM 模型与 deployment 列表",
             "group": "read",
         },
         {"method": "GET", "path": "/api/setup", "summary": "配置向导状态", "group": "config"},
@@ -695,6 +718,26 @@ def http_endpoints() -> list[dict[str, Any]]:
             "summary": "设置/生成/清除 LiteLLM Master Key（可重启代理）",
             "group": "ops",
             "body": "litellm_master_key",
+        },
+        {
+            "method": "POST",
+            "path": "/api/auth/token",
+            "summary": "生成或清除 API Bearer Token（仅返回一次）",
+            "group": "ops",
+            "body": "auth_token",
+        },
+        {
+            "method": "POST",
+            "path": "/api/auth/oidc/check",
+            "summary": "OIDC 配置自检（discovery / 客户端参数）",
+            "group": "ops",
+        },
+        {
+            "method": "POST",
+            "path": "/api/gateway/litellm/models",
+            "summary": "添加/删除 LiteLLM 模型（简单别名；高级配置去 Admin）",
+            "group": "ops",
+            "body": "litellm_model",
         },
         {
             "method": "POST",

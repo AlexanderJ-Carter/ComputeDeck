@@ -233,6 +233,13 @@ function confirmDialog({
 }
 
 const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+function splitList(value) {
+  return String(value || "")
+    .split(/[,，\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 function escapeHtml(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch]);
 }
@@ -1693,6 +1700,97 @@ async function saveLitellmMasterKey({ generate = false, clear = false } = {}) {
   }
 }
 
+async function refreshLitellmModels() {
+  const meta = $("litellm-models-meta");
+  const list = $("litellm-models");
+  if (!list) return;
+  try {
+    const data = await api("/api/gateway/litellm/models");
+    const models = data.models || [];
+    if (meta) meta.textContent = `${models.length} 个模型`;
+    list.innerHTML =
+      models
+        .map((m) => {
+          const ids = Array.isArray(m.ids) ? m.ids : [];
+          const del =
+            m.db_model && ids.length
+              ? `<button type="button" class="ghost tiny" data-litellm-del="${escapeHtml(ids[0])}">删除</button>`
+              : "";
+          const badge = m.db_model ? "数据库" : "配置";
+          return `<div class="item"><div>
+            <strong>${escapeHtml(m.model_name || "-")}</strong>
+            <div class="meta">${escapeHtml(m.model || "-")} → ${escapeHtml(m.api_base || "-")}</div>
+            <div class="meta">${m.deployments || 0} 个 deployment · ${badge}</div>
+          </div>${del}</div>`;
+        })
+        .join("") ||
+      '<div class="empty-state"><strong>暂无模型</strong><p>用下方表单添加，或到 Admin 管理。</p></div>';
+    list.querySelectorAll("[data-litellm-del]").forEach((btn) => {
+      btn.addEventListener("click", () => deleteLitellmModel(btn.dataset.litellmDel));
+    });
+  } catch (err) {
+    if (meta) meta.textContent = "不可用";
+    list.innerHTML = `<div class="meta">${escapeHtml(String(err.message || err))}</div>`;
+  }
+}
+
+async function addLitellmModel() {
+  const name = ($("litellm-model-name")?.value || "").trim();
+  const base = ($("litellm-model-base")?.value || "").trim();
+  if (!name || !base) {
+    toast("请填写模型名和 API Base", { tone: "warn" });
+    return;
+  }
+  const body = {
+    action: "add",
+    model_name: name,
+    api_base: base,
+    model: ($("litellm-model-upstream")?.value || "").trim(),
+    key_env: ($("litellm-model-key-env")?.value || "").trim(),
+  };
+  setBusy(true);
+  try {
+    const data = await api("/api/gateway/litellm/models", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    toastOk(`已添加模型 ${name}`);
+    if (data.models) {
+      const meta = $("litellm-models-meta");
+      if (meta) meta.textContent = `${data.models.length} 个模型`;
+    }
+    await refreshLitellmModels();
+  } catch (err) {
+    toastBad(`添加模型失败：${err.message || err}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function deleteLitellmModel(id) {
+  if (!id) return;
+  const ok = await confirmDialog({
+    title: "删除模型",
+    message: `从 LiteLLM 数据库删除模型 ${id}？`,
+    confirmText: "删除",
+    tone: "danger",
+  });
+  if (!ok) return;
+  setBusy(true);
+  try {
+    await api("/api/gateway/litellm/models", {
+      method: "POST",
+      body: JSON.stringify({ action: "delete", id }),
+    });
+    toastOk("模型已删除");
+    await refreshLitellmModels();
+  } catch (err) {
+    toastBad(`删除失败：${err.message || err}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
 async function refreshIngressStatus() {
   const data = await api("/api/gateway/status");
   renderIngressMeta(data);
@@ -2171,9 +2269,8 @@ function jobOptionLabel(j) {
   const gpus = j.gpus_per_node != null ? `${j.gpus_per_node} GPU` : "";
   const kind = j.kind === "train" ? "训练" : "";
   const dist = j.distributed ? "多机" : "";
-  const model = j.model ? String(j.model).split("/").pop() : "";
   const sourceLabel = { local: "本地", template: "模板", bundle: "推荐包" }[src] || src;
-  const bits = [j.name, model, kind, dist, gpus, sourceLabel].filter(Boolean);
+  const bits = [j.name, kind, dist, gpus, sourceLabel].filter(Boolean);
   return bits.join(" · ");
 }
 
@@ -2224,8 +2321,15 @@ function syncJobSelectHint(jobs) {
   const describe = (name) => {
     const job = list.find((j) => j.name === name);
     if (!job) return "还没有任务。到「任务」页安装模板或创建 Job。";
-    return `${job.description || job.name} · ${job.gpus_per_node ?? "?"} GPU/节点${job.distributed ? " · 多机" : ""
-      }`;
+    const model = job.model ? String(job.model).split("/").pop() : "";
+    return [
+      job.description || job.name,
+      model ? `模型 ${model}` : "",
+      `${job.gpus_per_node ?? "?"} GPU/节点`,
+      job.distributed ? "多机" : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
   };
   const sel = $("job-select");
   const hint = $("job-select-hint");
@@ -4067,6 +4171,14 @@ function fillSetupForm(data) {
   if ($("auth-oidc-issuer")) $("auth-oidc-issuer").value = oidc.issuer || "";
   if ($("auth-oidc-client-id")) $("auth-oidc-client-id").value = oidc.client_id || "";
   if ($("auth-oidc-secret")) $("auth-oidc-secret").value = oidc.client_secret_file || "";
+  if ($("auth-oidc-allowed-emails")) {
+    $("auth-oidc-allowed-emails").value = (oidc.allowed_emails || []).join(", ");
+  }
+  if ($("auth-oidc-username-claim")) $("auth-oidc-username-claim").value = oidc.username_claim || "";
+  if ($("auth-oidc-scopes")) $("auth-oidc-scopes").value = (oidc.scopes || []).join(", ");
+  if ($("oidc-redirect-hint")) {
+    $("oidc-redirect-hint").textContent = oidc.redirect_path || "/api/auth/oidc/callback";
+  }
   if ($("auth-oidc-password-fallback")) {
     $("auth-oidc-password-fallback").checked = !!oidc.allow_password_fallback;
   }
@@ -4236,6 +4348,9 @@ function applyAuthFields(cluster) {
       issuer: ($("auth-oidc-issuer")?.value || "").trim(),
       client_id: ($("auth-oidc-client-id")?.value || "").trim(),
       client_secret_file: ($("auth-oidc-secret")?.value || "").trim(),
+      allowed_emails: splitList($("auth-oidc-allowed-emails")?.value),
+      username_claim: ($("auth-oidc-username-claim")?.value || "").trim(),
+      scopes: splitList($("auth-oidc-scopes")?.value),
       allow_password_fallback: !!$("auth-oidc-password-fallback")?.checked,
     },
   };
@@ -4320,6 +4435,85 @@ async function saveAuthConfig() {
   const data = { ...((stateSetup.data && stateSetup.data.cluster) || {}) };
   applyAuthFields(data);
   await postClusterConfig(data, "鉴权配置已保存");
+}
+
+async function issueAuthToken() {
+  const ok = await confirmDialog({
+    title: "轮换 API Token",
+    message: "现有脚本 / MCP 使用的 Token 会立即失效，确定生成新的？",
+    confirmText: "生成",
+  });
+  if (!ok) return;
+  setBusy(true);
+  try {
+    const data = await api("/api/auth/token", {
+      method: "POST",
+      body: JSON.stringify({ action: "issue" }),
+    });
+    const meta = $("auth-token-meta");
+    if (meta) {
+      meta.innerHTML = `新 Token（只显示一次）：<code>${escapeHtml(data.token || "")}</code>`;
+    }
+    if (data.auth && state.auth) state.auth = { ...state.auth, ...data.auth };
+    const copied = await copyText(data.token || "");
+    toast(copied ? "新 Token 已生成并复制" : "新 Token 已生成，请立即保存", {
+      tone: "ok",
+      timeout: 6000,
+    });
+  } catch (err) {
+    toastBad(`生成 Token 失败：${err.message || err}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function clearAuthToken() {
+  const ok = await confirmDialog({
+    title: "清除 API Token",
+    message: "清除后脚本 / MCP 的 Bearer 访问会立即失效。",
+    confirmText: "清除",
+    tone: "danger",
+  });
+  if (!ok) return;
+  setBusy(true);
+  try {
+    await api("/api/auth/token", {
+      method: "POST",
+      body: JSON.stringify({ action: "clear" }),
+    });
+    const meta = $("auth-token-meta");
+    if (meta) meta.textContent = "Token 已清除；脚本 / MCP 需重新生成。";
+    toastOk("Token 已清除");
+  } catch (err) {
+    toastBad(`清除 Token 失败：${err.message || err}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function checkOidcStatus() {
+  const meta = $("oidc-check-meta");
+  if (meta) meta.textContent = "检测中…";
+  try {
+    const data = await api("/api/auth/oidc/check", {
+      method: "POST",
+      body: "{}",
+      timeoutMs: 30000,
+    });
+    const bits = [];
+    if (data.issuer) bits.push(data.issuer);
+    if (data.redirect_uri) bits.push(`回调 ${data.redirect_uri}`);
+    if (Array.isArray(data.reasons) && data.reasons.length) bits.push(data.reasons.join("；"));
+    if (meta) {
+      meta.textContent = data.ok
+        ? `OIDC 就绪 · ${bits.join(" · ")}`
+        : `OIDC 未就绪 · ${bits.join(" · ") || data.error || ""}`;
+    }
+    toast(data.ok ? "OIDC 就绪" : "OIDC 未就绪", { tone: data.ok ? "ok" : "warn" });
+  } catch (err) {
+    if (meta) meta.textContent = `OIDC 检测失败：${err.message || err}`;
+    toastBad(`OIDC 检测失败：${err.message || err}`);
+  }
 }
 
 async function saveNodesEditor() {
@@ -4709,6 +4903,11 @@ async function boot() {
   document.getElementById("btn-litellm-start")?.addEventListener("click", () => litellmLifecycle("start"));
   document.getElementById("btn-litellm-stop")?.addEventListener("click", () => litellmLifecycle("stop"));
   document.getElementById("btn-litellm-restart")?.addEventListener("click", () => litellmLifecycle("restart"));
+  document.getElementById("btn-litellm-models-refresh")?.addEventListener("click", refreshLitellmModels);
+  document.getElementById("btn-litellm-model-add")?.addEventListener("click", addLitellmModel);
+  document.getElementById("litellm-models-fold")?.addEventListener("toggle", (ev) => {
+    if (ev.target && ev.target.open) refreshLitellmModels();
+  });
   document.getElementById("litellm-ui-link")?.addEventListener("click", (ev) => {
     const link = ev.currentTarget;
     if (link.getAttribute("aria-disabled") === "true") {
@@ -4736,6 +4935,9 @@ async function boot() {
   document.getElementById("btn-save-job").addEventListener("click", saveJob);
   document.getElementById("btn-save-watchdog")?.addEventListener("click", saveWatchdog);
   document.getElementById("btn-save-auth")?.addEventListener("click", saveAuthConfig);
+  document.getElementById("btn-auth-token-issue")?.addEventListener("click", issueAuthToken);
+  document.getElementById("btn-auth-token-clear")?.addEventListener("click", clearAuthToken);
+  document.getElementById("btn-oidc-check")?.addEventListener("click", checkOidcStatus);
   document.getElementById("btn-add-node-card")?.addEventListener("click", () => addNodeCard());
   document.getElementById("job-runtime")?.addEventListener("change", syncJobRuntimeFields);
   document.getElementById("nodes-editor")?.addEventListener("change", syncNodesCardsFromEditor);

@@ -97,6 +97,7 @@ from auth_util import (  # noqa: E402
     authenticate_http,
     clear_login_failures,
     extract_bearer,
+    issue_api_token,
     issue_session,
     load_auth_config,
     login_rate_limited,
@@ -109,7 +110,7 @@ from auth_util import (  # noqa: E402
     verify_api_token,
     verify_session,
 )
-from oidc_util import OidcError, begin_login, finish_login  # noqa: E402
+from oidc_util import OidcError, begin_login, finish_login, probe_oidc  # noqa: E402
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 from render_gateway import (  # noqa: E402
@@ -121,6 +122,7 @@ from gateway_ops import (  # noqa: E402
     clear_litellm_master_key,
     generate_litellm_master_key,
     litellm_master_key_status,
+    read_litellm_master_key,
     restart_litellm,
     status_payload as gateway_status_payload,
     write_litellm_master_key,
@@ -310,6 +312,113 @@ def suggest_exec_commands(query: str = "", limit: int = 20) -> list[dict[str, st
         if len(out) >= max(1, min(limit, 50)):
             break
     return out
+
+
+_LITELLM_MODEL_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}$")
+_LITELLM_ENV_NAME = re.compile(r"^[A-Z_][A-Z0-9_]{0,63}$")
+
+
+def _litellm_admin_request(method: str, path: str, body: dict | None = None, *, timeout: int = 20) -> dict:
+    """用服务端保存的 Master Key 调 LiteLLM Admin API（不把密钥下发到浏览器）。"""
+    key = read_litellm_master_key()
+    if not key:
+        raise RuntimeError("未配置 LiteLLM Master Key")
+    gateway = (_read_json(cluster_file(), {}) or {}).get("gateway") or {}
+    port = int(gateway.get("openai_proxy_port") or gateway.get("litellm_port") or 4000)
+    data = None if body is None else json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}{path}",
+        data=data,
+        method=method,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": f"Bearer {key}",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        raw = resp.read().decode("utf-8")
+    return json.loads(raw) if raw else {}
+
+
+def _safe_inference_base(value: str) -> str:
+    parsed = urlparse(str(value or "").strip())
+    host = (parsed.hostname or "").strip().lower()
+    if parsed.scheme not in {"http", "https"} or not host:
+        raise ValueError("API Base 必须是 http(s):// 地址")
+    if host in {"169.254.169.254", "metadata.google.internal", "100.100.100.200"}:
+        raise ValueError("API Base 不能指向云元数据地址")
+    if host.startswith("169.254.") or host.startswith("fe80:"):
+        raise ValueError("API Base 不能指向链路本地地址")
+    return parsed.geturl().rstrip("/")
+
+
+def litellm_models_payload() -> dict:
+    info = _litellm_admin_request("GET", "/model/info")
+    grouped: dict[str, dict] = {}
+    for row in info.get("data") or []:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("model_name") or "").strip()
+        if not name:
+            continue
+        params = row.get("litellm_params") or {}
+        meta = row.get("model_info") or {}
+        item = grouped.setdefault(
+            name,
+            {
+                "model_name": name,
+                "model": params.get("model"),
+                "api_base": params.get("api_base"),
+                "db_model": False,
+                "deployments": 0,
+                "ids": [],
+            },
+        )
+        item["deployments"] += 1
+        item["db_model"] = item["db_model"] or bool(meta.get("db_model"))
+        dep_id = str(meta.get("id") or "").strip()
+        if dep_id:
+            item["ids"].append(dep_id)
+    return {"models": sorted(grouped.values(), key=lambda x: x["model_name"])}
+
+
+def add_litellm_model(body: dict) -> dict:
+    name = str(body.get("model_name") or "").strip()
+    if not _LITELLM_MODEL_NAME.match(name):
+        raise ValueError("model_name 只能包含字母、数字、. _ : / -，最长 64")
+    api_base = _safe_inference_base(str(body.get("api_base") or ""))
+    gateway = (_read_json(cluster_file(), {}) or {}).get("gateway") or {}
+    default_model = str(gateway.get("litellm_model") or "openai/decider").strip()
+    upstream = str(body.get("model") or default_model).strip()
+    if not upstream.startswith("openai/"):
+        raise ValueError("上游模型需为 openai/<model>（LiteLLM 的 OpenAI 兼容命名）")
+    key_env = str(body.get("key_env") or "INFERENCE_API_KEY").strip()
+    if not _LITELLM_ENV_NAME.match(key_env):
+        raise ValueError("Key 环境变量名为大写字母/数字/下划线")
+    dep_id = str(body.get("id") or f"ui-{name}").strip()
+    if not _LITELLM_MODEL_NAME.match(dep_id):
+        raise ValueError("模型 id 不合法")
+    return _litellm_admin_request(
+        "POST",
+        "/model/new",
+        {
+            "model_name": name,
+            "litellm_params": {
+                "model": upstream,
+                "api_base": api_base,
+                "api_key": f"os.environ/{key_env}",
+            },
+            "model_info": {"id": dep_id, "db_model": True},
+        },
+    )
+
+
+def delete_litellm_model(body: dict) -> dict:
+    dep_id = str(body.get("id") or "").strip()
+    if not _LITELLM_MODEL_NAME.match(dep_id):
+        raise ValueError("模型 id 不合法")
+    return _litellm_admin_request("POST", "/model/delete", {"id": dep_id})
 
 
 def _read_json(path: Path, default):
@@ -2567,6 +2676,15 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"ok": True, **litellm_master_key_status()})
             return
 
+        if path == "/api/gateway/litellm/models":
+            try:
+                payload = litellm_models_payload()
+            except Exception as exc:  # noqa: BLE001 — LiteLLM 未运行 / 未配密钥
+                self._json(502, {"ok": False, "error": str(exc)})
+                return
+            self._json(200, {"ok": True, **payload})
+            return
+
         if path == "/api/setup/guide":
             self._json(200, {"guide": SETUP_GUIDE})
             return
@@ -2681,6 +2799,36 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path.startswith("/api") and not self._auth_gate(path, parsed.query):
+            return
+
+        if path == "/api/auth/token":
+            cfg = load_auth_config()
+            action = str(body.get("action") or "issue").strip().lower()
+            if action == "clear":
+                if cfg.api_token_file.is_file():
+                    cfg.api_token_file.unlink()
+                self._json(200, {"ok": True, "auth": auth_status_payload(cfg=cfg)})
+                return
+            token, token_path = issue_api_token(cfg=cfg)
+            self._json(
+                200,
+                {
+                    "ok": True,
+                    "token": token,
+                    "path": str(token_path),
+                    "auth": auth_status_payload(cfg=cfg),
+                },
+            )
+            return
+
+        if path == "/api/auth/oidc/check":
+            cfg = load_auth_config()
+            try:
+                probe = probe_oidc(oidc_config(cfg))
+            except Exception as exc:  # noqa: BLE001 — IdP 不可达是诊断结果
+                self._json(502, {"ok": False, "error": str(exc)})
+                return
+            self._json(200, {"ok": bool(probe.get("ready")), **probe})
             return
 
         if path == "/api/assistant/config":
@@ -3608,6 +3756,29 @@ class Handler(BaseHTTPRequestHandler):
             except json.JSONDecodeError:
                 payload = {"ok": False, "result": result}
             self._json(200 if result["rc"] == 0 else 500, {**payload, "result": result})
+            return
+
+        if path == "/api/gateway/litellm/models":
+            action = str(body.get("action") or "add").strip().lower()
+            try:
+                with _action_lock:
+                    result = (
+                        delete_litellm_model(body)
+                        if action == "delete"
+                        else add_litellm_model(body)
+                    )
+            except ValueError as exc:
+                self._json(400, {"ok": False, "error": str(exc)})
+                return
+            except Exception as exc:  # noqa: BLE001 — LiteLLM / DB 未就绪
+                self._json(502, {"ok": False, "error": str(exc)})
+                return
+            invalidate_gateway_cache()
+            try:
+                models = litellm_models_payload().get("models") or []
+            except Exception:  # noqa: BLE001
+                models = []
+            self._json(200, {"ok": True, "result": result, "models": models})
             return
 
         if path == "/api/gateway/litellm/master-key":

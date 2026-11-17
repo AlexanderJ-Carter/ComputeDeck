@@ -13,6 +13,20 @@
 
 ---
 
+## [1.2.0] - 2026-11-17
+
+### Added
+
+- 入口页 LiteLLM「模型（简化管理）」：列出模型与 deployment，添加模型别名 / 删除数据库模型；服务端用 Master Key 调 Admin API，密钥不下发浏览器
+- LiteLLM 启动时开启 `STORE_MODEL_IN_DB`，`/model/new` 的别名可持久化
+- 配置页鉴权面板：OIDC 允许邮箱 / Claim / Scopes 字段与「测试 OIDC」；API Token 一键生成 / 轮换 / 清除（只显示一次）
+- `POST /api/auth/token`、`POST /api/auth/oidc/check` 与 `/api/gateway/litellm/models` API 目录
+
+### Fixed
+
+- 任务下拉改为「名称 · GPU · 来源」短标签，完整模型/说明放到下一行，避免窄屏截断与 `8 GPU` 断行
+
+---
 ## [1.1.1] - 2026-11-17
 
 ### Changed
@@ -635,6 +649,7 @@ ComputeDeck **1.0 先导测试版**：控制面 / CLI / MCP / 展板已可日常
 4. 版本锚点见下方；具备远程后可改为 compare URL。
 
 [Unreleased]: #unreleased
+[1.2.0]: #120---2026-11-17
 [1.1.1]: #111---2026-11-17
 [1.1.0]: #110---2026-11-17
 [1.0.4]: #104---2026-11-17
