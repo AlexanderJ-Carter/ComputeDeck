@@ -100,3 +100,22 @@ def list_job_files() -> list[Path]:
 def expand_path(value: str) -> str:
     """展开配置路径中的 ``$VAR`` 与 ``~``。"""
     return os.path.expanduser(os.path.expandvars(value))
+
+
+def write_secret_file(path: Path | str, text: str, mode: int = 0o600) -> Path:
+    """以 0600 原子写敏感文件，避免“先 0644 再 chmod”的可读窗口。"""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if target.parent.resolve().is_relative_to(LOCAL_DIR.resolve()):
+            target.parent.chmod(0o700)
+    except OSError:
+        pass
+    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(text)
+    try:
+        target.chmod(mode)
+    except OSError:
+        pass
+    return target

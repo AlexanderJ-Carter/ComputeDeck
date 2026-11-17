@@ -1560,15 +1560,29 @@ function renderIngressDuo(status) {
   }
   const db = ll.database || {};
   const dbMeta = document.getElementById("litellm-db-meta");
+  const prismaReady = db.server?.prisma_ready;
+  const dbServerDown = db.embedded && db.server_running === false;
   if (dbMeta) {
-    dbMeta.textContent = db.configured
-      ? `Admin 可用 · ${db.url_masked || "DATABASE_URL"}`
-      : db.hint || "未接数据库：Admin UI 不可登录，请用 Master Key 调 /v1";
-    dbMeta.classList.toggle("bad", Boolean(db.scheme_ok === false));
+    if (!db.configured) {
+      dbMeta.textContent = db.hint || "未接数据库：Admin UI 不可登录，请用 Master Key 调 /v1";
+    } else if (prismaReady === false) {
+      dbMeta.textContent = "已配数据库，但 LiteLLM 缺少 prisma 客户端；Admin 登录会失败";
+    } else if (dbServerDown) {
+      dbMeta.textContent = "已配嵌入式数据库，但 Postgres 未运行；启动 LiteLLM 时会自动拉起";
+    } else {
+      dbMeta.textContent = `Admin 可用 · ${db.url_masked || "DATABASE_URL"}`;
+    }
+    dbMeta.classList.toggle(
+      "bad",
+      Boolean(db.scheme_ok === false) || prismaReady === false || dbServerDown
+    );
   }
   const link = document.getElementById("litellm-ui-link");
   if (link) {
-    const adminReady = db.configured || ll.phase === "unmanaged";
+    const adminReady =
+      Boolean(db.configured) &&
+      !dbServerDown &&
+      ["running", "unmanaged"].includes(ll.phase);
     link.href =
       ll.ui_url ||
       (ll.url ? `${String(ll.url).replace(/\/$/, "")}/ui/` : "http://127.0.0.1:4000/ui/");
@@ -1576,7 +1590,11 @@ function renderIngressDuo(status) {
     link.setAttribute("aria-disabled", adminReady ? "false" : "true");
     link.title = adminReady
       ? "LiteLLM Admin UI（用户名 admin，密码 = Master Key）"
-      : "LiteLLM Admin UI 需要数据库；请先配 gateway.litellm_database_url 或直接用 Master Key 调 /v1";
+      : dbServerDown
+        ? "嵌入式 Postgres 未运行；启动 LiteLLM 或执行 gpu-control gateway litellm-db start"
+        : !ll.running && ll.phase !== "unmanaged"
+          ? "LiteLLM 未运行；先启动 LiteLLM 再打开 Admin"
+          : "LiteLLM Admin UI 需要数据库；请先配 gateway.litellm_database_url 或直接用 Master Key 调 /v1";
     if (!adminReady) link.href = "#";
   }
   const reasons = document.getElementById("litellm-card-reasons");
@@ -2119,10 +2137,12 @@ function bindNodeActions(root) {
 
 function jobOptionLabel(j) {
   const src = j.source === "local" ? "local" : j.source === "builtin" ? "内置" : "";
-  const gpus = j.gpus_per_node != null ? `${j.gpus_per_node}GPU` : "";
+  const gpus = j.gpus_per_node != null ? `${j.gpus_per_node} GPU` : "";
   const kind = j.kind === "train" ? "训练" : "";
   const dist = j.distributed ? "多机" : "";
-  const bits = [j.name, kind, dist, gpus, src].filter(Boolean);
+  const model = j.model ? String(j.model).split("/").pop() : "";
+  const sourceLabel = { local: "本地", template: "模板", bundle: "推荐包" }[src] || src;
+  const bits = [j.name, model, kind, dist, gpus, sourceLabel].filter(Boolean);
   return bits.join(" · ");
 }
 
@@ -2178,7 +2198,9 @@ function syncJobSelectHint(jobs) {
   };
   const sel = $("job-select");
   const hint = $("job-select-hint");
-  if (hint) hint.textContent = describe(sel?.value);
+  const text = describe(sel?.value);
+  if (hint) hint.textContent = text;
+  if (sel) sel.title = text;
 }
 
 function syncDeployGpusDefault(jobs) {

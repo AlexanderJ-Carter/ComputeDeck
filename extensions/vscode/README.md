@@ -25,7 +25,7 @@ code --extensionDevelopmentPath="$PWD"
 ```bash
 cd extensions/vscode
 npm run package
-code --install-extension computedeck-vscode-1.0.0.vsix
+code --install-extension computedeck-vscode-*.vsix
 ```
 
 需要 Node 18+ 和 `npx`。内网可先安装 `@vscode/vsce` 或使用离线打包。

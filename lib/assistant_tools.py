@@ -700,17 +700,35 @@ def exec_command_risk(command: str) -> Risk:
             return "read"
         return "destructive"
     if cmd == "curl":
-        text_l = text.lower()
-        if any(
-            a in lowered
-            for a in (
-                "-x", "--request", "-d", "--data", "--data-raw", "--data-binary",
-                "-f", "--form", "--upload-file", "-t", "-o", "-O",
-                "--output", "--output-document", "--post-file", "--post-data",
-                "--config", "--create-dirs",
-            )
-        ):
-            return "destructive"
+        # curl 的“只读”判定必须覆盖所有会读写本地文件 / 发送数据的参数；
+        # 漏掉一个就会让助手在无确认的情况下把节点文件发到外部 URL。
+        dangerous = {
+            "-x", "--request", "-d", "--data", "--data-raw", "--data-binary",
+            "--data-urlencode", "--data-ascii", "--json", "--form", "--form-string",
+            "--upload-file", "-t", "-T", "--telnet-option",
+            "-o", "-O", "--output", "--output-document", "--remote-name",
+            "--post-file", "--post-data", "--config", "-K", "--create-dirs",
+            "-b", "--cookie", "-c", "--cookie-jar", "-D", "--dump-header",
+            "--trace", "--trace-ascii", "--stderr", "--libcurl", "--netrc-file",
+            "-E", "--cert", "--key",
+        }
+        for arg in args:
+            low = arg.lower()
+            if low in dangerous:
+                return "destructive"
+            if low.startswith(("--data=", "--data-raw=", "--data-binary=", "--data-urlencode=",
+                               "--json=", "--form=", "--upload-file=", "--output=",
+                               "--config=", "--cookie=", "--cookie-jar=", "--request=")):
+                return "destructive"
+            # -H @file / --header @file 会把本地文件当请求头发送
+            if low.startswith("-h") and "@" in low:
+                return "destructive"
+            if low.startswith("--header") and "@" in low:
+                return "destructive"
+        for idx, arg in enumerate(args):
+            if arg in {"-H", "--header"} and idx + 1 < len(args):
+                if str(args[idx + 1]).strip().startswith("@"):
+                    return "destructive"
         return "read"
     if cmd == "wget":
         # wget 默认把响应写到磁盘；即使 -O - 也通常不是纯诊断命令。
@@ -720,10 +738,39 @@ def exec_command_risk(command: str) -> Risk:
     ):
         return "destructive"
     if cmd == "sed":
-        if any(a in lowered for a in ("-i", "--in-place")):
+        inplace = any(
+            a in {"-i", "--in-place"} or a.startswith("--in-place=")
+            or (a.startswith("-i") and not a.startswith("--") and len(a) > 2)
+            for a in args
+        )
+        scripts: list[str] = []
+        want_expr = False
+        for arg in args:
+            if arg in {"-e", "--expression"}:
+                want_expr = True
+                continue
+            if arg.startswith("--expression="):
+                scripts.append(arg.split("=", 1)[1])
+                continue
+            if arg.startswith("-e") and not arg.startswith("--") and len(arg) > 2:
+                scripts.append(arg[2:])
+                continue
+            if want_expr:
+                scripts.append(arg)
+                want_expr = False
+                continue
+            if arg.startswith("-"):
+                continue
+            scripts.append(arg)
+        script = " ; ".join(scripts)
+        if inplace:
             return "write"
-        # sed 的 w / W 命令会写文件，例如 sed -n '1w /tmp/x'
-        if re.search(r"[wW]\s", text):
+        # GNU sed 的 e 命令 / s///e 标志会执行 shell；w/W 会写文件。
+        if re.search(r"(^|[;\n{}])\s*[0-9,$]*\s*e(?:\s|$)", script):
+            return "destructive"
+        if re.search(r"s([^\n]).*?\1.*?\1[0-9gpi m]*e", script):
+            return "destructive"
+        if re.search(r"(^|[;\n{}])\s*[0-9,$]*\s*[wW]\s", script):
             return "destructive"
     if cmd in {"awk", "watch"} and ("system(" in text or "exec(" in text or "popen" in text):
         return "destructive"

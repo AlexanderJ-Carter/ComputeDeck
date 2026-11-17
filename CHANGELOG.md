@@ -13,6 +13,30 @@
 
 ---
 
+## [1.0.3] - 2026-11-17
+
+### Added
+
+- LiteLLM 管理数据库：新增 `gpu-control gateway litellm-db init|start|stop|status|url|apply-schema`（用户态 Postgres，无需 root）；`gateway.litellm_database_mode="embedded"` 时启动 LiteLLM 会自动拉起数据库，Admin UI 登录与虚拟密钥可用
+- `config/examples/litellm-schema-1.86.7.sql`：LiteLLM 1.86.7 的 Postgres schema，供 `litellm-db init` / `apply-schema` 使用
+
+### Fixed
+
+- 按钮与链接尺寸不一致：`a.btn` 约 40px、同排 `button` 为 36px；现在统一为 36px（tiny 28px），primary 投影收敛，避免看起来“更大”；移动端保留 40/34px 触摸目标
+- 「填入任务并部署」未参与全局 busy 禁用，长任务期间可被重复点击
+- 入口页 LiteLLM 卡片：未接库、内置 Postgres 未运行、LiteLLM 未运行或解释器缺少 prisma 时，Admin 链接会禁用并说明原因
+- 任务下拉只显示 `4GPU` / `local`；现在显示模型与「本地」来源，并给下拉加完整说明的 tooltip
+- 发布流水线补齐 `timeout-minutes`；SECURITY.md 与 Issue 模板的版本号更新到 1.0.x
+- 容器镜像不再把本地 `extensions/` 与历史 VSIX 打进运行时；`COMPUTEDECK_VERSION` 现在会覆盖 UI 显示版本
+
+### Security
+
+- 助手命令风险分级补漏：GNU `sed` 的 `e` 命令 / `s///e`、`curl -T/-b/-H @file/--data-urlencode` 等可外发文件的参数不再被当作只读自动执行
+- `/api` 与终端不再接受 URL 里的 `?access_token=` / `?token=`（只接受 Cookie 或 Authorization）；访问日志对 token / key / password 查询参数脱敏
+- 助手上游会解析 DNS 并拒绝链路本地 / 云元数据地址（含 IPv4-mapped IPv6），不再只匹配字面主机名
+- 密钥文件改为以 0600 原子创建，消除先 0644 再 chmod 的可读窗口
+
+---
 ## [1.0.2] - 2026-11-17
 
 ### Fixed
@@ -579,6 +603,7 @@ ComputeDeck **1.0 先导测试版**：控制面 / CLI / MCP / 展板已可日常
 4. 版本锚点见下方；具备远程后可改为 compare URL。
 
 [Unreleased]: #unreleased
+[1.0.3]: #103---2026-11-17
 [1.0.2]: #102---2026-11-17
 [1.0.1]: #101---2026-11-17
 [1.0.0]: #100---2026-11-17

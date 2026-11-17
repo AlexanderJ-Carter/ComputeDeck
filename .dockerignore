@@ -31,3 +31,5 @@ docs/superpowers/
 !NOTICE
 tests/
 examples/
+extensions/
+*.vsix

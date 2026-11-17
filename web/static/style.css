@@ -4940,6 +4940,28 @@ summary:focus-visible,
 
 /* —— 组件尺寸对齐 —— */
 
+/* a.btn 之前只有 padding（约 40px），比同排 button（36px）高；统一到控件高度。 */
+.btn,
+a.btn {
+  min-height: var(--control-h);
+  padding: 0 12px;
+  justify-content: center;
+}
+
+.btn.tiny,
+a.btn.tiny {
+  min-height: var(--control-h-sm);
+  padding: 0 10px;
+  font-size: var(--fs-xs);
+  border-radius: 8px;
+}
+
+/* primary 的阴影过大让它在按钮行里显得“更大”，收敛到轻量投影。 */
+button.primary,
+a.btn.primary {
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
 .config-jumps button {
   min-height: var(--control-h-sm);
 }
@@ -5116,5 +5138,22 @@ a[aria-disabled="true"]:hover {
   a.btn:hover,
   .node-tile:hover {
     transform: none;
+  }
+}
+
+/* 移动端触摸目标：覆盖上面统一到 36/28 的桌面高度 */
+@media (max-width: 767px) {
+  .btn,
+  a.btn {
+    min-height: 40px;
+  }
+
+  .btn.tiny,
+  a.btn.tiny {
+    min-height: 34px;
+  }
+
+  .config-jumps button {
+    min-height: 34px;
   }
 }

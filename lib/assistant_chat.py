@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import socket
@@ -25,7 +26,7 @@ from assistant_tools import (
     summary_for,
 )
 from assistant_validate import args_hash, validate_call
-from paths import PROJECT_DIR, cluster_file, expand_path
+from paths import PROJECT_DIR, cluster_file, expand_path, write_secret_file
 from state_util import atomic_write_json
 
 QuickAction = dict[str, Any]
@@ -51,10 +52,44 @@ def _open_url(req: urllib.request.Request, *, timeout: int):
     return _HTTP_OPENER.open(req, timeout=timeout)
 
 
+def _is_metadata_address(value: str) -> bool:
+    """链路本地 / 元数据地址（含 IPv4-mapped IPv6）。"""
+    try:
+        ip = ipaddress.ip_address(str(value).split("%", 1)[0])
+    except ValueError:
+        return False
+    candidates = [ip]
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        candidates.append(ip.ipv4_mapped)
+    for candidate in candidates:
+        if (
+            candidate.is_link_local
+            or candidate.is_multicast
+            or candidate.is_unspecified
+            or str(candidate) in {"100.100.100.200", "fd00:ec2::254"}
+        ):
+            return True
+    return False
+
+
 def _assert_safe_upstream(url: str) -> None:
     host = (urlparse(url).hostname or "").strip().lower()
+    if not host:
+        raise ValueError("Base URL 缺少主机名")
     if host in _METADATA_HOSTS:
         raise ValueError("Base URL 指向云元数据地址，已拒绝")
+    if _is_metadata_address(host):
+        raise ValueError("Base URL 指向链路本地 / 元数据地址，已拒绝")
+    # 防止用 DNS 名称解析到元数据地址（如 nip.io / 内网 DNS）；
+    # 解析失败时交给后续请求报错，不在这里卡住。
+    try:
+        infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+    except socket.gaierror:
+        return
+    for info in infos:
+        addr = info[4][0]
+        if _is_metadata_address(str(addr)):
+            raise ValueError("Base URL 解析到链路本地 / 元数据地址，已拒绝")
 
 
 def _read_cluster() -> dict[str, Any]:
@@ -393,9 +428,7 @@ def save_assistant_config(
         if secret_path.is_file():
             secret_path.unlink()
     elif api_key is not None:
-        secret_path.parent.mkdir(parents=True, exist_ok=True)
-        secret_path.write_text(api_key.strip() + "\n", encoding="utf-8")
-        os.chmod(secret_path, 0o600)
+        write_secret_file(secret_path, api_key.strip() + "\n")
 
     return assistant_status(data)
 

@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs
 
-from paths import LOCAL_DIR, PROJECT_DIR, cluster_file, expand_path
+from paths import LOCAL_DIR, PROJECT_DIR, cluster_file, expand_path, write_secret_file
 
 _LOGIN_LOCK = threading.Lock()
 _LOGIN_FAILS: dict[str, list[float]] = {}
@@ -220,10 +220,8 @@ def ensure_session_secret(cfg: AuthConfig | None = None) -> bytes:
         raw = path.read_text(encoding="utf-8").strip()
         if raw:
             return raw.encode("utf-8")
-    path.parent.mkdir(parents=True, exist_ok=True)
     token = secrets.token_urlsafe(48)
-    path.write_text(token + "\n", encoding="utf-8")
-    os.chmod(path, 0o600)
+    write_secret_file(path, token + "\n")
     return token.encode("utf-8")
 
 
@@ -277,9 +275,7 @@ def issue_api_token(*, cfg: AuthConfig | None = None) -> tuple[str, Path]:
     cfg = cfg or load_auth_config()
     token = secrets.token_urlsafe(32)
     path = cfg.api_token_file
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(token + "\n", encoding="utf-8")
-    os.chmod(path, 0o600)
+    write_secret_file(path, token + "\n")
     return token, path
 
 
@@ -398,14 +394,8 @@ def authenticate_http(
     if bearer and verify_api_token(bearer, cfg=cfg):
         return AuthPrincipal(subject="api-token", method="bearer", mode=cfg.mode), None
 
-    # WebSocket clients can pass ?access_token=
-    qs = parse_qs(query or "")
-    q_token = (qs.get("access_token") or qs.get("token") or [None])[0]
-    if q_token and verify_api_token(str(q_token), cfg=cfg):
-        return AuthPrincipal(subject="api-token", method="bearer", mode=cfg.mode), None
-    if q_token and verify_session(str(q_token), cfg=cfg):
-        return AuthPrincipal(subject="admin", method="session", mode=cfg.mode), None
-
+    # 不接受 URL 里的 token：它会进浏览器历史、代理与访问日志。
+    # 浏览器用 Cookie，脚本 / 终端用 Authorization 头。
     return None, "authentication required"
 
 

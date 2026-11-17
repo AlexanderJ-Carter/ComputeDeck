@@ -45,6 +45,7 @@ from paths import (  # noqa: E402
     job_file,
     list_job_files,
     nodes_file,
+    write_secret_file,
 )
 
 from node_paths import default_paths, node_paths  # noqa: E402
@@ -249,9 +250,9 @@ _action_lock = threading.Lock()
 _assistant_action_lock = threading.Lock()
 _assistant_inflight: set[tuple[str, str]] = set()
 UI_VERSION = (
-    VERSION_FILE.read_text(encoding="utf-8").strip()
-    if VERSION_FILE.is_file()
-    else "0.0.0-dev"
+    os.environ.get("COMPUTEDECK_VERSION", "").strip()
+    or (VERSION_FILE.read_text(encoding="utf-8").strip() if VERSION_FILE.is_file() else "")
+    or "0.0.0-dev"
 )
 
 
@@ -1806,7 +1807,18 @@ class Handler(BaseHTTPRequestHandler):
     server_version = f"gpu-control-ui/{UI_VERSION}"
 
     def log_message(self, fmt: str, *args) -> None:
-        print(f"[{self.log_date_time_string()}] {self.address_string()} {fmt % args}")
+        try:
+            line = fmt % args
+        except (TypeError, ValueError):
+            line = str(fmt)
+        # 访问日志不带凭据：URL 查询参数里的 token / key / password 一律脱敏。
+        line = re.sub(
+            r"([?&](?:access_token|token|api_key|key|password)=)[^&\s]+",
+            r"\1***",
+            line,
+            flags=re.IGNORECASE,
+        )
+        print(f"[{self.log_date_time_string()}] {self.address_string()} {line}")
 
     def _send(
         self,
@@ -3359,9 +3371,7 @@ class Handler(BaseHTTPRequestHandler):
             if not token:
                 self._json(400, {"error": "token 必填（或 clear=true）"})
                 return
-            path_obj.parent.mkdir(parents=True, exist_ok=True)
-            path_obj.write_text(token + "\n", encoding="utf-8")
-            path_obj.chmod(0o600)
+            write_secret_file(path_obj, token + "\n")
             # keep models.json pointers
             data = load_models()
             pull = dict(data.get("pull") or {})

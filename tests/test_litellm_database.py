@@ -63,6 +63,39 @@ class LitellmDatabaseTests(unittest.TestCase):
         self.assertFalse(st["scheme_ok"])
         self.assertIn("postgres", st["hint"])
 
+    def test_embedded_url_detection(self) -> None:
+        url = f"postgresql://litellm:pw@127.0.0.1:{MOD.LITELLM_PG_PORT}/litellm"
+        self.assertTrue(MOD._is_embedded_db_url(url))
+        self.assertFalse(MOD._is_embedded_db_url("postgresql://litellm:pw@db:5432/litellm"))
+        self.assertFalse(MOD._is_embedded_db_url("postgresql://litellm:pw@127.0.0.1:5432/litellm"))
+
+    def test_embedded_mode_status(self) -> None:
+        url = f"postgresql://litellm:pw@127.0.0.1:{MOD.LITELLM_PG_PORT}/litellm"
+        st = MOD.litellm_database({"litellm_database_url": url, "litellm_database_mode": "embedded"})
+        self.assertEqual(st["mode"], "embedded")
+        self.assertTrue(st["embedded"])
+        self.assertIn("server_running", st)
+        self.assertTrue(st["configured"])
+
+    def test_url_alone_does_not_enable_embedded(self) -> None:
+        url = f"postgresql://litellm:pw@127.0.0.1:{MOD.LITELLM_PG_PORT}/litellm"
+        st = MOD.litellm_database({"litellm_database_url": url})
+        self.assertEqual(st["mode"], "external")
+        self.assertFalse(st["embedded"])
+
+    def test_pg_bin_dir_from_env(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            for name in ("pg_ctl", "postgres"):
+                path = base / name
+                path.write_text("#!/bin/sh\n", encoding="utf-8")
+                path.chmod(0o755)
+            os.environ["GPU_CONTROL_PG_BIN"] = str(base)
+            try:
+                self.assertEqual(MOD._pg_bin_dir(), base)
+            finally:
+                os.environ.pop("GPU_CONTROL_PG_BIN", None)
+
 
 if __name__ == "__main__":
     unittest.main()

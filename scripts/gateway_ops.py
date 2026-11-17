@@ -11,6 +11,8 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
+import functools
 import json
 import os
 import re
@@ -19,7 +21,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import _bootstrap  # noqa: F401
 from paths import LOCAL_DIR, PROJECT_DIR, SCRIPTS_DIR, STATE_DIR, VENV_PYTHON, cluster_file, expand_path
@@ -59,9 +61,7 @@ def write_litellm_master_key(key: str) -> Path:
     if not text:
         raise ValueError("master_key 不能为空")
     path = LITELLM_MASTER_KEY_FILE
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text + "\n", encoding="utf-8")
-    path.chmod(0o600)
+    _write_secret(path, text + "\n")
     return path
 
 
@@ -78,6 +78,31 @@ def generate_litellm_master_key() -> str:
 
 
 DATABASE_URL_ENV = "DATABASE_URL"
+LITELLM_PG_BASE = Path.home() / ".local" / "share" / "computedeck" / "litellm-pg"
+LITELLM_PG_DATA = Path(os.environ.get("GPU_CONTROL_LITELLM_PG_DATA") or (LITELLM_PG_BASE / "data"))
+LITELLM_PG_LOG = LITELLM_PG_BASE / "postgres.log"
+_DEFAULT_PG_PORT = 5433
+
+
+def _env_pg_port() -> int:
+    raw = os.environ.get("GPU_CONTROL_LITELLM_PG_PORT", str(_DEFAULT_PG_PORT))
+    try:
+        return int(str(raw).strip())
+    except (TypeError, ValueError):
+        return _DEFAULT_PG_PORT
+
+
+LITELLM_PG_PORT = _env_pg_port()
+LITELLM_DB_PASSWORD_FILE = LOCAL_DIR / "secrets" / "litellm_db_password"
+LITELLM_DB_URL_FILE = LOCAL_DIR / "secrets" / "litellm_database_url"
+
+
+def _safe_port(parsed) -> int | None:
+    """``urlparse().port`` 对非法端口会抛 ValueError；解析失败按无端口处理。"""
+    try:
+        return parsed.port
+    except ValueError:
+        return None
 
 
 def _mask_db_url(url: str) -> str:
@@ -88,12 +113,33 @@ def _mask_db_url(url: str) -> str:
         return "(invalid)"
     if not parsed.scheme:
         return "(invalid)"
+    port_num = _safe_port(parsed)
+    hostport = parsed.netloc.rsplit("@", 1)[-1] if parsed.netloc else ""
+    has_port = ("]:" in hostport) if hostport.startswith("[") else (":" in hostport)
+    if has_port and port_num is None:
+        return "(invalid)"
     user = parsed.username or ""
     auth = f"{user}@" if user else ""
     host = parsed.hostname or "?"
-    port = f":{parsed.port}" if parsed.port else ""
+    port = f":{port_num}" if port_num else ""
     dbname = (parsed.path or "").lstrip("/")
     return f"{parsed.scheme}://{auth}{host}{port}/{dbname}"
+
+
+def _write_secret(path: Path, text: str) -> None:
+    """以 0600 原子创建/覆盖敏感文件，避免 write-then-chmod 的可读窗口。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        path.parent.chmod(0o700)
+    except OSError:
+        pass
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
 
 
 def _litellm_db_url(gateway: dict | None = None) -> tuple[str, str | None]:
@@ -105,6 +151,8 @@ def _litellm_db_url(gateway: dict | None = None) -> tuple[str, str | None]:
     file_raw = str(gateway.get("litellm_database_url_file") or "").strip()
     if file_raw:
         path = Path(expand_path(file_raw))
+        if not path.is_absolute():
+            path = PROJECT_DIR / path
         try:
             raw = path.read_text(encoding="utf-8").strip()
         except OSError:
@@ -115,15 +163,264 @@ def _litellm_db_url(gateway: dict | None = None) -> tuple[str, str | None]:
     return (raw, "env") if raw else ("", None)
 
 
+def _pg_bin_dir() -> Path | None:
+    """定位 pgserver 自带的 Postgres 二进制（无需 root 安装系统 Postgres）。"""
+    candidates: list[Path] = []
+    env = str(os.environ.get("GPU_CONTROL_PG_BIN") or "").strip()
+    if env:
+        candidates.append(Path(expand_path(env)))
+    home_patterns = [
+        Path.home() / ".local" / "lib",
+        PROJECT_DIR / ".venv" / "lib",
+    ]
+    for root in home_patterns:
+        candidates.extend(root.glob("python3*/site-packages/pgserver/pginstall/bin"))
+    which = shutil.which("pg_ctl")
+    if which:
+        candidates.append(Path(which).parent)
+    for candidate in candidates:
+        if (candidate / "pg_ctl").is_file() and (candidate / "postgres").is_file():
+            return candidate
+    return None
+
+
+def _is_embedded_db_url(url: str) -> bool:
+    try:
+        parsed = urlparse(str(url or "").strip())
+    except ValueError:
+        return False
+    host = (parsed.hostname or "").lower()
+    return host in {"127.0.0.1", "localhost"} and _safe_port(parsed) == LITELLM_PG_PORT
+
+
+def _pg_conf_port() -> int | None:
+    """读取数据目录里 initdb 时写下的端口（未初始化返回 None）。"""
+    conf = LITELLM_PG_DATA / "postgresql.conf"
+    if not conf.is_file():
+        return None
+    for line in conf.read_text(encoding="utf-8", errors="ignore").splitlines():
+        match = re.match(r"^\s*port\s*=\s*(\d+)\s*$", line)
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def _litellm_pg_running() -> bool:
+    pg_ctl = _pg_bin_dir()
+    if not pg_ctl or not (LITELLM_PG_DATA / "PG_VERSION").is_file():
+        return False
+    result = subprocess.run(
+        [str(pg_ctl / "pg_ctl"), "-D", str(LITELLM_PG_DATA), "status"],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def _litellm_pg_schema_tables() -> int | None:
+    """已建表数量；用于判断 LiteLLM 的 Prisma schema 是否已导入。"""
+    if not _litellm_pg_running():
+        return None
+    pg = _pg_bin_dir()
+    if not pg:
+        return None
+    result = subprocess.run(
+        [
+            str(pg / "psql"),
+            "-h",
+            str(LITELLM_PG_BASE),
+            "-p",
+            str(_pg_conf_port() or LITELLM_PG_PORT),
+            "-U",
+            "litellm",
+            "-d",
+            "litellm",
+            "-tAc",
+            "select count(*) from information_schema.tables where table_schema='public'",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    try:
+        return int(result.stdout.strip())
+    except (TypeError, ValueError):
+        return None
+
+
+@functools.cache
+def _prisma_ready() -> bool | None:
+    """LiteLLM 使用的解释器能否 import prisma（预生成客户端是否就绪）。"""
+    litellm_bin = _resolve_litellm_bin()
+    if not litellm_bin:
+        return None
+    try:
+        binary = Path(litellm_bin)
+        if binary.stat().st_size > 1_000_000:
+            return None
+        first = binary.read_text(encoding="utf-8", errors="ignore").splitlines()[0]
+    except (OSError, IndexError):
+        return None
+    if not first.startswith("#!"):
+        return None
+    python = first[2:].strip().split()[0] if first[2:].strip() else ""
+    if not python:
+        return None
+    try:
+        result = subprocess.run(
+            [python, "-c", "import prisma"],
+            capture_output=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return result.returncode == 0
+
+
+def litellm_pg_status() -> dict:
+    bin_dir = _pg_bin_dir()
+    initialized = (LITELLM_PG_DATA / "PG_VERSION").is_file()
+    running = _litellm_pg_running()
+    prisma_ready = _prisma_ready()
+    if not bin_dir:
+        hint = "未找到 pgserver：/usr/bin/python3 -m pip install --user pgserver==0.1.4"
+    elif prisma_ready is False:
+        hint = "LiteLLM 解释器无法 import prisma：Admin 登录会回退为“Not connected to DB”"
+    else:
+        hint = None
+    return {
+        "initialized": initialized,
+        "running": running,
+        "data_dir": str(LITELLM_PG_DATA),
+        "log": str(LITELLM_PG_LOG),
+        "port": _pg_conf_port() or LITELLM_PG_PORT,
+        "configured_port": LITELLM_PG_PORT,
+        "bin_dir": str(bin_dir) if bin_dir else None,
+        "url_configured": LITELLM_DB_URL_FILE.is_file(),
+        "schema_tables": _litellm_pg_schema_tables() if running else None,
+        "prisma_ready": prisma_ready,
+        "hint": hint,
+    }
+
+
+def _litellm_pg_start() -> dict:
+    pg = _pg_bin_dir()
+    if not pg:
+        raise RuntimeError(
+            "未找到 pgserver 自带的 Postgres；先执行 "
+            "/usr/bin/python3 -m pip install --user pgserver==0.1.4"
+        )
+    if not (LITELLM_PG_DATA / "PG_VERSION").is_file():
+        raise RuntimeError("嵌入式 Postgres 未初始化：先执行 gpu-control gateway litellm-db init")
+    conf_port = _pg_conf_port()
+    if conf_port is not None and conf_port != LITELLM_PG_PORT:
+        raise RuntimeError(
+            f"数据目录端口 {conf_port} 与当前 GPU_CONTROL_LITELLM_PG_PORT={LITELLM_PG_PORT} 不一致；"
+            "请使用相同端口，或备份并重新执行 gateway litellm-db init"
+        )
+    LITELLM_PG_BASE.mkdir(parents=True, exist_ok=True)
+    try:
+        LITELLM_PG_BASE.chmod(0o700)
+    except OSError:
+        pass
+    # 串行化启动：两个同时到达的 gateway start 不应互相抢 data 目录。
+    lock_path = LITELLM_PG_BASE / ".start.lock"
+    with lock_path.open("w", encoding="utf-8") as lock:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        except OSError:
+            pass
+        if _litellm_pg_running():
+            return litellm_pg_status()
+        result = subprocess.run(
+            [str(pg / "pg_ctl"), "-D", str(LITELLM_PG_DATA), "-l", str(LITELLM_PG_LOG), "-w", "start"],
+            capture_output=True,
+            text=True,
+        )
+        status = litellm_pg_status()
+        if result.returncode != 0 or not status["running"]:
+            raise RuntimeError(
+                (result.stderr or result.stdout or "pg_ctl start failed").strip()
+                + f"（日志：{LITELLM_PG_LOG}）"
+            )
+        return status
+
+
+def ensure_litellm_pg(gateway: dict | None = None) -> dict:
+    """嵌入式库模式：LiteLLM 启动前确保 Postgres 在跑。"""
+    gateway = gateway if gateway is not None else _gateway_cfg()
+    status = litellm_pg_status()
+    if not status["initialized"]:
+        raise RuntimeError("嵌入式 Postgres 未初始化：先执行 gpu-control gateway litellm-db init")
+    if not status["running"]:
+        status = _litellm_pg_start()
+    return status
+
+
+def _litellm_pg_apply_schema() -> dict:
+    pg = _pg_bin_dir()
+    if not pg:
+        raise RuntimeError("未找到 pgserver 的 psql")
+    candidates = [
+        # 默认只信仓库内固定版本；需要新 schema 时显式放到 config/local 覆盖。
+        PROJECT_DIR / "config" / "examples" / "litellm-schema-1.86.7.sql",
+        LOCAL_DIR / "litellm-schema.sql",
+    ]
+    schema = next((p for p in candidates if p.is_file()), None)
+    if schema is None:
+        raise RuntimeError(
+            "未找到 LiteLLM schema SQL；把生成的 schema.sql 放到 config/local/litellm-schema.sql 再执行"
+        )
+    result = subprocess.run(
+        [
+            str(pg / "psql"),
+            "-h",
+            str(LITELLM_PG_BASE),
+            "-p",
+            str(_pg_conf_port() or LITELLM_PG_PORT),
+            "-U",
+            "litellm",
+            "-d",
+            "litellm",
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-q",
+            "-f",
+            str(schema),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError((result.stderr or result.stdout).strip())
+    return {"ok": True, "schema": str(schema), **litellm_pg_status()}
+
+
+def maybe_start_embedded_db(gateway: dict | None = None) -> dict | None:
+    """显式 embedded 模式时，LiteLLM 启动前自动拉起库；其它模式返回 None。"""
+    gateway = gateway if gateway is not None else {}
+    mode = str(gateway.get("litellm_database_mode") or "").strip().lower()
+    if mode != "embedded":
+        return None
+    return ensure_litellm_pg(gateway)
+
+
 def litellm_database(gateway: dict | None = None) -> dict:
     """LiteLLM Admin UI / 虚拟密钥需要 Postgres；不接库时只保留 Master Key 代理。"""
+    gateway = gateway if gateway is not None else {}
     raw, source = _litellm_db_url(gateway)
     scheme_ok = (not raw) or raw.startswith(("postgres://", "postgresql://"))
     configured = bool(raw) and scheme_ok
+    mode = str(gateway.get("litellm_database_mode") or "").strip().lower()
+    if mode not in {"embedded", "external"}:
+        mode = ""
+    embedded = mode == "embedded"
+    pg = litellm_pg_status() if embedded else None
     if not raw:
         hint = "未接数据库：Admin UI 不可登录；请用 Master Key 调 /v1（配 gateway.litellm_database_url 可启用管理台）"
     elif not scheme_ok:
         hint = "DATABASE_URL 需为 postgres:// 或 postgresql://（LiteLLM 只带 Postgres schema）"
+    elif embedded and pg and not pg["running"]:
+        hint = "嵌入式 Postgres 未运行；启动 LiteLLM 时会自动拉起，或手动执行 gpu-control gateway litellm-db start"
     else:
         hint = None
     return {
@@ -132,6 +429,10 @@ def litellm_database(gateway: dict | None = None) -> dict:
         "url_masked": _mask_db_url(raw) if raw else "",
         "scheme_ok": scheme_ok,
         "admin_ui": configured,
+        "mode": mode or "external",
+        "server_running": pg["running"] if pg else None,
+        "embedded": embedded,
+        "server": pg,
         "hint": hint,
     }
 
@@ -832,6 +1133,198 @@ def cmd_status(_: argparse.Namespace) -> int:
     return 0
 
 
+def _litellm_pg_init() -> dict:
+    """初始化嵌入式 Postgres + litellm 库，并把 DATABASE_URL 写入配置（并发安全）。"""
+    LITELLM_PG_BASE.mkdir(parents=True, exist_ok=True)
+    try:
+        LITELLM_PG_BASE.chmod(0o700)
+    except OSError:
+        pass
+    # 单独的 init 锁：内部还会调用 _litellm_pg_start()，不能复用 start 锁。
+    with (LITELLM_PG_BASE / ".init.lock").open("w", encoding="utf-8") as lock:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        except OSError:
+            pass
+        return _litellm_pg_init_locked()
+
+
+def _litellm_pg_init_locked() -> dict:
+    pg = _pg_bin_dir()
+    if not pg:
+        raise RuntimeError(
+            "未找到 pgserver；先执行 /usr/bin/python3 -m pip install --user pgserver==0.1.4"
+        )
+    password = (
+        LITELLM_DB_PASSWORD_FILE.read_text(encoding="utf-8").strip()
+        if LITELLM_DB_PASSWORD_FILE.is_file()
+        else ""
+    )
+    if not password:
+        password = secrets.token_urlsafe(24)
+        _write_secret(LITELLM_DB_PASSWORD_FILE, password + "\n")
+    if not (LITELLM_PG_DATA / "PG_VERSION").is_file():
+        pwfile = LITELLM_PG_BASE / ".pw"
+        _write_secret(pwfile, password)
+        try:
+            result = subprocess.run(
+                [
+                    str(pg / "initdb"),
+                    "-D",
+                    str(LITELLM_PG_DATA),
+                    "-U",
+                    "litellm",
+                    f"--pwfile={pwfile}",
+                    "--auth-local=trust",
+                    "--auth-host=scram-sha-256",
+                    "--encoding=UTF8",
+                    "--locale=C",
+                ],
+                capture_output=True,
+                text=True,
+            )
+        finally:
+            pwfile.unlink(missing_ok=True)
+        if result.returncode != 0:
+            # PG_VERSION 可能已写入；清掉半成品，保证下次 init 可重来。
+            shutil.rmtree(LITELLM_PG_DATA, ignore_errors=True)
+            raise RuntimeError((result.stderr or result.stdout).strip())
+        socket_dir = str(LITELLM_PG_BASE).replace("'", "''")
+        with (LITELLM_PG_DATA / "postgresql.conf").open("a", encoding="utf-8") as conf:
+            conf.write(
+                f"\nport = {LITELLM_PG_PORT}\n"
+                "listen_addresses = '127.0.0.1'\n"
+                "unix_socket_permissions = 0700\n"
+                f"unix_socket_directories = '{socket_dir}'\n"
+            )
+    _litellm_pg_start()
+    port = _pg_conf_port() or LITELLM_PG_PORT
+    exists = subprocess.run(
+        [
+            str(pg / "psql"),
+            "-h",
+            str(LITELLM_PG_BASE),
+            "-p",
+            str(port),
+            "-U",
+            "litellm",
+            "-d",
+            "postgres",
+            "-tAc",
+            "SELECT 1 FROM pg_database WHERE datname='litellm'",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if "1" not in (exists.stdout or ""):
+        created = subprocess.run(
+            [
+                str(pg / "createdb"),
+                "-h",
+                str(LITELLM_PG_BASE),
+                "-p",
+                str(port),
+                "-U",
+                "litellm",
+                "litellm",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if created.returncode != 0:
+            raise RuntimeError((created.stderr or created.stdout).strip())
+
+    url = (
+        f"postgresql://litellm:{quote(password, safe='')}"
+        f"@127.0.0.1:{port}/litellm"
+    )
+    _write_secret(LITELLM_DB_URL_FILE, url + "\n")
+
+    # 写入 cluster.gateway，后续 gateway start/UI 启动直接复用。
+    # 若解析到的是仓库内 cluster.json（不是 config/local），写一份 local 覆盖，避免改到受版本管理的文件。
+    try:
+        cfg_path = cluster_file()
+        cluster = json.loads(cfg_path.read_text(encoding="utf-8"))
+        local_path = (LOCAL_DIR / "cluster.json").resolve()
+        if cfg_path.resolve() != local_path:
+            if local_path.is_file():
+                try:
+                    cluster = json.loads(local_path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    pass
+            cfg_path = local_path
+            cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        gateway = cluster.setdefault("gateway", {})
+        gateway["litellm_database_mode"] = "embedded"
+        try:
+            url_ref = str(LITELLM_DB_URL_FILE.relative_to(PROJECT_DIR))
+        except ValueError:
+            url_ref = str(LITELLM_DB_URL_FILE)
+        gateway["litellm_database_url_file"] = url_ref
+        cfg_path.write_text(json.dumps(cluster, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise RuntimeError("缺少 cluster.json；先按 config/examples 初始化集群配置") from exc
+    except (OSError, ValueError, KeyError) as exc:
+        raise RuntimeError(f"写入 cluster.json 失败：{exc}") from exc
+
+    schema_result: dict | None = None
+    try:
+        count = _litellm_pg_schema_tables()
+        if count is None or count == 0:
+            schema_result = _litellm_pg_apply_schema()
+    except RuntimeError as exc:
+        schema_result = {"ok": False, "error": str(exc)}
+    return {
+        **litellm_pg_status(),
+        "url_file": str(LITELLM_DB_URL_FILE),
+        "schema": schema_result,
+        "next": "gpu-control gateway stop --kind litellm && gpu-control gateway start --kind litellm",
+    }
+
+
+def _litellm_pg_stop() -> dict:
+    pg = _pg_bin_dir()
+    if not pg or not _litellm_pg_running():
+        return litellm_pg_status()
+    result = subprocess.run(
+        [str(pg / "pg_ctl"), "-D", str(LITELLM_PG_DATA), "-m", "fast", "-w", "stop"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError((result.stderr or result.stdout).strip())
+    return litellm_pg_status()
+
+
+def cmd_litellm_db(args: argparse.Namespace) -> int:
+    action = getattr(args, "db_action", None) or "status"
+    try:
+        if action == "init":
+            payload = _litellm_pg_init()
+        elif action == "start":
+            payload = _litellm_pg_start()
+        elif action == "stop":
+            payload = _litellm_pg_stop()
+        elif action == "apply-schema":
+            payload = _litellm_pg_apply_schema()
+        elif action == "url":
+            raw, _ = _litellm_db_url(_gateway_cfg())
+            payload = {
+                "url_masked": _mask_db_url(raw) if raw else "",
+                "url_file": str(LITELLM_DB_URL_FILE),
+                "note": "默认只显示脱敏地址；需要完整连接串时加 --reveal",
+            }
+            if getattr(args, "reveal", False):
+                payload["url"] = raw
+        else:
+            payload = litellm_pg_status()
+    except (RuntimeError, OSError) as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False, indent=2))
+        return 1
+    print(json.dumps({"ok": True, **payload}, ensure_ascii=False, indent=2))
+    return 0
+
+
 def _append_litellm_start(kind: str, gateway: dict, results: list[dict]) -> None:
     """在可用时启动 AI Gateway，不让 Edge 依赖它。
 
@@ -1056,6 +1549,22 @@ def _start_litellm(gateway: dict) -> dict:
     # 只保留 Master Key 代理能力（LiteLLM 用错误 Key 时会报 Not connected to DB）。
     db_url, db_source = _litellm_db_url(gateway)
     db_ok = bool(db_url) and db_url.startswith(("postgres://", "postgresql://"))
+    db_mode = str(gateway.get("litellm_database_mode") or "").strip().lower()
+    # 只有显式 embedded 才由 gateway 拉起库；避免把 127.0.0.1:5433 上的外部 Postgres 误接管。
+    if db_mode == "embedded":
+        try:
+            maybe_start_embedded_db(gateway)
+        except (RuntimeError, OSError) as exc:
+            return finish(
+                {
+                    "ok": False,
+                    "name": "litellm",
+                    "error": f"嵌入式数据库未就绪：{exc}",
+                    "hint": "gpu-control gateway litellm-db init（或在配置里改为外部 DATABASE_URL）",
+                    "phase": "db_unavailable",
+                    "port": port,
+                }
+            )
     if db_ok:
         env[DATABASE_URL_ENV] = db_url
     else:
@@ -1138,6 +1647,7 @@ def _start_litellm(gateway: dict) -> dict:
         "master_key_configured": bool(master_key),
         "database_configured": db_ok,
         "database_source": db_source if db_ok else None,
+        "database_mode": db_mode or ("embedded" if _is_embedded_db_url(db_url) else "external"),
         "admin_ui": db_ok,
         "error": None if (alive or listen_ok) else "process exited — see ingress-litellm.log",
         "hint": None
@@ -1276,6 +1786,17 @@ def main() -> int:
 
     p_ll = sub.add_parser("install-litellm", help="写出/安装 LiteLLM model_list 片段")
     p_ll.set_defaults(func=cmd_install_litellm_fragment)
+
+    p_db = sub.add_parser("litellm-db", help="LiteLLM 管理数据库（嵌入式 Postgres）")
+    p_db.add_argument(
+        "db_action",
+        nargs="?",
+        default="status",
+        choices=["status", "init", "start", "stop", "url", "apply-schema"],
+        help="默认 status",
+    )
+    p_db.add_argument("--reveal", action="store_true", help="url 动作时输出完整连接串")
+    p_db.set_defaults(func=cmd_litellm_db)
 
     args = parser.parse_args()
     return int(args.func(args))

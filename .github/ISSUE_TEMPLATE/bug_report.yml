@@ -20,7 +20,7 @@ body:
     attributes:
       label: 版本
       description: `VERSION` 文件或 `git describe`
-      placeholder: "0.21.0"
+      placeholder: "X.Y.Z（例如 1.0.3）"
     validations:
       required: true
   - type: textarea

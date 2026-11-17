@@ -87,6 +87,7 @@
     "litellm_bin": "",
     "litellm_database_url": "",
     "litellm_database_url_file": "",
+    "litellm_database_mode": "external",
     "openai_proxy_dir": "",
     "openai_proxy_role": "optional LiteLLM（OpenAI 层）；优先 litellm_bin / PATH / ~/.local/bin，装好后 gateway ensure 可随入口启动",
     "extra_http_port": 8080,

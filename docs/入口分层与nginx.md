@@ -89,6 +89,50 @@ LiteLLM 的 `/ui` 管理员登录和虚拟密钥都依赖 Postgres：
 - **要开 Admin UI**：配 `gateway.litellm_database_url`（或 `litellm_database_url_file`），安装 LiteLLM 的数据库依赖并确保 `prisma` 客户端可用，然后重启 LiteLLM。管理台登录用户名 `admin`（`UI_USERNAME` 可覆盖），密码 = Master Key。
 - 控制面「入口与网关」卡片会在未接数据库时把「打开 Admin」置灰，并提示改用 Master Key；`gpu-control gateway status` 的 `litellm.database` 字段给出同样的判断。
 
+#### 3.1.1 用内置 Postgres（无需 root）
+
+控制面自带一台用户态 Postgres 的管理命令（依赖 `pgserver`，二进制随 wheel 提供）：
+
+```bash
+/usr/bin/python3 -m pip install --user pgserver==0.1.4   # 一次性
+gpu-control gateway litellm-db init      # 初始化 data 目录 + litellm 库 + DATABASE_URL
+gpu-control gateway litellm-db status    # initialized / running / schema_tables
+gpu-control gateway litellm-db start|stop
+gpu-control gateway litellm-db url       # 打印完整 DATABASE_URL（含密码）
+```
+
+- 数据目录：`~/.local/share/computedeck/litellm-pg/data`
+- 连接串：`config/local/secrets/litellm_database_url`（600）
+- 端口：默认 `127.0.0.1:5433`（`GPU_CONTROL_LITELLM_PG_PORT` 可改）
+- 配置：`gateway.litellm_database_mode = "embedded"` 时，`gateway start --kind litellm` 会自动拉起 Postgres
+- schema：`init` 会优先使用 `state/gateway/litellm-schema.sql`、`config/local/litellm-schema.sql` 或仓库内 `config/examples/litellm-schema-1.86.7.sql`（LiteLLM 1.86.7）
+
+LiteLLM 的 Python 侧仍需要 `prisma==0.11.0` 与预生成的客户端/查询引擎（LiteLLM 固定依赖该版本，离线环境需在可联网机器上生成后拷入 `~/.local`），并在启动进程里**不要**把 `prisma` CLI 放进 PATH：缺少 CLI 时 LiteLLM 会跳过自动迁移，直接使用预生成的 schema。
+
+> **容器部署**：内置 Postgres 面向宿主机安装。容器里 `Path.home()` 是 `/root`，默认数据目录不在 compose 的卷里；如需在容器内使用，必须
+> 1) 在镜像/容器里安装 `pgserver`（`/usr/bin/python3 -m pip install --user pgserver==0.1.4`），
+> 2) 设 `GPU_CONTROL_LITELLM_PG_DATA=/app/state/litellm-pg/data`（`./state` 已挂载），
+> 3) 同步 `config/local/secrets/litellm_database_url` 到该实例。
+>
+> 更推荐容器部署使用**外部 Postgres**，避免把数据库进程塞进控制面容器。
+
+#### 3.1.2 外部数据库
+
+已有 Postgres 时直接配连接串即可：
+
+```json
+{"gateway": {"litellm_database_url_file": "config/local/secrets/litellm_database_url"}}
+```
+
+连接串形如 `postgresql://litellm:<password>@db-host:5432/litellm`。首次使用需要把 LiteLLM 的 schema 导入该库（`litellm-schema-1.86.7.sql` 或 LiteLLM 自己跑 `prisma migrate deploy`）。
+
+验证：
+
+```bash
+gpu-control gateway status | jq '.litellm.database'
+# admin_ui=true 后，入口页「打开 Admin」可用；用户名 admin，密码 = Master Key
+```
+
 ## 4. nginx 的四种用法
 
 ### 4.1 只做 Web/TLS 前端，API 交给 Edge（推荐）

@@ -1504,6 +1504,10 @@ def cmd_gateway(args: argparse.Namespace) -> int:
     ensure_runtime()
     action = getattr(args, "gateway_action", None) or "render"
     cmd = [action]
+    if action == "litellm-db" and getattr(args, "litellm_db_action", None):
+        cmd.append(args.litellm_db_action)
+        if args.litellm_db_action == "url" and getattr(args, "reveal", False):
+            cmd.append("--reveal")
     if action in {"render", "nginx"} and args.listen is not None:
         cmd.extend(["--listen", str(args.listen)])
     if action in {"start", "stop", "ensure"} and getattr(args, "kind", None):
@@ -2227,8 +2231,15 @@ def build_parser() -> argparse.ArgumentParser:
         "gateway_action",
         nargs="?",
         default="render",
-        choices=["render", "status", "ensure", "start", "stop", "nginx", "install-litellm"],
-        help="默认 render；ensure=规整配套并拉起主入口",
+        choices=["render", "status", "ensure", "start", "stop", "nginx", "install-litellm", "litellm-db"],
+        help="默认 render；ensure=规整配套并拉起主入口；litellm-db=LiteLLM 管理数据库",
+    )
+    p_gateway.add_argument(
+        "litellm_db_action",
+        nargs="?",
+        default=None,
+        choices=["status", "init", "start", "stop", "url", "apply-schema"],
+        help="gateway litellm-db 的子动作（默认 status）",
     )
     p_gateway.add_argument("--listen", type=int, default=None, help="edge/nginx listen 端口")
     p_gateway.add_argument(
@@ -2237,6 +2248,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="start/stop/ensure 目标（默认读 cluster.gateway.ingress.kind）",
     )
     p_gateway.add_argument("--json", action="store_true", help="兼容旧参数（忽略）")
+    p_gateway.add_argument(
+        "--reveal",
+        action="store_true",
+        help="gateway litellm-db url 时输出完整连接串（默认只显示脱敏地址）",
+    )
     p_gateway.set_defaults(func=cmd_gateway)
 
     p_health = sub.add_parser("health", help="探测全部推理 API 健康（默认各节点本地探测）")
