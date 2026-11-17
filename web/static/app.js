@@ -655,7 +655,10 @@ async function api(path, options = {}) {
   if (res.status === 401 && path !== "/api/auth/login" && path !== "/api/auth/status") {
     state.auth = data.auth || state.auth;
     showAuthGate(true);
-    throw new Error(data.error || "需要登录");
+    const err = new Error(data.error || "需要登录");
+    err.status = res.status;
+    err.data = data;
+    throw err;
   }
   if (!res.ok) {
     let detail = data.results
@@ -667,7 +670,10 @@ async function api(path, options = {}) {
       const parts = [data.error, data.hint, data.detail].filter(Boolean);
       detail = parts.length ? parts.join(" — ") : JSON.stringify(data);
     }
-    throw new Error(detail || `HTTP ${res.status}`);
+    const err = new Error(detail || `HTTP ${res.status}`);
+    err.status = res.status;
+    err.data = data;
+    throw err;
   }
   if (res.headers.get("ETag")) data.__etag = res.headers.get("ETag");
   return data;
@@ -5251,6 +5257,7 @@ const assistantState = {
   pending: [],
   quickActions: [],
   streamController: null,
+  executingAction: null,
   restored: false,
 };
 try {
@@ -5534,7 +5541,7 @@ function renderAssistantPending(pending) {
       if ((target.jobs || []).length) targetBits.push(`Job：${target.jobs.join("、")}`);
       const warnings = (row.warnings || []).map((w) => `<p class="warn">${escapeHtml(w)}</p>`).join("");
       const args = row.display_args || row.args || {};
-      return `<div class="assistant-action" data-risk="${escapeHtml(risk)}">
+      return `<div class="assistant-action" data-risk="${escapeHtml(risk)}" data-action-id="${escapeHtml(row.id)}">
         <div class="assistant-action-h">
           <strong>${escapeHtml(row.label || row.tool || "操作")}</strong>
           <span class="chip chip--${tone}">${escapeHtml(risk === "destructive" ? "高风险" : risk === "write" ? "写操作" : "只读")}</span>
@@ -5592,33 +5599,49 @@ async function rejectAssistantPending(row) {
   appendAssistantMsg("bot", "已取消该操作。");
 }
 
+function dropAssistantPending(actionId) {
+  renderAssistantPending((assistantState.pending || []).filter((x) => x.id !== actionId));
+}
+
 async function runAssistantPending(row) {
   if (!assistantState.conversationId) {
     toastBad("会话已失效，请重新提问");
     return;
   }
+  if (assistantState.executingAction) {
+    toast("已有操作正在执行，请稍候", { tone: "warn" });
+    return;
+  }
+  assistantState.executingAction = row.id;
+  const actionCard = document.querySelector(`[data-action-id="${row.id}"]`);
+  if (actionCard) actionCard.dataset.busy = "1";
+  document
+    .querySelectorAll("#assistant-pending [data-pending-ok], #assistant-pending [data-pending-cancel]")
+    .forEach((btn) => {
+      btn.disabled = true;
+    });
+  const sendBtn = $("assistant-send");
   const destructive = row.risk === "destructive" || row.confirm_level === "confirm_twice";
   const detail = `${row.summary || ""}${assistantTargetText(row) ? "\n" + assistantTargetText(row) : ""}`;
-  const ok = await confirmDialog({
-    title: `确认：${row.label || row.tool}`,
-    message: detail,
-    tone: destructive ? "danger" : "primary",
-    confirmText: "执行",
-  });
-  if (!ok) return;
-  if (destructive) {
-    const again = await confirmDialog({
-      title: "再次确认（破坏性操作）",
-      message: `${row.label || row.tool}\n${detail}\n\n该操作会停止任务或结束进程，确认继续？`,
-      tone: "danger",
-      confirmText: "我确认执行",
-    });
-    if (!again) return;
-  }
-  const sendBtn = $("assistant-send");
-  if (sendBtn) sendBtn.disabled = true;
-  assistantState.busy = true;
   try {
+    const ok = await confirmDialog({
+      title: `确认：${row.label || row.tool}`,
+      message: detail,
+      tone: destructive ? "danger" : "primary",
+      confirmText: "执行",
+    });
+    if (!ok) return;
+    if (destructive) {
+      const again = await confirmDialog({
+        title: "再次确认（破坏性操作）",
+        message: `${row.label || row.tool}\n${detail}\n\n该操作会停止任务或结束进程，确认继续？`,
+        tone: "danger",
+        confirmText: "我确认执行",
+      });
+      if (!again) return;
+    }
+    if (sendBtn) sendBtn.disabled = true;
+    assistantState.busy = true;
     appendAssistantMsg("bot", `正在执行：${row.label || row.tool}…`);
     const data = await api("/api/assistant/execute", {
       method: "POST",
@@ -5630,7 +5653,14 @@ async function runAssistantPending(row) {
       timeoutMs: 1900000,
     });
     if (data.conversation_id) setAssistantConversation(data.conversation_id);
-    const reply = data.reply || (data.ok ? "操作已执行。" : `执行失败：${data.status || ""}`);
+    if (data.already) {
+      dropAssistantPending(row.id);
+      appendAssistantMsg("bot", data.reply || "该操作已经执行过，确认卡已移除。");
+      toastOk("操作已执行");
+      await refresh(false, { light: true });
+      return;
+    }
+    const reply = data.reply || (data.ok ? "操作已执行。" : "执行失败。");
     appendAssistantMsg("bot", reply, { markdown: true });
     assistantState.messages.push({ role: "assistant", content: reply });
     renderAssistantPending(data.pending_actions || []);
@@ -5638,11 +5668,32 @@ async function runAssistantPending(row) {
     else toastBad("操作失败");
     await refresh(false, { light: true });
   } catch (err) {
-    appendAssistantMsg("bot", `执行失败：${err.message || err}`);
-    toastBad(`执行失败：${err.message || err}`);
+    const code = (err && err.data && err.data.error) || "";
+    if (code === "action_not_pending" || code === "action_expired") {
+      dropAssistantPending(row.id);
+      appendAssistantMsg(
+        "bot",
+        code === "action_expired"
+          ? "确认卡已过期，已自动移除。请重新提问。"
+          : "该操作已经执行过，确认卡已移除。"
+      );
+      toastOk("操作已处理");
+      await refresh(false, { light: true }).catch(() => {});
+    } else if (code === "action_in_progress") {
+      appendAssistantMsg("bot", "该操作正在执行，请稍候，不要重复点击。");
+      toast("正在执行", { tone: "warn" });
+    } else {
+      appendAssistantMsg("bot", `执行失败：${err.message || err}`);
+      toastBad(`执行失败：${err.message || err}`);
+    }
   } finally {
     assistantState.busy = false;
+    assistantState.executingAction = null;
     if (sendBtn) sendBtn.disabled = false;
+    if (actionCard) delete actionCard.dataset.busy;
+    if ((assistantState.pending || []).some((x) => x.id === row.id)) {
+      renderAssistantPending(assistantState.pending);
+    }
   }
 }
 

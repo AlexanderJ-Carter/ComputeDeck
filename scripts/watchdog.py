@@ -7,6 +7,7 @@ import argparse
 import fcntl
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -143,6 +144,19 @@ def save_state(data: dict) -> None:
     atomic_write_json(STATE_FILE, data)
 
 
+_RECAP = re.compile(r"^(\S+)\s*:\s*ok=\d+\s+changed=\d+\s+unreachable=(\d+)\s+failed=(\d+)", re.M)
+
+
+def failed_hosts_from_output(output: str) -> list[str]:
+    """从 Ansible PLAY RECAP 中找出 failed>0 且 unreachable=0 的主机。"""
+    out = []
+    for match in _RECAP.finditer(output or ""):
+        host, unreachable, failed = match.group(1), int(match.group(2)), int(match.group(3))
+        if failed > 0 and unreachable == 0:
+            out.append(host)
+    return sorted(set(out))
+
+
 def check_and_fix(job: str, nodes: str | None, max_restarts: int, failure_threshold: int = 2) -> None:
     limit = schedulable_limit(nodes)
     if limit == "":
@@ -157,8 +171,9 @@ def check_and_fix(job: str, nodes: str | None, max_restarts: int, failure_thresh
     healthy = result.returncode == 0
     output = f"{result.stdout or ''}\n{result.stderr or ''}"
     log(f"check job={job} nodes={limit or 'all'} healthy={healthy} rc={result.returncode}")
-    if not healthy and "UNREACHABLE" in output.upper():
-        # 节点不可达不是 Job 故障；不要反复调 restart 打不可达主机。
+    if not healthy and re.search(r"unreachable=[1-9]\d*", output, re.I):
+        # 只有真正有 unreachable 主机时才跳过；failed=1 / unreachable=0 是 Job 故障。
+        # 不能直接匹配单词 UNREACHABLE，否则会误伤 "unreachable=0"。
         log(f"skip restart job={job}: ansible reported UNREACHABLE hosts")
         state = load_state()
         state.setdefault("failures", {})[f"{job}:{limit or 'all'}"] = 0
@@ -193,19 +208,23 @@ def check_and_fix(job: str, nodes: str | None, max_restarts: int, failure_thresh
         log(f"skip restart job={job} reached max_restarts={max_restarts}")
         return
 
-    log(f"restarting unhealthy job={job} attempt={count + 1}/{max_restarts}")
+    failed_hosts = failed_hosts_from_output(output)
+    restart_limit = ",".join(failed_hosts) if failed_hosts else limit
+    log(
+        f"restarting unhealthy job={job} attempt={count + 1}/{max_restarts}"
+        + (f" nodes={restart_limit}" if restart_limit else "")
+    )
     restart_args = ["restart", job, "--allow-cordoned"]
-    # already filtered cordoned out of limit
-    if limit:
-        restart_args.extend(["--nodes", limit])
+    if restart_limit:
+        restart_args.extend(["--nodes", restart_limit])
     restart = run_cli(restart_args)
     log(f"restart rc={restart.returncode}")
     if restart.stdout.strip():
         log(restart.stdout.strip().splitlines()[-1])
     if restart.returncode == 0:
         wait_args = ["wait", job]
-        if limit:
-            wait_args.extend(["--nodes", limit])
+        if restart_limit:
+            wait_args.extend(["--nodes", restart_limit])
         wait = run_cli(wait_args)
         log(f"wait rc={wait.returncode}")
         if wait.returncode == 0:

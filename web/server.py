@@ -246,6 +246,8 @@ RESOURCES_HEALTH_FILE = STATE_DIR / "resources_health.json"
 INVENTORY = INVENTORY_FILE
 
 _action_lock = threading.Lock()
+_assistant_action_lock = threading.Lock()
+_assistant_inflight: set[tuple[str, str]] = set()
 UI_VERSION = (
     VERSION_FILE.read_text(encoding="utf-8").strip()
     if VERSION_FILE.is_file()
@@ -2895,6 +2897,55 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, {"ok": True, "status": "rejected", "conversation_id": cid})
                 return
             status = str(action.get("status") or "pending")
+            claim_key = (cid, action_id)
+
+            def _already_executed() -> bool:
+                self._json(
+                    200,
+                    {
+                        "ok": True,
+                        "status": "executed",
+                        "already": True,
+                        "conversation_id": cid,
+                        "action_id": action_id,
+                        "tool": action.get("tool"),
+                        "result": action.get("result"),
+                        "reply": "该操作已经执行过，无需重复确认。",
+                        "pending_actions": [
+                            assistant_session.public_pending(row)
+                            for row in (assistant_session.load(cid).get("pending") or {}).values()
+                            if isinstance(row, dict)
+                            and str(row.get("status") or "pending") in {"pending", "armed"}
+                        ],
+                    },
+                )
+                return True
+
+            if status == "executed":
+                _already_executed()
+                return
+            if status == "executing":
+                with _assistant_action_lock:
+                    if claim_key in _assistant_inflight:
+                        self._json(
+                            409,
+                            {
+                                "ok": False,
+                                "error": "action_in_progress",
+                                "detail": "该操作正在执行，请稍候。",
+                                "action": assistant_session.public_pending(action),
+                            },
+                        )
+                        return
+                    # 服务重启后残留的 executing：超过 5 分钟允许重新领取
+                    updated = assistant_session.parse_time(action.get("updated_at")) if hasattr(assistant_session, "parse_time") else None
+                    if updated is not None and time.time() - updated < 300:
+                        self._json(
+                            409,
+                            {"ok": False, "error": "action_in_progress", "detail": "该操作正在执行，请稍候。"},
+                        )
+                        return
+                    status = "pending"
             if status not in {"pending", "armed"}:
                 self._json(
                     409,
@@ -2968,30 +3019,97 @@ class Handler(BaseHTTPRequestHandler):
                     {"ok": False, "error": "no_route", "detail": "该工具没有可执行的路由"},
                 )
                 return
-            result = self._call_local_api(
-                str(route.get("method") or "POST"),
-                str(route.get("path") or ""),
-                route.get("body"),
-                timeout=1900,
-            )
-            data = compact_action_result(result.get("data"))
-            executed_ok = bool(result.get("ok")) and not (
-                isinstance(data, dict) and data.get("ok") is False
-            )
-            assistant_session.record_tool_result(
-                session,
-                call_id=str(action.get("call_id") or ""),
-                result=data,
-            )
-            assistant_session.update_pending(
-                session,
-                action_id,
-                status="executed" if executed_ok else "failed",
-                executed_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                result_summary=(data.get("message") if isinstance(data, dict) else None)
-                or ("执行成功" if executed_ok else "执行失败"),
-            )
-            assistant_session.save(session)
+
+            # 原子领取：双击 / 重复请求只能有一个真正执行；已执行则幂等返回。
+            with _assistant_action_lock:
+                session = assistant_session.load(cid)
+                fresh = assistant_session.get_pending(session, action_id)
+                if fresh is None:
+                    self._json(409, {"ok": False, "error": "action_not_found", "detail": "确认卡不存在"})
+                    return
+                fresh_status = str(fresh.get("status") or "pending")
+                if fresh_status == "executed":
+                    self._json(
+                        200,
+                        {
+                            "ok": True,
+                            "status": "executed",
+                            "already": True,
+                            "conversation_id": cid,
+                            "action_id": action_id,
+                            "tool": fresh.get("tool"),
+                            "result": fresh.get("result"),
+                            "reply": "该操作已经执行过，无需重复确认。",
+                            "pending_actions": [],
+                        },
+                    )
+                    return
+                if fresh_status == "executing":
+                    updated = assistant_session.parse_time(fresh.get("updated_at"))
+                    # 进程内正在执行，或 5 分钟内的 executing 视为有效；
+                    # 服务重启后残留的 executing 允许重新领取。
+                    if claim_key in _assistant_inflight or (
+                        updated is not None and time.time() - updated < 300
+                    ):
+                        self._json(
+                            409,
+                            {
+                                "ok": False,
+                                "error": "action_in_progress",
+                                "detail": "该操作正在执行，请稍候。",
+                                "action": assistant_session.public_pending(fresh),
+                            },
+                        )
+                        return
+                elif fresh_status not in {"pending", "armed"}:
+                    self._json(
+                        409,
+                        {
+                            "ok": False,
+                            "error": "action_not_pending",
+                            "detail": f"当前状态：{fresh_status}",
+                            "action": assistant_session.public_pending(fresh),
+                        },
+                    )
+                    return
+                action = fresh
+                assistant_session.update_pending(
+                    session,
+                    action_id,
+                    status="executing",
+                    started_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                )
+                assistant_session.save(session)
+                _assistant_inflight.add(claim_key)
+            try:
+                result = self._call_local_api(
+                    str(route.get("method") or "POST"),
+                    str(route.get("path") or ""),
+                    route.get("body"),
+                    timeout=1900,
+                )
+                data = compact_action_result(result.get("data"))
+                executed_ok = bool(result.get("ok")) and not (
+                    isinstance(data, dict) and data.get("ok") is False
+                )
+                assistant_session.record_tool_result(
+                    session,
+                    call_id=str(action.get("call_id") or ""),
+                    result=data,
+                )
+                assistant_session.update_pending(
+                    session,
+                    action_id,
+                    status="executed" if executed_ok else "failed",
+                    executed_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    result_summary=(data.get("message") if isinstance(data, dict) else None)
+                    or ("执行成功" if executed_ok else "执行失败"),
+                    result=data,
+                )
+                assistant_session.save(session)
+            finally:
+                with _assistant_action_lock:
+                    _assistant_inflight.discard(claim_key)
 
             reply = None
             follow_pending: list[dict] = []

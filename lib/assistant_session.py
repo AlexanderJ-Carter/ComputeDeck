@@ -29,6 +29,20 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def parse_time(value: Any) -> float | None:
+    """ISO8601 → epoch 秒；无法解析时返回 ``None``。"""
+    if value is None or value == "":
+        return None
+    try:
+        text = str(value).strip().replace("Z", "+00:00")
+        dt = datetime.fromisoformat(text)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
 def new_id() -> str:
     return "conv_" + uuid.uuid4().hex[:12]
 
