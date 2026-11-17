@@ -2718,10 +2718,6 @@ function applyOverview(data) {
   renderView(state.view);
   const generatedAt = $("generated-at");
   if (generatedAt) generatedAt.textContent = data.generated_at || "-";
-  const rayNote = $("notes-line");
-  if (rayNote) {
-    rayNote.textContent = (data.notes && (data.notes.innovation || data.notes.strategy)) || "";
-  }
 }
 
 function renderClusterKpis(summary) {
