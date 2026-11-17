@@ -11,7 +11,7 @@ Web 看板适合大屏与完整操作；VS Code 插件适合“边写代码边�
   - 节点：状态、GPU 空闲/占用、最后探活；内联“终端 / 只读诊断 / 腾空”
   - Job：启动 / 停止 / 重启 / 状态 / 等待就绪
   - 队列与租约
-  - 入口：Edge、LiteLLM 上游、nginx、重复 LB 告警
+  - 入口：LiteLLM 节点 LB、Edge/nginx 前置、重复 LB 告警
 - 状态栏：`CD 4/4 节点 · 12/16 空闲`；离线时变红
 - 节点操作：
   - 打开集成 SSH 终端（读取节点 `ansible_port/user/key`）
@@ -56,7 +56,7 @@ CI：`.github/workflows/vscode.yml` 会在 `extensions/vscode/**` 变更时打�
 - 命令面板 → `ComputeDeck: 密码登录`（Session Cookie 存 SecretStorage）
 - 或 `ComputeDeck: 设置 API Token`（`gpu-control auth issue-token`）
 
-MCP 走 HTTP 建议用 API Token；只做密码登录时 MCP 可能无法通过鉴权。
+MCP 走 HTTP 用 API Token；密码登录只覆盖浏览器会话。
 
 ## 4. MCP / Copilot
 
@@ -76,6 +76,6 @@ GPU_CONTROL_API_TOKEN=<SecretStorage 中的 token>
 | 看整体、趋势、AI 助手、完整配置 | Web `:8787` |
 | 写代码时看节点/Job、开终端、跑诊断 | VS Code 插件 |
 | Agent 自动操作 | MCP（插件可自动注册） |
-| 外部 TLS / 域名 / 网页 | nginx → Edge，见 [入口分层与 nginx](入口分层与nginx.md) |
+| 外部 TLS / 域名 / 网页 | nginx → LiteLLM，见 [入口分层与 nginx](入口分层与nginx.md) |
 
 插件不重复实现 Web UI，也不在扩展侧硬编码节点/Job 名；所有数据来自控制面 API。

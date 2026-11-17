@@ -57,7 +57,7 @@
 | `litellm_upstream` | `nodes`（推荐）/ `edge` | `nodes` 时 LiteLLM 的 model_list 直连每个节点端口；`edge` 用于不使用 LiteLLM、由 Edge 做节点 LB 的轻量部署 |
 | `nginx_upstream` | `litellm`（推荐）/ `edge` / `nodes` | `litellm` 时 nginx 只做 TLS/Web 前端；`nodes` 时 nginx 自己做节点 LB |
 | `ingress.proxy_to` | URL | 让内置 Edge 只反代到一个上游（通常 `http://127.0.0.1:4000`），不再选节点 |
-| `litellm_edge_url` | URL | 仅 `litellm_upstream=edge` 时使用；默认 `http://127.0.0.1:<ingress.port>` |
+| `litellm_edge_url` | URL | `litellm_upstream=edge` 的轻量部署使用；默认 `http://127.0.0.1:<ingress.port>` |
 | `litellm_database_url` / `litellm_database_url_file` | `postgres://…` | LiteLLM Admin UI 与虚拟密钥依赖 Postgres |
 
 改完后：

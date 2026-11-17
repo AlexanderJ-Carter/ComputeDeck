@@ -13,6 +13,15 @@
 
 ---
 
+## [1.1.1] - 2026-11-17
+
+### Changed
+
+- `scripts/deploy_control.sh`：同步前自动备份 `config/local` + `state`；支持 `RESTART_GATEWAY=1` / `RESTART_WATCHDOG=1` / `SKIP_BACKUP=1`
+- VS Code 插件入口文案同步 LiteLLM 单层
+- 文档去掉“只能 / 这不是…的问题 / 不必装”等防御性表述，改用直接的能力描述
+
+---
 ## [1.1.0] - 2026-11-17
 
 ### Changed
@@ -626,6 +635,7 @@ ComputeDeck **1.0 先导测试版**：控制面 / CLI / MCP / 展板已可日常
 4. 版本锚点见下方；具备远程后可改为 compare URL。
 
 [Unreleased]: #unreleased
+[1.1.1]: #111---2026-11-17
 [1.1.0]: #110---2026-11-17
 [1.0.4]: #104---2026-11-17
 [1.0.3]: #103---2026-11-17

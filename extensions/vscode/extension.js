@@ -345,31 +345,32 @@ class ClusterProvider {
     const edge = (gateway && gateway.edge) || {};
     const ll = (gateway && gateway.litellm) || {};
     const nginx = (gateway && gateway.nginx) || {};
+    const edgeFront = Boolean(gateway?.layering?.edge_front);
     gatewayRows.push(
       makeItem(`Edge :${gateway?.ingress?.port || 18080}`, vscode.TreeItemCollapsibleState.None, {
-        description: edge.running ? '运行中 · 唯一节点 LB' : '未运行',
+        description: edge.running ? (edgeFront ? '前置反代 → LiteLLM' : '节点 LB') : '未运行',
         iconPath: new vscode.ThemeIcon(edge.running ? 'globe' : 'circle-slash'),
         tooltip: gateway?.layering?.edge_url || '',
       }),
       makeItem(`LiteLLM :${ll.port || 4000}`, vscode.TreeItemCollapsibleState.None, {
         description:
           ll.upstream === 'edge'
-            ? `OpenAI 层 · 经 Edge`
+            ? '经 Edge 治理'
             : ll.running
-              ? 'OpenAI 层 · 直连节点（重复 LB）'
+              ? '唯一节点 LB'
               : '未运行',
         iconPath: new vscode.ThemeIcon(ll.running ? 'symbol-method' : 'circle-slash'),
         tooltip: gateway?.layering?.summary || '',
       }),
       makeItem('nginx', vscode.TreeItemCollapsibleState.None, {
-        description: nginx.installed ? '已安装 · 仅 Web/TLS 前端' : '未安装 · 可选 Web/TLS 前端',
+        description: nginx.installed ? '已安装 · Web/TLS 前置' : '未安装',
         iconPath: new vscode.ThemeIcon('browser'),
       })
     );
     if (gateway?.layering?.duplicate_node_lb) {
       gatewayRows.unshift(
         makeItem('$(warning) 检测到重复节点 LB', vscode.TreeItemCollapsibleState.None, {
-          description: '建议 LiteLLM → Edge',
+          description: '让 Edge 做前置反代',
           iconPath: new vscode.ThemeIcon('warning', new vscode.ThemeColor('warningForeground')),
           tooltip: gateway.layering.recommendation || '',
         })

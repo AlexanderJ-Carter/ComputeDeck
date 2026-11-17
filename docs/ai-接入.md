@@ -167,7 +167,7 @@ Cursor 片段示例：
 }
 ```
 
-容器里跑控制面时：MCP 进程仍建议在**宿主机**指向仓库/挂载树里的 `bin/gpu-control-mcp`，并用 `GPU_CONTROL_API_BASE=http://127.0.0.1:8787` 打到已映射的 UI；或在容器内 `docker compose exec` 调试 CLI，不必把 IDE 的 stdio 硬塞进容器。
+容器里跑控制面时：MCP 进程仍建议在**宿主机**指向仓库/挂载树里的 `bin/gpu-control-mcp`，并用 `GPU_CONTROL_API_BASE=http://127.0.0.1:8787` 打到已映射的 UI；容器内调试用 `docker compose exec` 跑 CLI。
 
 教学与风险：MCP `instructions` 与 `GET /api/assistant/policy` 同源（`lib/assistant_policy.py`）。  
 UI 小助手：设置面板填 Base URL / 模型 / Key（`POST /api/assistant/config`，可 `POST /api/assistant/models` 下拉）；`POST /api/assistant/chat` 调 OpenAI 兼容上游；未配则引导去设置。

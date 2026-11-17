@@ -7,7 +7,7 @@
 - 节点操作：打开 SSH 终端、运行 `nvidia-smi` / GPU 进程、隔离/恢复、腾空
 - Job 操作：启动 / 停止 / 重启 / 状态 / 等待就绪
 - 一键诊断：自检、节点探活、测试 SSH、只读诊断预设
-- 入口分层：显示 Edge 唯一的节点 LB、LiteLLM 是否经 Edge、nginx 状态
+- 入口分层：显示 LiteLLM 节点 LB、Edge/nginx 前置与重复 LB 告警
 - 自动注册 MCP Server：VS Code / Copilot 可以直接使用 `gc_*` 工具
 - 打开 Web 控制面：完整看板、AI 助手、趋势图仍在浏览器里
 
