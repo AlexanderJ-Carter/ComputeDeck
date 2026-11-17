@@ -126,7 +126,7 @@
             <div class="health-copy">
               <header class="panel-h">
                 <h2 id="dash-health-title">集群健康</h2>
-                <button id="btn-load-quality" class="ghost tiny" data-keep-enabled="1">刷新评分</button>
+                <button id="btn-load-quality" class="ghost tiny" data-keep-enabled="1" title="重新采集 SSH / API / 互通 / 主机指标后重算">全部复检</button>
               </header>
               <p class="meta" id="quality-updated">同步后更新评分与资源</p>
               <div class="quality-kpis">
@@ -135,6 +135,7 @@
                 <div><span>互通</span><strong id="q-mesh">-</strong></div>
                 <div><span>GPU</span><strong id="q-gpu">-</strong></div>
               </div>
+              <p class="meta quality-note">数值 = 正常 / 总数 · 最近一次采集年龄</p>
             </div>
           </section>
 

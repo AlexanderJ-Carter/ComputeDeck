@@ -2988,12 +2988,27 @@ function renderQuality(q) {
   const api = q.api || {};
   const mesh = q.mesh || {};
   const gpus = q.gpus || {};
-  const sshText = ssh.total ? `${ssh.ok_count ?? 0}/${ssh.total}` : ssh.fresh === false ? "未探测" : "-";
-  const apiText = api.total ? `${api.ok ?? 0}/${api.total}` : api.fresh === false ? "未探测" : "-";
-  const meshText = mesh.total ? `${mesh.ok}/${mesh.total}` : mesh.fresh === false ? "未探测" : "-";
-  set("q-ssh", ssh.fresh === false && ssh.total ? `${sshText} 过期` : sshText);
-  set("q-api", api.fresh === false && api.total ? `${apiText} 过期` : apiText);
-  set("q-mesh", mesh.fresh === false && mesh.total ? `${meshText} 过期` : meshText);
+  const ageLabel = (item) => {
+    if (!item || !item.total) return "";
+    if (item.fresh !== false) return "";
+    return item.age_sec != null ? ` · ${formatAgeSec(item.age_sec)}前` : " · 无时间戳";
+  };
+  const setQuality = (id, text, item, label) => {
+    const el = $(id);
+    if (!el) return;
+    el.textContent = `${text}${ageLabel(item)}`;
+    el.title = !item || !item.total
+      ? `${label} 尚未探测；点「全部复检」重新采集`
+      : item.fresh === false
+        ? `${label} 最近一次采集在${item.age_sec != null ? formatAgeSec(item.age_sec) + "前" : "未知时间"}，数据已过期；点「全部复检」更新`
+        : `${label} 数据在有效期内`;
+  };
+  const sshText = ssh.total ? `${ssh.ok_count ?? 0}/${ssh.total}` : "未探测";
+  const apiText = api.total ? `${api.ok ?? 0}/${api.total}` : "未探测";
+  const meshText = mesh.total ? `${mesh.ok}/${mesh.total}` : "未探测";
+  setQuality("q-ssh", sshText, ssh, "SSH");
+  setQuality("q-api", apiText, api, "API");
+  setQuality("q-mesh", meshText, mesh, "互通");
   set(
     "q-gpu",
     gpus.total
@@ -3009,6 +3024,40 @@ function renderQuality(q) {
   );
 
 
+}
+
+async function runAllHealthChecks() {
+  const btn = $("btn-load-quality");
+  if (btn) btn.disabled = true;
+  setBusy(true);
+  const steps = [
+    ["存活", () => api("/api/liveness/check", { method: "POST", body: "{}", timeoutMs: 60000 })],
+    ["SSH", () => api("/api/setup/test-ssh", { method: "POST", body: "{}", timeoutMs: 90000 })],
+    ["API", () => api("/api/endpoints/health/run", { method: "POST", body: "{}", timeoutMs: 120000 })],
+    ["互通", () => api("/api/probe/run", { method: "POST", body: "{}", timeoutMs: 240000 })],
+    ["主机", () => api("/api/metrics/refresh", { method: "POST", body: "{}", timeoutMs: 120000 })],
+  ];
+  const results = [];
+  try {
+    for (const [name, fn] of steps) {
+      try {
+        await fn();
+        results.push(`${name}✓`);
+      } catch (err) {
+        results.push(`${name}✗`);
+        log(`复检 ${name}: ${err.message || err}`);
+      }
+    }
+    await loadQuality();
+    await refresh(false, { light: true }).catch(() => {});
+    const failed = results.filter((x) => x.endsWith("✗"));
+    if (failed.length) toastBad(`部分复检失败：${results.join(" ")}`);
+    else toastOk(`复检完成：${results.join(" ")}`);
+    log(`全部复检：${results.join(" ")}`);
+  } finally {
+    setBusy(false);
+    if (btn) btn.disabled = false;
+  }
 }
 
 async function loadQuality() {
@@ -4408,14 +4457,7 @@ async function boot() {
     if (jump) setView(jump.dataset.viewJump);
   });
   document.getElementById("btn-full-sync").addEventListener("click", () => runOneclick("full-sync"));
-  on("btn-load-quality", "click", async () => {
-    try {
-      await loadQuality();
-      toastOk("评分已刷新");
-    } catch (err) {
-      actionError("刷新评分", err);
-    }
-  });
+  on("btn-load-quality", "click", () => runAllHealthChecks().catch((err) => actionError("全部复检", err)));
   on("btn-quick-refresh", "click", () => {
     const btn = $("btn-refresh");
     if (btn) btn.click();

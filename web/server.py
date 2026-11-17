@@ -851,7 +851,9 @@ def assistant_known_jobs(jobs_list: list[dict]) -> set[str]:
     return out
 
 
-def _signals_fresh(health: dict, probe: dict, ttls: dict) -> dict:
+def _signals_fresh(
+    ssh_quality: dict, probe: dict, ttls: dict, endpoint_health: dict | None = None
+) -> dict:
     """判断 ssh / api / mesh 信号是否在 TTL 内。"""
     now = time.time()
 
@@ -859,8 +861,8 @@ def _signals_fresh(health: dict, probe: dict, ttls: dict) -> dict:
         epoch = liveness.parse_ts(value)
         return None if epoch is None else int(now - epoch)
 
-    ssh_age = _age(health.get("checked_at"))
-    api_age = _age(health.get("generated_at"))
+    ssh_age = _age(ssh_quality.get("checked_at"))
+    api_age = _age((endpoint_health or {}).get("generated_at"))
     mesh_age = _age(probe.get("generated_at")) if probe else None
     host_age = _age(_read_json(HOST_METRICS_FILE, {}).get("generated_at"))
     return {
@@ -892,7 +894,7 @@ def _build_overview(*, light: bool = False) -> dict:
     live_view = build_liveness_view()
     live_nodes = live_view.get("nodes") or {}
     ttls = liveness.load_ttls(cluster_doc)
-    signals = _signals_fresh(_read_json(STATE_DIR / "ssh_quality.json", {}), probe, ttls)
+    signals = _signals_fresh(_read_json(STATE_DIR / "ssh_quality.json", {}), probe, ttls, endpoint_health)
     nodes = []
     free_total = 0
     used_total = 0
@@ -1477,7 +1479,7 @@ def build_quality_report() -> dict:
     probe_ok = int(probe.get("ok_count") or 0)
     probe_fail = int(probe.get("fail_count") or 0)
     probe_total = probe_ok + probe_fail
-    signals = _signals_fresh(ssh, probe, ttls)
+    signals = _signals_fresh(ssh, probe, ttls, health)
 
     gpu_free = 0
     gpu_total = 0
@@ -1552,10 +1554,15 @@ def build_quality_report() -> dict:
     else:
         grade = "优秀" if score >= 90 else "良好" if score >= 75 else "一般" if score >= 50 else "较差"
     stale_components = [name for name, item in components.items() if not item.get("fresh")]
+    stale_labels = {"ssh": "SSH", "api": "API", "mesh": "互通", "snapshots": "GPU 快照"}
     if offline:
         hint = f"离线节点：{', '.join(offline)}；GPU 统计已排除这些节点的旧快照。"
     elif stale_components:
-        hint = f"健康数据已过期：{', '.join(stale_components)}。可点「刷新 GPU / 探测 API / 深度同步」。"
+        hint = (
+            "健康数据已过期："
+            + "、".join(stale_labels.get(name, name) for name in stale_components)
+            + "。点健康卡「全部复检」重新采集。"
+        )
     else:
         hint = "各健康信号均在有效期内。"
     return {

@@ -4794,3 +4794,9 @@ body {
 .assistant-action[data-busy="1"] button {
   cursor: wait;
 }
+
+.quality-note {
+  margin: 6px 0 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+}
