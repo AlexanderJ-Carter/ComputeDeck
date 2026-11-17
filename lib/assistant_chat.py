@@ -1020,6 +1020,11 @@ def stream_chat(
                         "risk": risk,
                         "status": "deferred" if risk != "read" else "ok",
                         "label": validation.get("label") or name,
+                        "action_id": (
+                            tool_result.get("action_id")
+                            if isinstance(tool_result, dict)
+                            else ""
+                        ),
                     },
                 )
                 openai_messages.append(

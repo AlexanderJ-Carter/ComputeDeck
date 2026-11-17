@@ -133,7 +133,7 @@ POST /api/assistant/execute
 
 助手设置可配置启用开关、上游 Base URL / 模型 / Key 与超时（5–180 秒）；`GET /api/assistant/policy` 会列出全部内置工具及风险分级。
 
-**UI 交互**：确认卡内联在对话流中。普通写操作点一次「允许」即执行；破坏性操作需要在同一张卡上再点一次（Esc 可取消这次确认）。执行时卡片下方出现运行块，节点结果与命令输出就地展开，随后由模型给出总结。只读工具不弹确认，直接在回答上方以步骤形式显示。
+**UI 交互**：确认卡内联在对话流中。普通写操作点一次「允许」即执行；破坏性操作需要在同一张卡上再点一次（Esc 可取消这次确认）。执行时确认卡标记「执行中」并显示计时，所有待确认卡暂时禁用；完成后确认卡收起，只保留带参数和结果的就地执行记录；拒绝会在对话里留下一条轻量说明。同一工具 + 同一参数不会重复生成确认卡，回答上方的工具步骤也会随确认、执行、失败、拒绝同步状态。只读工具不弹确认，直接以步骤形式显示。
 
 完整列表以 `GET /api` 或 `/api/docs` 为准。
 
@@ -191,7 +191,7 @@ Cursor 片段示例：
 教学与风险：MCP `instructions` 与 `GET /api/assistant/policy` 同源（`lib/assistant_policy.py`）。  
 UI 小助手：设置面板填 Base URL / 模型 / Key（`POST /api/assistant/config`，可 `POST /api/assistant/models` 下拉）；`POST /api/assistant/chat` 调 OpenAI 兼容上游；未配则引导去设置。
 
-一等工具（23）：`gc_api_catalog` · `gc_auth_status` · `gc_doctor` · `gc_overview` · `gc_get_jobs` · `gc_job_action` · `gc_get_config` · `gc_put_config` · `gc_models` · `gc_toolkits` · `gc_procs` · `gc_free_node` · `gc_deploy` · `gc_queue` · `gc_lease` · `gc_diagnose` · `gc_gateway` · `gc_node` · `gc_liveness` · `gc_remote` · `gc_exec_preset` · `gc_exec` · `gc_cli`。
+一等工具（31）：`gc_overview` · `gc_liveness` · `gc_doctor` · `gc_diagnose` · `gc_get_jobs` · `gc_job_logs` · `gc_api_catalog` · `gc_metrics_history` · `gc_logs` · `gc_auth_status` · `gc_get_config` · `gc_queue` · `gc_lease` · `gc_gateway` · `gc_node` · `gc_deploy` · `gc_free_node` · `gc_job_action` · `gc_procs` · `gc_models` · `gc_toolkits` · `gc_exec_preset` · `gc_exec` · `gc_put_config` · `gc_notices` · `gc_resources_refresh` · `gc_probe_run` · `gc_metrics_refresh` · `gc_install_template` · `gc_remote` · `gc_cli`。
 
 说明：
 

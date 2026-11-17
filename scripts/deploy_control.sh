@@ -41,6 +41,8 @@ tar \
   --exclude='state' \
   --exclude='config/local' \
   --exclude='snapshots' \
+  --exclude='inventory.ini' \
+  --exclude='resources.json' \
   --exclude='__pycache__' \
   --exclude='.git' \
   --exclude='uv.lock' \

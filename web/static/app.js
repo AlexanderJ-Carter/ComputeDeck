@@ -5388,8 +5388,17 @@ async function boot() {
   document.getElementById("btn-refresh").addEventListener("click", async () => {
     setBusy(true);
     try {
-      await refresh(true);
-      toast("GPU 快照已刷新");
+      const data = await refresh(true);
+      const stale = data?.summary?.stale_nodes || [];
+      const failed = data?.summary?.offline_nodes || [];
+      if (stale.length || failed.length) {
+        const parts = [];
+        if (stale.length) parts.push(`${stale.length} 个节点快照仍过期`);
+        if (failed.length) parts.push(`${failed.length} 个节点离线`);
+        toast(`GPU 刷新完成，但${parts.join("、")}`, { tone: "warn" });
+      } else {
+        toast("GPU 快照已刷新");
+      }
     } catch (err) {
       log(String(err.message || err));
     } finally {
@@ -6046,7 +6055,7 @@ const noticesState = {
 function sparklinePath(values, width, height, pad = 4, domain = null) {
   const nums = values.map((v) => (v == null || Number.isNaN(Number(v)) ? null : Number(v)));
   const solid = nums.filter((v) => v != null);
-  if (solid.length < 2) return { line: "", area: "" };
+  if (!solid.length) return { line: "", area: "", points: [] };
   const padX = 30;
   const padY = 6;
   let min = Math.min(...solid);
@@ -6076,16 +6085,23 @@ function sparklinePath(values, width, height, pad = 4, domain = null) {
     const y = height - padY - ((clamped - min) / span) * (height - padY * 2);
     pts.push([x, y]);
   });
-  if (pts.length < 2) return { line: "", area: "" };
+  if (pts.length < 2) return { line: "", area: "", points: pts };
   const line = pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
   const area = `${line} L${pts[pts.length - 1][0].toFixed(1)},${height - padY} L${pts[0][0].toFixed(1)},${height - padY} Z`;
-  return { line, area };
+  return { line, area, points: pts };
 }
 
 function paintSpark(
   svgId,
   values,
-  { altValues = null, domain = null, altDomain = null, axisLabels = null, valueText = null } = {}
+  {
+    altValues = null,
+    domain = null,
+    altDomain = null,
+    axisLabels = null,
+    valueText = null,
+    emptyText = "采样不足",
+  } = {}
 ) {
   const svg = $(svgId);
   if (!svg) return;
@@ -6094,7 +6110,9 @@ function paintSpark(
   const padX = 30;
   const padY = 6;
   const main = sparklinePath(values, w, h, 4, domain);
-  const alt = altValues ? sparklinePath(altValues, w, h, 4, altDomain) : { line: "", area: "" };
+  const alt = altValues
+    ? sparklinePath(altValues, w, h, 4, altDomain)
+    : { line: "", area: "", points: [] };
   const labels = axisLabels || ["100%", "50%", "0%"];
   let html = "";
   html += `<text class="axis" x="2" y="${padY + 8}">${escapeHtml(labels[0])}</text>`;
@@ -6106,14 +6124,23 @@ function paintSpark(
   if (main.area) html += `<path class="area" d="${main.area}"></path>`;
   if (main.line) html += `<path class="line" d="${main.line}"></path>`;
   if (alt.line) html += `<path class="line alt" d="${alt.line}"></path>`;
+  const dot = (points, cls) => {
+    if (!points || points.length !== 1) return "";
+    const [x, y] = points[0];
+    return `<circle class="dot ${cls}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.7"></circle>`;
+  };
+  html += dot(main.points, "");
+  html += dot(alt.points, "alt");
   const solid = (values || []).filter((v) => v != null && !Number.isNaN(Number(v)));
   const last = solid.length ? Number(solid[solid.length - 1]) : null;
   if (last != null) {
     const text = valueText ? valueText(last) : fmtPct(last);
     html += `<text class="last" x="${w - 4}" y="${padY + 9}" text-anchor="end">${escapeHtml(String(text))}</text>`;
   }
-  if (!main.line && !alt.line) {
-    html += `<text class="empty" x="${padX + 4}" y="40">采样不足，刷新总览稍后可见</text>`;
+  if (!main.points?.length && !alt.points?.length) {
+    html += `<text class="empty" x="${padX + 4}" y="40">${escapeHtml(emptyText)}</text>`;
+  } else if (solid.length === 1) {
+    html += `<text class="sample" x="${padX + 4}" y="40">单点采样 · 稍后成线</text>`;
   }
   svg.innerHTML = html;
 }
@@ -6123,56 +6150,115 @@ function fmtPct(v) {
   return `${Number(v).toFixed(Number(v) % 1 ? 1 : 0)}%`;
 }
 
+function trendAvailability() {
+  const summary = state.overview?.summary || {};
+  const stale = Array.isArray(summary.stale_nodes) ? summary.stale_nodes : [];
+  return {
+    summary,
+    staleCount: stale.length,
+    staleNames: stale,
+    apiTotal: Number(summary.api_total || 0),
+    apiStale: Boolean(summary.api_stale),
+    gpusTotal: Number(summary.gpus_total || 0),
+    gpusExcluded: Number(summary.gpus_excluded || 0),
+  };
+}
+
 function renderTrends(payload) {
   const points = (payload && payload.points) || [];
   const charts = $("trend-charts");
   const empty = $("trend-empty");
-  const seriesKeys = [
-    "api_ok_pct",
-    "gpu_sm_util_pct",
-    "gpu_mem_util_pct",
-    "gpu_alloc_pct",
-    "cpu_avg_pct",
-    "nodes_online_pct",
-    "queue_pending",
-  ];
-  const enough = seriesKeys.some(
-    (key) => points.filter((point) => point && point[key] != null).length >= 2
-  );
-  if (charts) charts.hidden = !enough;
-  if (empty) empty.hidden = enough;
+  const hasSamples = points.length > 0;
+  if (charts) charts.hidden = !hasSamples;
+  if (empty) {
+    empty.hidden = hasSamples;
+    if (!hasSamples) {
+      empty.textContent =
+        "还没有采样点：保持看板打开，或等待后台巡检采样；每 15 秒最多记录一次。";
+    }
+  }
+  const availability = trendAvailability();
+  const reasons = [];
+  if (!availability.apiTotal) reasons.push("暂无可探测推理端点");
+  else if (availability.apiStale) reasons.push("API 探测已过期");
+  if (availability.staleCount) {
+    reasons.push(`${availability.staleCount} 个节点 GPU 快照过期`);
+  } else if (!availability.gpusTotal && availability.gpusExcluded) {
+    reasons.push(`${availability.gpusExcluded} 张 GPU 因快照不可用被排除`);
+  }
+  const last = points[points.length - 1] || {};
+  const lastAt = last.ts ? new Date(last.ts).toLocaleTimeString() : "";
   const note = $("dash-trends-note");
   if (note) {
     const retainMin = Math.round(Number(payload?.retain_sec || 3600) / 60);
-    note.textContent =
-      payload?.note || `最近约 ${retainMin} 分钟 · 控制面快照（非业务 QPS）`;
+    note.textContent = hasSamples
+      ? `近 ${retainMin} 分钟 · ${points.length} 个样本${lastAt ? ` · 最近 ${lastAt}` : ""}${reasons.length ? ` · ${reasons.join("；")}` : ""}`
+      : `近 ${retainMin} 分钟 · 暂无采样${reasons.length ? ` · ${reasons.join("；")}` : ""}`;
+    note.title = payload?.note || "控制面快照（非业务 QPS）";
   }
-  const last = points[points.length - 1] || {};
-  const set = (id, text) => {
+  const gpuEmpty = availability.staleCount
+    ? "GPU 快照过期"
+    : availability.gpusTotal
+      ? "等待 nvidia-smi 采样"
+      : "无 GPU 实测";
+  const apiEmpty = availability.apiTotal
+    ? availability.apiStale
+      ? "API 探测过期"
+      : "等待端点探测"
+    : "无端点可探测";
+  const kpi = (id, text, { state = "", title = "" } = {}) => {
     const el = $(id);
-    if (el) el.textContent = text;
+    if (!el) return;
+    el.textContent = text;
+    if (state) el.dataset.state = state;
+    else delete el.dataset.state;
+    el.title = title;
   };
-  set("trend-api", fmtPct(last.api_ok_pct));
-  set("trend-gpu-sm", fmtPct(last.gpu_sm_util_pct));
-  set("trend-gpu-mem", fmtPct(last.gpu_mem_util_pct));
-  set("trend-gpu-alloc", fmtPct(last.gpu_alloc_pct));
-  set("trend-nodes", fmtPct(last.nodes_online_pct));
-  set("trend-queue", last.queue_pending != null ? String(last.queue_pending) : "-");
+  kpi("trend-api", availability.apiTotal ? (last.api_ok_pct == null ? "待采样" : fmtPct(last.api_ok_pct)) : "无端点", {
+    state: last.api_ok_pct == null || availability.apiTotal === 0 ? "warn" : "",
+    title: availability.apiTotal
+      ? `${availability.summary.api_ok ?? 0}/${availability.apiTotal} 个推理端点可达`
+      : "当前没有推理端点；启动 Job 后再探测",
+  });
+  kpi("trend-gpu-sm", last.gpu_sm_util_pct == null ? (availability.staleCount ? "快照过期" : "待采样") : fmtPct(last.gpu_sm_util_pct), {
+    state: last.gpu_sm_util_pct == null ? "warn" : "",
+    title: availability.staleCount
+      ? `快照过期：${availability.staleNames.join("、")}`
+      : "nvidia-smi 实测 GPU 算力利用率",
+  });
+  kpi("trend-gpu-mem", last.gpu_mem_util_pct == null ? (availability.staleCount ? "快照过期" : "待采样") : fmtPct(last.gpu_mem_util_pct), {
+    state: last.gpu_mem_util_pct == null ? "warn" : "",
+    title: availability.staleCount
+      ? `快照过期：${availability.staleNames.join("、")}`
+      : "nvidia-smi 实测显存占用",
+  });
+  kpi("trend-gpu-alloc", last.gpu_alloc_pct == null ? (availability.staleCount ? "快照过期" : "待采样") : fmtPct(last.gpu_alloc_pct), {
+    state: last.gpu_alloc_pct == null ? "warn" : "",
+    title: "occupied 槽位占比（非算力利用率）",
+  });
+  kpi("trend-nodes", last.nodes_online_pct == null ? "待采样" : fmtPct(last.nodes_online_pct), {
+    state: last.nodes_online_pct == null ? "warn" : last.nodes_online_pct < 100 ? "warn" : "",
+    title: `${availability.summary.nodes_online ?? 0}/${availability.summary.nodes ?? 0} 个节点在线`,
+  });
+  kpi("trend-queue", last.queue_pending != null ? String(last.queue_pending) : "待采样", {
+    state: last.queue_pending == null ? "warn" : Number(last.queue_pending) > 0 ? "warn" : "",
+    title: "排队等待调度的任务数",
+  });
   const pctDomain = { min: 0, max: 100 };
   paintSpark(
     "chart-api",
     points.map((p) => p.api_ok_pct),
-    { domain: pctDomain }
+    { domain: pctDomain, emptyText: apiEmpty }
   );
   paintSpark(
     "chart-gpu-sm",
     points.map((p) => p.gpu_sm_util_pct),
-    { domain: pctDomain }
+    { domain: pctDomain, emptyText: gpuEmpty }
   );
   paintSpark(
     "chart-gpu-mem",
     points.map((p) => p.gpu_mem_util_pct),
-    { domain: pctDomain }
+    { domain: pctDomain, emptyText: gpuEmpty }
   );
   paintSpark(
     "chart-gpu-mix",
@@ -6181,12 +6267,13 @@ function renderTrends(payload) {
       domain: pctDomain,
       altValues: points.map((p) => p.gpu_sm_util_pct),
       altDomain: pctDomain,
+      emptyText: `槽位 / 算力：${gpuEmpty}`,
     }
   );
   paintSpark(
     "chart-nodes",
     points.map((p) => p.nodes_online_pct),
-    { domain: pctDomain }
+    { domain: pctDomain, emptyText: "等待探活采样" }
   );
   const queueValues = points.map((p) => p.queue_pending).filter((v) => v != null);
   const queueMax = Math.max(1, ...queueValues.map((v) => Number(v) || 0));
@@ -6197,6 +6284,7 @@ function renderTrends(payload) {
       domain: { min: 0, max: queueMax },
       axisLabels: [String(queueMax), String(Math.round(queueMax / 2)), "0"],
       valueText: (v) => String(v),
+      emptyText: "等待队列采样",
     }
   );
 }
@@ -6615,15 +6703,16 @@ function appendAssistantStreamingMsg() {
   return el;
 }
 
-function appendAssistantStep(stepsEl, label, state) {
+function appendAssistantStep(stepsEl, label, state, actionId = "") {
   if (!stepsEl) return;
   stepsEl.hidden = false;
   const row = document.createElement("div");
   row.className = "assistant-step";
   row.dataset.state = state;
+  if (actionId) row.dataset.actionId = actionId;
   row.innerHTML = `<span class="assistant-step-icon" aria-hidden="true"></span>
     <span class="assistant-step-label">${escapeHtml(label || "工具")}</span>
-    <span class="assistant-step-meta">${state === "pending" ? "等待确认" : "已执行"}</span>`;
+    <span class="assistant-step-meta">${ASSISTANT_APPROVAL_STATUS[state] || "已执行"}</span>`;
   stepsEl.appendChild(row);
   scrollAssistantThread();
 }
@@ -6729,40 +6818,94 @@ function updateAssistantFabDot() {
   dot.setAttribute("aria-label", count ? `${count} 个操作待确认` : "");
 }
 
+const ASSISTANT_APPROVAL_STATUS = {
+  pending: "待确认",
+  armed: "再次确认",
+  running: "执行中",
+  done: "已执行",
+  failed: "失败",
+  rejected: "已拒绝",
+  expired: "已过期",
+};
+
+function assistantApprovalHint(state, risk, text) {
+  if (text) return text;
+  if (state === "armed") return "再点一次确认执行该破坏性操作";
+  if (state === "running") return "正在执行…";
+  return risk === "destructive" ? "破坏性操作：需要点两次确认" : "确认后才会执行";
+}
+
+function markAssistantStepForAction(actionId, state, text) {
+  if (!actionId) return;
+  const row = [...document.querySelectorAll(".assistant-step")].find(
+    (el) => el.dataset.actionId === actionId
+  );
+  if (!row) return;
+  row.dataset.state = state;
+  const meta = row.querySelector(".assistant-step-meta");
+  if (meta) meta.textContent = text || ASSISTANT_APPROVAL_STATUS[state] || "";
+}
+
 function markAssistantApproval(card, state, text) {
   if (!card) return;
   card.dataset.state = state;
+  card.setAttribute("aria-busy", state === "running" ? "true" : "false");
   const allow = card.querySelector("[data-approval-allow]");
   const reject = card.querySelector("[data-approval-reject]");
   const hint = card.querySelector(".assistant-approval-hint");
+  const status = card.querySelector(".assistant-approval-status");
+  if (status) {
+    status.dataset.state = state;
+    status.textContent = ASSISTANT_APPROVAL_STATUS[state] || "";
+  }
+  const actionId = card.dataset.actionId;
+  markAssistantStepForAction(actionId, state, state === "running" ? "执行中" : "");
   if (state === "running") {
     if (allow) allow.disabled = true;
     if (reject) reject.disabled = true;
-    if (hint) hint.textContent = "正在执行…";
+    if (hint) hint.textContent = assistantApprovalHint(state, card.dataset.risk, text);
     return;
   }
   if (state === "pending" || state === "armed") {
     if (allow) {
       allow.disabled = false;
-      if (state === "pending" && card.dataset.risk === "destructive") allow.textContent = "允许…";
+      allow.textContent =
+        state === "armed" ? "再次点击执行" : card.dataset.risk === "destructive" ? "允许…" : "允许";
     }
     if (reject) reject.disabled = false;
+    if (hint) hint.textContent = assistantApprovalHint(state, card.dataset.risk, text);
     return;
   }
   if (["done", "failed", "rejected", "expired"].includes(state)) {
     allow?.remove();
     reject?.remove();
     if (hint) {
-      hint.textContent =
-        text ||
-        {
-          done: "已执行",
-          failed: "执行失败",
-          rejected: "已拒绝，未执行",
-          expired: "确认卡已过期",
-        }[state] ||
-        "";
+      hint.textContent = assistantApprovalHint(state, card.dataset.risk, text);
     }
+  }
+}
+
+function retireAssistantApproval(card) {
+  if (!card || !card.isConnected) return;
+  card.classList.add("is-retiring");
+  setTimeout(() => card.remove(), 180);
+}
+
+function setAssistantApprovalsBusy(busy) {
+  document.querySelectorAll(".assistant-approval").forEach((card) => {
+    const active = ["pending", "armed"].includes(card.dataset.state);
+    card.querySelectorAll("button").forEach((btn) => {
+      btn.disabled = busy ? true : !active;
+    });
+  });
+}
+
+function assistantActionSignature(row) {
+  const args = row?.args || row?.display_args || {};
+  try {
+    return `${row?.tool || ""}|${JSON.stringify(args)}`;
+  } catch (_) {
+    return `${row?.tool || ""}|`;
   }
 }
 
@@ -6778,11 +6921,13 @@ function assistantApprovalCard(row) {
   card.dataset.risk = risk;
   card.dataset.state = "pending";
   card.dataset.actionId = row.id;
+  card.dataset.signature = assistantActionSignature(row);
   card.innerHTML = `
     <div class="assistant-approval-h">
       <span class="assistant-approval-icon" aria-hidden="true"></span>
       <strong class="assistant-approval-title">${escapeHtml(row.label || row.tool || "操作")}</strong>
       <span class="chip chip--${assistantRiskTone(risk)}">${escapeHtml(assistantRiskLabel(risk))}</span>
+      <span class="assistant-approval-status" data-state="pending">待确认</span>
     </div>
     <p class="assistant-approval-summary">${escapeHtml(row.summary || "")}</p>
     ${target ? `<p class="assistant-approval-meta">${escapeHtml(target)}</p>` : ""}
@@ -6799,11 +6944,7 @@ function assistantApprovalCard(row) {
   card.querySelector("[data-approval-allow]")?.addEventListener("click", () => {
     if (card.dataset.state === "running") return;
     if (risk === "destructive" && card.dataset.state !== "armed") {
-      card.dataset.state = "armed";
-      const allow = card.querySelector("[data-approval-allow]");
-      const hint = card.querySelector(".assistant-approval-hint");
-      if (allow) allow.textContent = "再次点击执行";
-      if (hint) hint.textContent = "再点一次确认执行该破坏性操作";
+      markAssistantApproval(card, "armed");
       scrollAssistantThread(true);
       return;
     }
@@ -6819,16 +6960,29 @@ function syncAssistantPending(pending) {
   const keep = new Set(items.map((x) => String(x.id)));
   thread.querySelectorAll(".assistant-approval").forEach((card) => {
     if (!["pending", "armed"].includes(card.dataset.state)) return;
-    if (!keep.has(card.dataset.actionId)) card.remove();
+    if (!keep.has(card.dataset.actionId)) {
+      markAssistantStepForAction(card.dataset.actionId, "expired", "已取消");
+      card.remove();
+    }
   });
   assistantState.pending = items;
+  const seen = new Set();
+  thread
+    .querySelectorAll('.assistant-approval[data-state="pending"], .assistant-approval[data-state="armed"]')
+    .forEach((card) => {
+      if (card.dataset.signature) seen.add(card.dataset.signature);
+    });
   let appended = false;
   for (const row of items) {
     if (thread.querySelector(`.assistant-approval[data-action-id="${row.id}"]`)) continue;
+    const signature = assistantActionSignature(row);
+    if (seen.has(signature)) continue;
+    seen.add(signature);
     thread.appendChild(assistantApprovalCard(row));
     appended = true;
   }
   updateAssistantFabDot();
+  setAssistantApprovalsBusy(Boolean(assistantState.executingAction));
   if (appended) scrollAssistantThread(true);
 }
 
@@ -6837,9 +6991,25 @@ function settleAssistantPending(actionId) {
   updateAssistantFabDot();
 }
 
+function appendAssistantNote(text) {
+  const thread = $("assistant-thread");
+  if (!thread || !text) return;
+  const el = document.createElement("p");
+  el.className = "assistant-note";
+  el.textContent = text;
+  thread.appendChild(el);
+  scrollAssistantThread(true);
+}
+
 async function rejectAssistantPending(row, card) {
+  if (assistantState.executingAction) {
+    toast("已有操作正在执行，请稍候", { tone: "warn" });
+    return;
+  }
   markAssistantApproval(card, "rejected", "已拒绝，未执行");
   settleAssistantPending(row.id);
+  retireAssistantApproval(card);
+  appendAssistantNote(`已拒绝「${row.label || row.tool || "操作"}」，未执行。`);
   try {
     if (assistantState.conversationId) {
       await api("/api/assistant/execute", {
@@ -6896,11 +7066,17 @@ function formatAssistantResult(data) {
   }
   const msg = merged.message || merged.detail || merged.error;
   if (msg) chunks.push(`<p>${escapeHtml(String(msg))}</p>`);
-  const pairs = ["job", "node", "nodes", "gpus", "status", "count", "ok"]
+  const pairs = ["job", "node", "nodes", "gpus", "status", "count", "ok", "fresh", "stale", "failed"]
     .filter((key) => merged[key] !== undefined && merged[key] !== null)
+    .filter((key) => !(key === "ok" && msg))
     .map((key) => {
       const value = merged[key];
-      return `${key}=${Array.isArray(value) ? value.join(",") : value}`;
+      const text = Array.isArray(value)
+        ? value
+            .map((item) => (item && typeof item === "object" ? item.node || JSON.stringify(item) : String(item)))
+            .join(",")
+        : value;
+      return `${key}=${text}`;
     });
   if (pairs.length) chunks.push(`<p class="meta">${escapeHtml(pairs.join(" · "))}</p>`);
   const stdout = String(rawResult.stdout || "").trim();
@@ -6923,30 +7099,55 @@ function formatAssistantResult(data) {
   return chunks.join("");
 }
 
+function formatAssistantDuration(ms) {
+  const value = Math.max(0, Number(ms) || 0);
+  if (value < 1000) return `${Math.round(value)}ms`;
+  if (value < 10000) return `${(value / 1000).toFixed(1)}s`;
+  return `${Math.round(value / 1000)}s`;
+}
+
 function appendAssistantRun(card, row) {
   const thread = $("assistant-thread");
   if (!thread || !card) return null;
+  const target = assistantTargetText(row);
+  const args = row?.display_args || row?.args || {};
+  const hasArgs = args && typeof args === "object" && Object.keys(args).length > 0;
   const run = document.createElement("div");
   run.className = "assistant-run";
   run.dataset.state = "running";
+  run.dataset.startedAt = String(Date.now());
   run.innerHTML = `
     <div class="assistant-run-h">
       <span class="assistant-run-icon" aria-hidden="true"></span>
       <strong>${escapeHtml(row.label || row.tool || "操作")}</strong>
       <span class="assistant-run-status">执行中…</span>
     </div>
+    ${target ? `<p class="assistant-run-target">${escapeHtml(target)}</p>` : ""}
+    ${hasArgs ? `<details class="assistant-run-output"><summary>参数</summary><pre>${escapeHtml(JSON.stringify(args, null, 2))}</pre></details>` : ""}
     <div class="assistant-run-body"><span class="assistant-thinking"><i></i><i></i><i></i></span></div>`;
   card.insertAdjacentElement("afterend", run);
+  const startedAt = Number(run.dataset.startedAt);
+  const status = run.querySelector(".assistant-run-status");
+  run._assistantTimer = setInterval(() => {
+    if (run.dataset.state !== "running" || !status) return;
+    status.textContent = `执行中 · ${formatAssistantDuration(Date.now() - startedAt)}`;
+  }, 1000);
   scrollAssistantThread(true);
   return run;
 }
 
 function finishAssistantRun(run, data, err) {
   if (!run) return;
+  if (run._assistantTimer) {
+    clearInterval(run._assistantTimer);
+    run._assistantTimer = null;
+  }
   const ok = Boolean(data && data.ok);
-  run.dataset.state = err ? "failed" : ok ? "done" : "failed";
+  const failed = Boolean(err) || !ok;
+  run.dataset.state = failed ? "failed" : "done";
+  const elapsed = formatAssistantDuration(Date.now() - Number(run.dataset.startedAt || Date.now()));
   const status = run.querySelector(".assistant-run-status");
-  if (status) status.textContent = err ? "失败" : ok ? "完成" : "失败";
+  if (status) status.textContent = `${failed ? "失败" : "完成"} · ${elapsed}`;
   const body = run.querySelector(".assistant-run-body");
   if (body) {
     const html = data ? formatAssistantResult(data) : "";
@@ -6969,6 +7170,7 @@ async function runAssistantPending(row, card) {
   assistantState.executingAction = row.id;
   const destructive = row.risk === "destructive" || row.confirm_level === "confirm_twice";
   markAssistantApproval(card, "running");
+  setAssistantApprovalsBusy(true);
   const run = appendAssistantRun(card, row);
   const sendBtn = $("assistant-send");
   if (sendBtn) sendBtn.disabled = true;
@@ -6988,6 +7190,7 @@ async function runAssistantPending(row, card) {
     if (data.already) {
       markAssistantApproval(card, "done", "此前已执行");
       finishAssistantRun(run, { ok: true, reply: "该操作此前已经执行过。" });
+      retireAssistantApproval(card);
       appendAssistantMsg("bot", data.reply || "该操作此前已经执行过。", { markdown: true });
       syncAssistantPending(data.pending_actions || []);
       await refresh(false, { light: true });
@@ -6995,6 +7198,7 @@ async function runAssistantPending(row, card) {
     }
     markAssistantApproval(card, data.ok ? "done" : "failed", data.ok ? "已执行" : "执行失败");
     finishAssistantRun(run, data);
+    retireAssistantApproval(card);
     const reply = data.reply || (data.ok ? "操作已执行。" : "执行失败。");
     appendAssistantMsg("bot", reply, { markdown: true });
     assistantState.messages.push({ role: "assistant", content: reply });
@@ -7014,6 +7218,7 @@ async function runAssistantPending(row, card) {
       finishAssistantRun(run, null, {
         message: expired ? "确认卡已过期，请重新提问。" : "该操作已经执行过。",
       });
+      retireAssistantApproval(card);
       await refresh(false, { light: true }).catch(() => {});
     } else {
       markAssistantApproval(card, "pending");
@@ -7026,6 +7231,7 @@ async function runAssistantPending(row, card) {
     assistantState.busy = false;
     assistantState.executingAction = null;
     if (sendBtn) sendBtn.disabled = false;
+    setAssistantApprovalsBusy(false);
     updateAssistantFabDot();
   }
 }
@@ -7405,7 +7611,7 @@ async function sendAssistant(text) {
       } else if (event === "tool") {
         const label = data.label || data.tool || "工具";
         const state = data.status === "deferred" ? "pending" : "done";
-        appendAssistantStep(bubbleSteps, label, state);
+        appendAssistantStep(bubbleSteps, label, state, data.action_id || "");
       } else if (event === "done") {
         donePayload = data;
       } else if (event === "error") {

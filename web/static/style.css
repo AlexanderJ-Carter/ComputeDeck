@@ -4655,6 +4655,26 @@ body {
   font-size: 11px;
 }
 
+.trend-chart svg .sample {
+  fill: var(--muted);
+  font-size: 9px;
+  opacity: 0.75;
+}
+
+.trend-chart svg .dot {
+  fill: var(--accent);
+  stroke: var(--panel);
+  stroke-width: 1.2;
+}
+
+.trend-chart svg .dot.alt {
+  fill: var(--muted);
+}
+
+.trend-kpis strong[data-state="warn"] {
+  color: var(--warn);
+}
+
 .assistant-form {
   grid-template-columns: minmax(0, 1fr) auto auto;
 }
@@ -5718,10 +5738,30 @@ a[aria-disabled="true"]:hover {
   content: "✓";
 }
 
-.assistant-step[data-state="pending"] .assistant-step-icon {
+.assistant-step[data-state="pending"] .assistant-step-icon,
+.assistant-step[data-state="armed"] .assistant-step-icon {
   border-color: color-mix(in srgb, var(--warn) 55%, var(--line));
   background: color-mix(in srgb, var(--warn) 18%, transparent);
   color: var(--warn);
+}
+
+.assistant-step[data-state="running"] .assistant-step-icon {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  border-top-color: transparent;
+  animation: assistant-spin 0.8s linear infinite;
+}
+
+.assistant-step[data-state="failed"] .assistant-step-icon,
+.assistant-step[data-state="expired"] .assistant-step-icon,
+.assistant-step[data-state="rejected"] .assistant-step-icon {
+  border-color: color-mix(in srgb, var(--bad) 55%, var(--line));
+  color: var(--bad);
+}
+
+.assistant-step[data-state="failed"] .assistant-step-icon::after,
+.assistant-step[data-state="expired"] .assistant-step-icon::after,
+.assistant-step[data-state="rejected"] .assistant-step-icon::after {
+  content: "×";
 }
 
 .assistant-step[data-state="pending"] .assistant-step-icon::after {
@@ -5811,6 +5851,56 @@ a[aria-disabled="true"]:hover {
 .assistant-approval-h .chip {
   margin-left: auto;
   flex: 0 0 auto;
+}
+
+.assistant-approval-status {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.assistant-approval-status[data-state="running"] {
+  color: var(--accent);
+}
+
+.assistant-approval-status[data-state="done"] {
+  color: var(--ok);
+}
+
+.assistant-approval-status[data-state="failed"],
+.assistant-approval-status[data-state="rejected"],
+.assistant-approval-status[data-state="expired"] {
+  color: var(--bad);
+}
+
+.assistant-approval[data-state="running"] .assistant-approval-icon {
+  border: 1px solid color-mix(in srgb, var(--accent) 60%, var(--line));
+  border-top-color: transparent;
+  background: transparent;
+  color: transparent;
+  animation: assistant-spin 0.8s linear infinite;
+}
+
+.assistant-approval[data-state="running"] .assistant-approval-icon::after {
+  content: "";
+}
+
+.assistant-approval[data-state="running"] .assistant-approval-foot .btn-row {
+  visibility: hidden;
+}
+
+.assistant-approval.is-retiring {
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.assistant-note {
+  margin: 4px 0 0 29px;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .assistant-approval-summary {
@@ -5945,6 +6035,13 @@ a[aria-disabled="true"]:hover {
   color: var(--muted);
   font-size: 10.5px;
   font-family: var(--mono);
+}
+
+.assistant-run-target {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
 }
 
 .assistant-run-body {

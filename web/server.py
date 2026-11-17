@@ -3577,9 +3577,32 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/resources/refresh":
             with _action_lock:
                 result = run_cli(["gpu", "refresh", "--quiet"], timeout=180)
+            health = _read_json(RESOURCES_HEALTH_FILE, {})
+            fresh = health.get("ok") or []
+            stale = health.get("stale") or []
+            failed = health.get("failed") or []
+            ok = result["rc"] == 0 and not stale and not failed
+            attempted = health.get("attempted") or []
+            if ok:
+                message = f"已刷新 {len(fresh)}/{len(attempted)} 个节点 GPU 快照"
+            else:
+                parts = []
+                if stale:
+                    parts.append(f"{len(stale)} 个节点快照仍过期（{', '.join(str(x.get('node') if isinstance(x, dict) else x) for x in stale)}）")
+                if failed:
+                    parts.append(f"{len(failed)} 个节点未采集（{', '.join(str(x) for x in failed)}）")
+                message = f"刷新 {len(fresh)}/{len(attempted)} 个节点；" + "；".join(parts)
             self._json(
                 200 if result["rc"] == 0 else 500,
-                {"result": result, "overview": build_overview()},
+                {
+                    "ok": ok,
+                    "message": message,
+                    "fresh": fresh,
+                    "stale": stale,
+                    "failed": failed,
+                    "result": result,
+                    "overview": build_overview(),
+                },
             )
             return
 
