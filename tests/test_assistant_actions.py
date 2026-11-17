@@ -272,6 +272,42 @@ class AssistantStreamTests(unittest.TestCase):
         self.assertEqual(state["pending_full"][0]["tool"], "gc_deploy")
 
 
+class QuickActionTests(unittest.TestCase):
+    def test_recommendations_follow_cluster_state(self) -> None:
+        acts = assistant_chat.quick_actions(
+            context={
+                "overview": {
+                    "summary": {
+                        "offline_nodes": ["a", "b"],
+                        "queue_pending": 2,
+                        "gpu_sm_util_pct": 80,
+                        "stale_nodes": [],
+                    },
+                    "ingress": {"edge": {"running": False}},
+                },
+                "jobs": [{"name": "vllm"}],
+            }
+        )
+        ids = [a["id"] for a in acts]
+        self.assertIn("offline_fix", ids)
+        self.assertIn("queue_schedule", ids)
+        self.assertIn("gpu_load", ids)
+        self.assertIn("gateway_start", ids)
+        self.assertIn("deploy", ids)
+        self.assertLessEqual(len(acts), 7)
+
+    def test_no_jobs_recommends_install(self) -> None:
+        acts = assistant_chat.quick_actions(
+            context={
+                "overview": {"summary": {}, "ingress": {"edge": {"running": True}}},
+                "jobs": [],
+            }
+        )
+        ids = [a["id"] for a in acts]
+        self.assertIn("install_job", ids)
+        self.assertIn("gateway", ids)
+
+
 class SessionTests(unittest.TestCase):
     def test_pending_roundtrip_and_redaction(self) -> None:
         import tempfile

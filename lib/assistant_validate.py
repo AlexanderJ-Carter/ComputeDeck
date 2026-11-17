@@ -258,7 +258,7 @@ def validate_call(
         command = str(args.get("command") or "")
         if "\x00" in command:
             return _error("bad_args", "命令包含 NUL 字符", args)
-        destructive = True
+        destructive = risk_for_call(name, args) == "destructive"
 
     if name == "gc_procs" and action == "kill":
         if not args.get("all") and not args.get("pids") and not args.get("match"):

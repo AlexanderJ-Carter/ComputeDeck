@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 
-from assistant_tools import public_specs, risk_for_call, route_for, tool_names  # noqa: E402
+from assistant_tools import exec_command_risk, public_specs, risk_for_call, route_for, tool_names  # noqa: E402
 from assistant_validate import validate_call  # noqa: E402
 
 NODES = {"a": {"ansible_host": "10.0.0.1"}, "b": {"ansible_host": "10.0.0.2"}}
@@ -39,8 +39,41 @@ class RiskTests(unittest.TestCase):
         self.assertEqual(risk_for_call("gc_gateway", {"action": "stop"}), "write")
         self.assertEqual(risk_for_call("gc_liveness", {"action": "check"}), "read")
         self.assertEqual(risk_for_call("gc_free_node", {"node": "a"}), "destructive")
-        self.assertEqual(risk_for_call("gc_exec", {"command": "uptime", "node": "a"}), "destructive")
+        self.assertEqual(risk_for_call("gc_exec", {"command": "uptime", "node": "a"}), "read")
+        self.assertEqual(risk_for_call("gc_exec", {"command": "rm -rf /tmp/x", "node": "a"}), "destructive")
         self.assertEqual(risk_for_call("gc_exec_preset", {"node": "a", "preset": "nvidia-smi"}), "read")
+
+
+class ExecCommandRiskTests(unittest.TestCase):
+    def test_read_commands(self) -> None:
+        for cmd in [
+            "nvidia-smi",
+            "nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv",
+            "echo hello",
+            "ls -la /tmp",
+            "df -h",
+            "ps -ef",
+            "docker ps",
+            "systemctl status nginx",
+        ]:
+            self.assertEqual(exec_command_risk(cmd), "read", cmd)
+
+    def test_write_commands(self) -> None:
+        self.assertEqual(exec_command_risk("mkdir -p /tmp/x"), "write")
+        self.assertEqual(exec_command_risk("sed -i 's/a/b/' /tmp/f"), "write")
+        self.assertEqual(exec_command_risk("frobnicate --do-stuff"), "write")
+
+    def test_destructive_commands(self) -> None:
+        for cmd in [
+            "rm -rf /tmp/x",
+            "kill -9 1234",
+            "reboot",
+            "python3 -c 'print(1)'",
+            "echo x; rm -rf /tmp/x",
+            "cat /etc/hosts > /tmp/x",
+            "docker rm -f abc",
+        ]:
+            self.assertEqual(exec_command_risk(cmd), "destructive", cmd)
 
 
 class RouteTests(unittest.TestCase):
@@ -133,6 +166,36 @@ class ValidationTests(unittest.TestCase):
         )
         self.assertFalse(out["ok"])
         self.assertEqual(out["error"], "bad_preset")
+
+    def test_gc_exec_confirmation_follows_command_risk(self) -> None:
+        read = validate_call(
+            "gc_exec",
+            {"node": "a", "command": "nvidia-smi"},
+            nodes=NODES,
+            jobs=JOBS,
+            liveness_view=LIVE,
+        )
+        self.assertTrue(read["ok"])
+        self.assertEqual(read["risk"], "read")
+        self.assertEqual(read["confirm_level"], "read")
+        write = validate_call(
+            "gc_exec",
+            {"node": "a", "command": "mkdir -p /tmp/x"},
+            nodes=NODES,
+            jobs=JOBS,
+            liveness_view=LIVE,
+        )
+        self.assertTrue(write["ok"])
+        self.assertEqual(write["confirm_level"], "confirm")
+        danger = validate_call(
+            "gc_exec",
+            {"node": "a", "command": "rm -rf /tmp/x"},
+            nodes=NODES,
+            jobs=JOBS,
+            liveness_view=LIVE,
+        )
+        self.assertTrue(danger["ok"])
+        self.assertEqual(danger["confirm_level"], "confirm_twice")
 
     def test_exec_requires_single_node(self) -> None:
         out = validate_call(

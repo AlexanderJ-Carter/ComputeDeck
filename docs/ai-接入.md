@@ -177,7 +177,8 @@ UI 小助手：设置面板填 Base URL / 模型 / Key（`POST /api/assistant/co
 说明：
 
 - `gc_deploy` 的 `gpus` 可省略（读 `cluster.scheduling.unit_gpus`）；异主租约用 `force=true`。
-- `gc_exec_preset(node, preset)` 运行只读诊断（`nvidia-smi` / `gpu-util` / `gpu-procs` / `ports` 等），自动执行；任意命令仍用 `gc_exec` 并确认。
+- `gc_exec_preset(node, preset)` 运行只读诊断（`nvidia-smi` / `gpu-util` / `gpu-procs` / `ports` 等），自动执行。
+- `gc_exec` 按命令分级：`nvidia-smi / df / ps / ls / cat / grep / ss / docker ps / systemctl status` 等只读命令自动执行；`mkdir / sed -i / cp` 等修改类命令一次确认；`rm / kill / reboot / python -c / 重定向 / 管道` 等危险命令二次确认。
 - `gc_models(action="pull", name="org/model")` 可拉权重；可选 `register`。
 - `gc_node(action="render")` 替代昔日 `gc_cli(["node","render"])`。
 

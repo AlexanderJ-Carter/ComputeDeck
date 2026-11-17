@@ -706,13 +706,30 @@ def assistant_runners(jobs_list: list[dict]) -> dict:
             return {"ok": False, "error": "node and preset required"}
         result = run_cli(["exec", "--quiet", "--node", node, "--", meta["command"]], timeout=180)
         results = collect_exec_results()
-        ok = bool([row for row in results if row.get("ok")])
+        ok = bool([row for row in results if exec_row_ok(row)])
         return {
             "ok": ok,
             "node": node,
             "preset": preset,
             "label": meta.get("label"),
             "command": meta.get("command"),
+            "results": results,
+            "result": result,
+        }
+
+    def _exec_command(args: dict) -> Any:
+        node = str((args or {}).get("node") or "").strip()
+        command = str((args or {}).get("command") or "").strip()
+        if not node or not command:
+            return {"ok": False, "error": "node and command required"}
+        result = run_cli(["exec", "--quiet", "--node", node, "--", command], timeout=300)
+        results = collect_exec_results()
+        ok = bool([row for row in results if exec_row_ok(row)])
+        return {
+            "ok": ok,
+            "error": None if ok else exec_failure_detail({"results": results}, result),
+            "node": node,
+            "command": command,
             "results": results,
             "result": result,
         }
@@ -764,6 +781,7 @@ def assistant_runners(jobs_list: list[dict]) -> dict:
         "gc_get_jobs": lambda _args: {"jobs": jobs_list, "default_job": default_job_name()},
         "gc_job_logs": _logs,
         "gc_exec_preset": _exec_preset,
+        "gc_exec": _exec_command,
         "gc_api_catalog": lambda _args: catalog_payload(),
         "gc_get_config": _config,
         "gc_queue": _queue,
@@ -775,6 +793,42 @@ def assistant_runners(jobs_list: list[dict]) -> dict:
         "gc_notices": _notices,
         "gc_remote": _remote,
     }
+
+
+def exec_row_ok(row: Any) -> bool:
+    """exec 结果行可能有 ok 或仅 rc（CLI 写出），两种都认。"""
+    if not isinstance(row, dict):
+        return False
+    if "ok" in row:
+        return bool(row.get("ok"))
+    try:
+        return int(row.get("rc")) == 0
+    except (TypeError, ValueError):
+        return False
+
+
+def exec_failure_detail(data: Any, result: Any = None) -> str:
+    """把 exec / 动作失败转成可读原因，避免回复里出现 None。"""
+    if isinstance(data, dict):
+        err = data.get("error")
+        if err:
+            return str(err)
+        rows = data.get("results")
+        if isinstance(rows, list):
+            for row in rows:
+                if not exec_row_ok(row):
+                    node = row.get("node") or "节点"
+                    rc = row.get("rc")
+                    detail = row.get("stderr") or row.get("stdout") or ""
+                    return f"{node} 执行失败（rc={rc}）{(': ' + str(detail)[:200]) if detail else ''}"
+        msg = data.get("message")
+        if msg:
+            return str(msg)
+    if isinstance(result, dict):
+        err = result.get("error") or result.get("stderr")
+        if err:
+            return str(err)[:300]
+    return "执行失败，但未返回明确错误；请查看执行输出。"
 
 
 def compact_action_result(data: Any) -> Any:
@@ -2181,7 +2235,12 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/assistant/status":
             cluster = _read_json(cluster_file(), {})
-            self._json(200, assistant_status(cluster))
+            overview = build_overview(light=True)
+            jobs = overview.get("jobs") if isinstance(overview, dict) else []
+            self._json(
+                200,
+                assistant_status(cluster, context={"overview": overview, "jobs": jobs or []}),
+            )
             return
 
         if path == "/api/assistant/models":
@@ -2951,7 +3010,7 @@ class Handler(BaseHTTPRequestHandler):
                     or (
                         "操作已执行。"
                         if executed_ok
-                        else f"操作失败：{(data or {}).get('error') if isinstance(data, dict) else result.get('error')}"
+                        else f"操作失败：{exec_failure_detail(data, result)}"
                     ),
                     "pending_actions": active or follow_pending,
                 },
@@ -3596,11 +3655,12 @@ class Handler(BaseHTTPRequestHandler):
                 results = collect_exec_results()
             # 部分 / 全部主机失败仍返回结构化结果；HTTP 200 表示“请求已处理”，
             # 失败细节交给 ok / results / result 字段，避免离线节点把整页打成 500。
-            successes = [row for row in results if row.get("ok")]
+            successes = [row for row in results if exec_row_ok(row)]
             self._json(
                 200,
                 {
                     "ok": bool(successes),
+                    "error": None if successes else exec_failure_detail({"results": results}, result),
                     "command": command,
                     "results": results,
                     "result": result,
@@ -3625,11 +3685,12 @@ class Handler(BaseHTTPRequestHandler):
             with _action_lock:
                 result = run_cli(args, timeout=600)
                 results = collect_exec_results()
-            successes = [row for row in results if row.get("ok")]
+            successes = [row for row in results if exec_row_ok(row)]
             self._json(
                 200,
                 {
                     "ok": bool(successes),
+                    "error": None if successes else exec_failure_detail({"results": results}, result),
                     "command": command,
                     "results": results,
                     "result": result,

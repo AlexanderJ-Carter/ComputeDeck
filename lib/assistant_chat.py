@@ -167,8 +167,8 @@ def load_assistant_config(cluster: dict[str, Any] | None = None) -> dict[str, An
     }
 
 
-def quick_actions(*, ready: bool = True) -> list[QuickAction]:
-    """开场快捷动作；未就绪时引导去设置。"""
+def quick_actions(*, ready: bool = True, context: dict[str, Any] | None = None) -> list[QuickAction]:
+    """开场快捷动作：按当前集群状态推荐，而不是固定七连。"""
     if not ready:
         return [
             {
@@ -178,53 +178,120 @@ def quick_actions(*, ready: bool = True) -> list[QuickAction]:
                 "hint": "打开设置",
             }
         ]
-    return [
+    ctx = context or {}
+    overview = ctx.get("overview") or ctx.get("overview_light") or {}
+    summary = overview.get("summary") if isinstance(overview, dict) else {}
+    summary = summary if isinstance(summary, dict) else {}
+    offline = summary.get("offline_nodes") or []
+    stale = summary.get("stale_nodes") or []
+    jobs = ctx.get("jobs") or []
+    ingress = overview.get("ingress") if isinstance(overview, dict) else None
+    edge = (ingress or {}).get("edge") if isinstance(ingress, dict) else {}
+    edge_running = bool((edge or {}).get("running"))
+
+    actions: list[QuickAction] = []
+    if offline:
+        actions.append(
+            {
+                "id": "offline_fix",
+                "label": f"处理 {len(offline)} 台离线节点",
+                "prompt": (
+                    f"这些节点离线：{', '.join(offline)}。先说明影响和恢复步骤；"
+                    "如果短时间无法恢复，提出隔离建议，等我确认再执行。"
+                ),
+                "hint": "离线诊断",
+            }
+        )
+    actions.append(
         {
             "id": "overview",
             "label": "集群体检",
-            "prompt": "巡检一下集群：有哪些节点离线或数据过期？队列和入口是否正常？给出下一步建议。",
-            "hint": "读 overview + liveness",
-        },
-        {
-            "id": "offline",
-            "label": "离线节点怎么办",
-            "prompt": "有哪些节点离线？请说明影响，并给出恢复步骤；需要隔离或删除的请直接发起操作等我确认。",
-            "hint": "探活 + 建议操作",
-        },
-        {
-            "id": "doctor",
-            "label": "跑一次自检",
-            "prompt": "请运行 doctor / diagnose，总结有没有配置问题；能安全修复的直接给出修复操作。",
-            "hint": "doctor + diagnose",
-        },
-        {
-            "id": "queue",
-            "label": "看队列与租约",
-            "prompt": "查看队列和租约，有没有卡住或漂移的任务？需要清理的请发起操作等我确认。",
-            "hint": "queue + lease",
-        },
-        {
-            "id": "deploy",
-            "label": "部署默认 Job",
-            "prompt": "帮我部署默认 Job。先检查空闲 GPU 和目标节点，给出方案后发起部署（等我确认再执行）。",
-            "hint": "先规划再确认",
-        },
+            "prompt": "巡检一下集群：在线/离线、GPU 实际负载、队列和入口是否正常？只给最重要的结论和下一步。",
+            "hint": "overview + liveness",
+        }
+    )
+    if stale:
+        actions.append(
+            {
+                "id": "refresh_stale",
+                "label": "刷新过期快照",
+                "prompt": f"这些节点快照过期：{', '.join(stale)}。直接刷新 GPU 快照并告诉我结果。",
+                "hint": "gpu refresh",
+            }
+        )
+    if summary.get("queue_pending"):
+        actions.append(
+            {
+                "id": "queue_schedule",
+                "label": f"调度队列（{summary.get('queue_pending')}）",
+                "prompt": "队列里有 pending 任务，先检查空闲 GPU 和节点状态，再提出调度方案，等我确认。",
+                "hint": "queue",
+            }
+        )
+    if summary.get("gpu_sm_util_pct") is not None:
+        actions.append(
+            {
+                "id": "gpu_load",
+                "label": "分析 GPU 负载",
+                "prompt": "结合槽位占用、实际算力/显存利用率和每节点数据，判断 GPU 是否真的忙，并给出异常点。",
+                "hint": "算力 / 显存",
+            }
+        )
+    if jobs:
+        actions.append(
+            {
+                "id": "deploy",
+                "label": "部署默认 Job",
+                "prompt": "帮我部署默认 Job。先检查空闲 GPU 和目标节点，给出方案后发起部署，等我确认。",
+                "hint": "先规划再确认",
+            }
+        )
+    else:
+        actions.append(
+            {
+                "id": "install_job",
+                "label": "安装任务模板",
+                "prompt": "当前没有已安装 Job。推荐一个最小可用的任务模板并安装，等我确认。",
+                "hint": "jobs install",
+            }
+        )
+    if edge_running:
+        actions.append(
+            {
+                "id": "gateway",
+                "label": "检查入口与上游",
+                "prompt": "检查 Edge / LiteLLM 状态和上游健康；异常时给出启动或重渲染操作。",
+                "hint": "gateway",
+            }
+        )
+    else:
+        actions.append(
+            {
+                "id": "gateway_start",
+                "label": "启动入口",
+                "prompt": "Edge 当前未运行。确认配置后启动 Edge，并告诉我对外地址和健康检查结果。",
+                "hint": "gateway start",
+            }
+        )
+    actions.append(
         {
             "id": "free",
             "label": "腾空节点",
-            "prompt": "我想腾空一个节点。请先列出各节点占用情况，问我选哪个，再发起腾空（破坏性操作需我确认）。",
+            "prompt": "我想腾空一个节点。先列出各节点占用情况，问我选哪个，再发起腾空（破坏性操作需二次确认）。",
             "hint": "腾空流程",
-        },
-        {
-            "id": "gateway",
-            "label": "检查入口",
-            "prompt": "检查统一入口 Edge / LiteLLM 的状态和健康上游；异常时给出启动或重渲染操作。",
-            "hint": "gateway",
-        },
-    ]
+        }
+    )
+    seen: set[str] = set()
+    out: list[QuickAction] = []
+    for action in actions:
+        if action["id"] in seen:
+            continue
+        seen.add(action["id"])
+        out.append(action)
+    return out[:7]
 
 
-def assistant_status(cluster: dict[str, Any] | None = None) -> dict[str, Any]:
+def assistant_status(cluster: dict[str, Any] | None = None, *, context: dict[str, Any] | None = None) -> dict[str, Any]:
     """供 UI 展示助手是否可用。"""
     cfg = load_assistant_config(cluster)
     return {
@@ -252,7 +319,7 @@ def assistant_status(cluster: dict[str, Any] | None = None) -> dict[str, Any]:
             "拉取模型与对话由**控制面主机**访问 Base URL，不是浏览器本机。"
             "内网常见无法解析 api.openai.com：请填可达的兼容网关（含 /v1），或先点「连通探测」。"
         ),
-        "quick_actions": quick_actions(ready=cfg["ready"]),
+        "quick_actions": quick_actions(ready=cfg["ready"], context=context),
         "policy": policy_payload(),
         "setup_hint": None
         if cfg["ready"]
@@ -503,7 +570,10 @@ def _system_prompt(context: dict[str, Any], liveness_view: dict[str, Any] | None
         "7. 不要在回复里展示 action_id / conversation_id 等内部 ID；确认卡已经由界面展示，"
         "用「已生成确认卡，请确认后执行」即可。\n"
         "8. 只读诊断（nvidia-smi / GPU 利用率 / 进程 / 端口 / 磁盘 / 日志尾等）优先用 "
-        "gc_exec_preset，会自动执行且无需确认；只有它不支持的任意命令才用 gc_exec（需二次确认）。\n"
+        "gc_exec_preset，会自动执行且无需确认；简单只读命令也可用 gc_exec（自动执行）。"
+        "修改类命令用 gc_exec（一次确认）；rm / kill / reboot / python 等危险命令会二次确认。\n"
+        "9. 回答尽量短（3–6 行）；需要操作时只发起一个最合适的动作；目标不明确时只问一个关键问题，"
+        "不要连续罗列多种方案。只读结果直接给结论，不要请用户确认只读数据。\n"
         f"当前快照：{json.dumps(snap, ensure_ascii=False)}"
     )
 
@@ -912,6 +982,7 @@ def stream_chat(
                 "reply": reply,
                 "pending_actions": [_public_action(a) for a in pending_full],
                 "tool_traces": tool_traces,
+                "quick_actions": quick_actions(ready=True, context=context),
             },
         )
         return
@@ -922,7 +993,15 @@ def stream_chat(
     state["pending_full"] = pending_full
     state["reply"] = reply
     state["tool_traces"] = tool_traces
-    yield ("done", {"reply": reply, "pending_actions": [_public_action(a) for a in pending_full], "tool_traces": tool_traces})
+    yield (
+        "done",
+        {
+            "reply": reply,
+            "pending_actions": [_public_action(a) for a in pending_full],
+            "tool_traces": tool_traces,
+            "quick_actions": quick_actions(ready=True, context=context),
+        },
+    )
 
 
 def handle_chat(
@@ -1002,7 +1081,7 @@ def handle_chat(
                     "ok": True,
                     "mode": "llm",
                     "reply": reply,
-                    "quick_actions": quick_actions(ready=True),
+                    "quick_actions": quick_actions(ready=True, context=context),
                     "pending_actions": [_public_action(a) for a in pending_full],
                     "pending_actions_full": pending_full,
                     "tool_traces": tool_traces,
@@ -1077,7 +1156,7 @@ def handle_chat(
             "ok": True,
             "mode": "llm",
             "reply": "工具调用轮次过多，已停止。请缩小问题，或在看板直接操作。",
-            "quick_actions": quick_actions(ready=True),
+            "quick_actions": quick_actions(ready=True, context=context),
             "pending_actions": [_public_action(a) for a in pending_full],
             "pending_actions_full": pending_full,
             "tool_traces": tool_traces,
@@ -1095,7 +1174,7 @@ def handle_chat(
             "mode": "llm",
             "reply": f"{info['error']}。{info['hint']}",
             "warning": detail or None,
-            "quick_actions": quick_actions(ready=True),
+            "quick_actions": quick_actions(ready=True, context=context),
             "pending_actions": [],
             "pending_actions_full": [],
             "tool_traces": tool_traces,
@@ -1109,7 +1188,7 @@ def handle_chat(
             "error": "upstream_unavailable",
             "mode": "llm",
             "reply": f"{info['error']}。{info['hint']}",
-            "quick_actions": quick_actions(ready=True),
+            "quick_actions": quick_actions(ready=True, context=context),
             "pending_actions": [],
             "pending_actions_full": [],
             "tool_traces": tool_traces,

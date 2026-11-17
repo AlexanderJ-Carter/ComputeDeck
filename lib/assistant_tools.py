@@ -7,6 +7,9 @@
 from __future__ import annotations
 
 from typing import Any, Callable
+import os
+import re
+import shlex
 
 from exec_presets import EXEC_PRESETS
 
@@ -642,6 +645,76 @@ _SPECS: list[dict[str, Any]] = [
     ),
 ]
 
+
+_READ_COMMANDS = {
+    "nvidia-smi", "uptime", "df", "free", "ps", "pgrep", "ls", "cat", "head", "tail",
+    "grep", "wc", "sort", "uniq", "cut", "tr", "date", "uname", "hostname", "whoami",
+    "id", "nproc", "lscpu", "lspci", "lsblk", "ip", "ifconfig", "netstat", "ss",
+    "journalctl", "dmesg", "echo", "printf", "pwd", "which", "type", "stat", "file",
+    "md5sum", "sha256sum", "readlink", "du", "find", "sed", "awk", "watch",
+}
+_WRITE_COMMANDS = {
+    "cp", "mkdir", "touch", "chmod", "chown", "ln", "sed", "rsync", "scp", "pip",
+    "pip3", "apt", "apt-get", "yum", "dnf", "systemctl", "service", "docker",
+}
+_DESTRUCTIVE_COMMANDS = {
+    "rm", "rmdir", "mv", "dd", "mkfs", "reboot", "shutdown", "poweroff", "halt",
+    "kill", "pkill", "killall", "sudo", "su", "truncate", "tee", "mount", "umount",
+    "python", "python3", "bash", "sh", "zsh", "perl", "ruby", "node", "curl", "wget",
+}
+_UNSAFE_SHELL = re.compile(r"[;&|><`]|\$\(|\$\{|\n|\r")
+
+
+def exec_command_risk(command: str) -> Risk:
+    """给任意 shell 命令做保守分级。
+
+    - 只读白名单且无 shell 连接符 / 重定向 → ``read``（自动执行）
+    - 已知修改类命令 / 未知命令 → ``write``（一次确认）
+    - rm / kill / reboot / python -c / 管道重定向等 → ``destructive``（二次确认）
+    """
+    text = str(command or "").strip()
+    if not text:
+        return "destructive"
+    if _UNSAFE_SHELL.search(text):
+        return "destructive"
+    try:
+        parts = shlex.split(text)
+    except ValueError:
+        return "destructive"
+    if not parts:
+        return "destructive"
+    cmd = os.path.basename(parts[0])
+    args = parts[1:]
+    lowered = [str(x).lower() for x in args]
+    if cmd in {"python", "python3", "bash", "sh", "zsh", "perl", "ruby", "node"}:
+        return "destructive"
+    if cmd in {"rm", "rmdir", "mv", "dd", "mkfs", "reboot", "shutdown", "poweroff", "halt",
+               "kill", "pkill", "killall", "sudo", "su", "truncate", "tee", "mount", "umount"}:
+        return "destructive"
+    if cmd in {"docker"}:
+        if args and lowered[0] in {"ps", "images", "logs", "inspect", "stats", "version", "info"}:
+            return "read"
+        return "destructive"
+    if cmd in {"systemctl", "service"}:
+        if args and lowered[0] in {"status", "is-active", "is-enabled", "list-units", "list-unit-files", "show"}:
+            return "read"
+        return "destructive"
+    if cmd in {"curl", "wget"}:
+        if any(a in lowered for a in ("-x", "--request", "-d", "--data", "--data-raw", "-f", "--form", "-t", "--upload-file")):
+            return "destructive"
+        return "read"
+    if cmd == "find" and any(a in lowered for a in ("-delete", "-exec", "-execdir", "-ok")):
+        return "destructive"
+    if cmd == "sed" and any(a in lowered for a in ("-i", "--in-place")):
+        return "write"
+    if cmd in {"awk", "watch"} and ("system(" in text or "exec(" in text or "popen" in text):
+        return "destructive"
+    if cmd in _READ_COMMANDS:
+        return "read"
+    if cmd in _WRITE_COMMANDS:
+        return "write"
+    return "write"
+
 _SPEC_BY_NAME = {spec["name"]: spec for spec in _SPECS}
 
 
@@ -699,6 +772,8 @@ def risk_for_call(name: str, args: dict[str, Any] | None = None) -> Risk:
     # gc_liveness 的 check 也是只读探测
     if name == "gc_liveness" and action in {"status", "check", ""}:
         return "read"
+    if name == "gc_exec":
+        return exec_command_risk(str(args.get("command") or ""))
     return str(spec.get("risk") or "write")
 
 
