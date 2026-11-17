@@ -4449,6 +4449,7 @@ async function boot() {
                 : null;
       if (target == null || !configTabs.length) return;
       ev.preventDefault();
+      ev.stopPropagation();
       const next = configTabs[(target + configTabs.length) % configTabs.length];
       setConfigTab(next.dataset.tab, { updateHash: true, focus: true });
     });
@@ -5073,6 +5074,8 @@ async function boot() {
     }
     if (assistantState.open) return;
     if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
+      // 配置页签自己处理左右键，别让全局翻页再抢一次。
+      if (target && target.closest && target.closest("#config-tabs")) return;
       ev.preventDefault();
       const idx = Math.max(0, VIEW_ORDER.indexOf(state.view));
       const delta = ev.key === "ArrowRight" ? 1 : -1;
