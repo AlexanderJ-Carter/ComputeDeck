@@ -54,7 +54,7 @@
 | 单屏看板 | 健康评分、GPU 池、Edge / TLS / Gateway 状态 |
 | Job 插件 | JSON 描述启停；`jobs install --recommended` 一键装推理 / 训练 / Ray / Docker 模板 |
 | 路径异构 | `defaults.paths`、节点覆盖、`${paths.*}` |
-| 统一入口 | 内置 Edge LB（重试、冷却、least-conn），可挂 nginx / LiteLLM |
+| 统一入口 | 内置 Edge 为唯一节点 LB（重试、冷却）；nginx 为同层替代或 Web/TLS 前端；LiteLLM 为可选 OpenAI 层，与 Edge 共存时指向 Edge |
 | Agent | OpenAPI + `gc_*` MCP，与 CLI 同一能力面 |
 | 可靠性 | 状态 flock 原子写、watchdog、diagnose（含租约漂移提示） |
 

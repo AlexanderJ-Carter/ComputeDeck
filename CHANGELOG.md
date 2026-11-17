@@ -13,6 +13,18 @@
 
 ---
 
+## [1.0.0-beta.13] - 2026-11-17
+
+### Added
+
+- 统一入口分层：Edge 作为唯一节点 LB；`gateway.litellm_upstream=edge` 让 LiteLLM 只生成一个指向 Edge 的 deployment，不再重复选节点
+- `gateway.nginx_upstream=edge`：nginx 只做 Web/TLS 前端，单 upstream 指向 Edge；`nodes` 仍作为 Edge 的同层替代
+- 入口页显示分层说明与重复 LB 告警；`gateway status` 返回 `layering` 与 LiteLLM 实际上游
+- 启动 LiteLLM 时从 `cluster.api.api_key_file` 注入上游推理密钥环境变量
+- 新文档《入口分层与 nginx》：六种拓扑、nginx 四种用法、性能与 TLS 规则
+
+
+---
 ## [1.0.0-beta.12] - 2026-11-17
 
 ### Fixed
@@ -517,6 +529,7 @@ ComputeDeck **1.0 先导测试版**：控制面 / CLI / MCP / 展板已可日常
 4. 版本锚点见下方；具备远程后可改为 compare URL。
 
 [Unreleased]: #unreleased
+[1.0.0-beta.13]: #100-beta13---2026-11-17
 [1.0.0-beta.12]: #100-beta12---2026-11-17
 [1.0.0-beta.11]: #100-beta11---2026-11-17
 [1.0.0-beta.10]: #100-beta10---2026-11-17

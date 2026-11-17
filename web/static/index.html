@@ -484,13 +484,14 @@ gpu-control jobs install vllm-serve --name vllm</pre>
             </div>
           </div>
           <p class="meta" id="ingress-meta">加载中…</p>
-          <p class="meta">两层入口，别混用：<strong>Edge</strong> 把流量打到各节点推理端口；<strong>LiteLLM</strong> 是可选的
-            OpenAI 兼容层（带 Admin UI）。nginx 在 Edge 模式下不必装。</p>
+          <p class="meta">分层原则：<strong>节点 GPU 端口</strong>只是上游；<strong>Edge :18080</strong> 是唯一节点负载均衡/重试层；
+            <strong>LiteLLM :4000</strong> 是可选的 OpenAI 模型名 / 虚拟密钥 / 预算层，与 Edge 共存时应指向 Edge；nginx 仅用于 Web/TLS 反代或作为 Edge 的同层替代。</p>
+          <p class="meta ingress-layering" id="ingress-layering">入口分层：检测中…</p>
 
           <div class="ingress-duo" id="ingress-duo">
             <article class="ingress-card" id="edge-card">
               <header>
-                <h3>Edge · 集群反代</h3>
+                <h3>Edge · 节点负载均衡（唯一节点 LB）</h3>
                 <span class="chip" id="edge-card-state">-</span>
               </header>
               <p class="meta">内置反向代理（不是 nginx 默认页）。浏览器打开根路径是落地页；业务请走
@@ -509,12 +510,13 @@ gpu-control jobs install vllm-serve --name vllm</pre>
 
             <article class="ingress-card" id="litellm-card">
               <header>
-                <h3>LiteLLM · OpenAI 层（可选）</h3>
+                <h3>LiteLLM · OpenAI 层（可选，经 Edge）</h3>
                 <span class="chip" id="litellm-card-state">-</span>
               </header>
               <p class="meta">统一 <code>model</code> 名与官方 Admin。Admin 用户名随意（如
                 <code>admin</code>），密码 = Master Key。虚拟密钥/预算仍在 Admin 内管理。</p>
               <div class="kv"><b>地址</b> <a id="litellm-card-url" href="#" target="_blank" rel="noopener">-</a></div>
+              <div class="kv"><b>上游</b> <span id="litellm-upstream">-</span></div>
               <div class="kv"><b>二进制</b> <code id="litellm-card-bin">-</code></div>
               <div class="kv"><b>Master Key</b> <span id="litellm-key-meta">未加载</span></div>
               <div class="btn-row" style="margin-bottom:8px">

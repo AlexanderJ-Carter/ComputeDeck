@@ -665,8 +665,39 @@ def status_payload() -> dict:
                 )
     healthy = all(c.get("ok") for c in companions if c.get("required"))
     kind = (ingress.get("kind") or "edge").lower()
+    litellm_upstream = str(gateway.get("litellm_upstream") or "nodes").strip().lower()
+    if litellm_upstream in {"ingress", "lb", "edge-lb"}:
+        litellm_upstream = "edge"
+    if litellm_upstream not in {"nodes", "edge"}:
+        litellm_upstream = "nodes"
+    edge_active = bool(edge_running or edge_port_open)
+    litellm_active = litellm_phase in {"running", "starting", "ready", "unmanaged"}
+    duplicate_node_lb = bool(edge_active and litellm_active and litellm_upstream == "nodes")
+    edge_url = f"http://127.0.0.1:{int(ingress.get('port') or 18080)}"
+    if litellm_upstream == "edge" and not edge_active:
+        layering_summary = "LiteLLM 配置为经 Edge，但 Edge 未运行"
+    elif duplicate_node_lb:
+        layering_summary = "Edge 与 LiteLLM 都在对节点做负载均衡（重复）"
+    elif edge_active:
+        layering_summary = "Edge 是唯一节点 LB；LiteLLM 为可选 OpenAI 层"
+    else:
+        layering_summary = "未检测到节点 LB（Edge 未运行）"
+    layering = {
+        "edge_active": edge_active,
+        "edge_url": edge_url,
+        "litellm_active": litellm_active,
+        "litellm_upstream": litellm_upstream,
+        "duplicate_node_lb": duplicate_node_lb,
+        "summary": layering_summary,
+        "recommendation": (
+            "建议 cluster.gateway.litellm_upstream=\"edge\"，由 Edge 统一选节点"
+            if duplicate_node_lb
+            else None
+        ),
+    }
     on_control = _on_control_host(cluster)
     return {
+        "layering": layering,
         "ok": healthy,
         "on_control_host": on_control,
         "ingress": ingress,
@@ -693,6 +724,8 @@ def status_payload() -> dict:
         },
         "litellm": {
             "running": litellm_phase == "running",
+            "upstream": litellm_upstream,
+            "edge_url": edge_url if litellm_upstream == "edge" else None,
             "available": litellm_listen_ok,
             "phase": litellm_phase,
             "listen_ok": litellm_listen_ok,
@@ -958,6 +991,19 @@ def _start_litellm(gateway: dict) -> dict:
     master_key = read_litellm_master_key()
     if master_key:
         env["LITELLM_MASTER_KEY"] = master_key
+    # LiteLLM model_list 用 os.environ/<auth_env> 引用上游推理密钥；启动时注入，
+    # 避免依赖操作者当前 shell 是否 export。
+    cluster_doc = _load_cluster()
+    api = cluster_doc.get("api") or {}
+    auth_env = str(api.get("auth_env") or "INFERENCE_API_KEY").strip() or "INFERENCE_API_KEY"
+    key_file = api.get("api_key_file")
+    if key_file and auth_env not in env:
+        key_path = Path(expand_path(str(key_file)))
+        if key_path.is_file():
+            try:
+                env[auth_env] = key_path.read_text(encoding="utf-8").strip()
+            except OSError:
+                pass
     mode = "binary"
     if litellm_bin:
         cmd = [litellm_bin, "--config", str(runtime), "--port", str(port), "--host", "0.0.0.0"]

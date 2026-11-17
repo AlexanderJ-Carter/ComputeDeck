@@ -3,12 +3,14 @@
 
 gpu-control 是**控制面**：库存、健康、配置片段；**不**代理推理流量。
 
-推荐分层：
+推荐分层（节点 LB 只保留一层）：
 
 1. Backends — 每 GPU HTTP 服务（Job 端点）
-2. Edge LB（可选）— nginx least_conn
-3. AI Gateway（可选）— OpenAI 兼容代理（LiteLLM 等）
+2. 节点 LB — 内置 Edge（唯一节点选择层）；nginx 仅作为同层替代或 Web/TLS 反代
+3. OpenAI 层（可选）— LiteLLM；与 Edge 共存时必须指向 Edge，不再直连节点
 4. Control — 本工具（仅渲染与探测）
+
+同一批节点只能有一层做负载均衡；重复时 ``topology.layering`` 会给出告警。
 
 业务路径与鉴权一律来自 ``cluster.api`` / ``cluster.gateway``。
 """
@@ -20,6 +22,7 @@ import json
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import _bootstrap  # noqa: F401
 from paths import PROJECT_DIR, STATE_DIR, cluster_file, expand_path
@@ -74,6 +77,28 @@ def _gateway_cfg(cluster: dict) -> dict:
     return cluster.get("gateway") or {}
 
 
+def _upstream_mode(value, default: str = "nodes") -> str:
+    """归一化上游模式：nodes（直连节点）/ edge（经内置 Edge）。"""
+    text = str(value or "").strip().lower()
+    if text in {"edge", "ingress", "lb", "edge-lb"}:
+        return "edge"
+    if text in {"nodes", "node", "direct"}:
+        return "nodes"
+    return default
+
+
+def _edge_url(gateway: dict, *, tls_ready: bool = False) -> str:
+    override = str(gateway.get("litellm_edge_url") or "").strip()
+    if override:
+        return override.rstrip("/")
+    ingress = gateway.get("ingress") or {}
+    port = int(ingress.get("port") or gateway.get("nginx_listen") or 18080)
+    bind = str(ingress.get("bind") or "0.0.0.0").strip()
+    host = "127.0.0.1" if bind in {"", "0.0.0.0", "::", "::0", "localhost", "127.0.0.1"} else bind
+    scheme = "https" if tls_ready else "http"
+    return f"{scheme}://{host}:{port}"
+
+
 def _openai_api_base(url: str, base_path: str) -> str:
     root = (url or "").rstrip("/")
     path = base_path if base_path.startswith("/") else f"/{base_path}"
@@ -92,6 +117,36 @@ def build_topology(cluster: dict, catalog: dict, health: dict) -> dict:
     if key_file:
         key_file = str(expand_path(str(key_file)))
     gateway = _gateway_cfg(cluster)
+    ingress = gateway.get("ingress") if isinstance(gateway.get("ingress"), dict) else {}
+    ingress_kind = str(ingress.get("kind") or "edge").lower()
+    edge_enabled = bool(ingress.get("enabled", True)) and ingress_kind in {"edge", "both", "all"}
+    edge_port = int(ingress.get("port") or gateway.get("nginx_listen") or 18080)
+    tls_cfg = ingress.get("tls") if isinstance(ingress.get("tls"), dict) else {}
+    edge_base = _edge_url(
+        gateway,
+        tls_ready=bool(tls_cfg.get("enabled") and tls_cfg.get("cert_file") and tls_cfg.get("key_file")),
+    )
+    litellm_upstream = _upstream_mode(gateway.get("litellm_upstream"), "nodes")
+    nginx_upstream = _upstream_mode(gateway.get("nginx_upstream"), "nodes")
+    litellm_configured = bool(
+        gateway.get("openai_proxy_dir") or gateway.get("litellm_dir") or gateway.get("litellm_bin")
+    )
+    duplicate_node_lb = bool(edge_enabled and litellm_configured and litellm_upstream == "nodes")
+    layering_warnings = []
+    if duplicate_node_lb:
+        layering_warnings.append({
+            "code": "duplicate_node_lb",
+            "severity": "warn",
+            "message": "Edge 与 LiteLLM 都在对节点端口做负载均衡；建议 litellm_upstream=edge，由 Edge 统一选节点。",
+            "fix": "cluster.gateway.litellm_upstream=\"edge\"，然后 gateway render + restart --kind litellm",
+        })
+    if litellm_upstream == "edge" and not edge_enabled:
+        layering_warnings.append({
+            "code": "litellm_edge_unavailable",
+            "severity": "error",
+            "message": "LiteLLM 配置为经 Edge，但 Edge 未启用。",
+            "fix": "启用 gateway.ingress 或把 litellm_upstream 改回 nodes",
+        })
     proxy_dir_raw = gateway.get("openai_proxy_dir") or gateway.get("litellm_dir")
     proxy_dir = expand_path(str(proxy_dir_raw)) if proxy_dir_raw else None
     ui_port = int((cluster.get("control") or {}).get("ui_port") or 8787)
@@ -121,13 +176,33 @@ def build_topology(cluster: dict, catalog: dict, health: dict) -> dict:
     return {
         "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "control_ui": f"http://127.0.0.1:{ui_port}",
+        "layering": {
+            "edge_enabled": edge_enabled,
+            "edge_url": edge_base,
+            "edge_port": edge_port,
+            "node_lb_owner": "edge" if edge_enabled and litellm_upstream == "edge" else (
+                "litellm" if litellm_upstream == "nodes" else "edge"
+            ),
+            "litellm_upstream": litellm_upstream,
+            "nginx_upstream": nginx_upstream,
+            "duplicate_node_lb": duplicate_node_lb,
+            "single_node_lb": not duplicate_node_lb,
+            "warnings": layering_warnings,
+            "summary": (
+                "Edge 是唯一节点 LB；LiteLLM 经 Edge 做 OpenAI 治理层"
+                if edge_enabled and litellm_upstream == "edge"
+                else "Edge 与 LiteLLM 都在对节点做 LB（重复）"
+                if duplicate_node_lb
+                else "Edge 单层节点 LB"
+            ),
+        },
         "layers": {
             "backends": {
                 "role": "per-GPU HTTP serving endpoints",
                 "endpoint_count": endpoint_count,
             },
             "edge_lb": {
-                "role": "control-host raw HTTP LB (builtin edge and/or nginx)",
+                "role": "control-host raw HTTP LB (Edge is the single node-LB layer)",
                 "builtin": "gpu-control gateway start --kind edge",
                 "artifact": str(OUT_DIR / "nginx-inference-pool.conf"),
                 "listen": int(
@@ -136,6 +211,9 @@ def build_topology(cluster: dict, catalog: dict, health: dict) -> dict:
                     or 18080
                 ),
                 "ingress": gateway.get("ingress") or {},
+                "upstream": "nodes",
+                "upstream_count": endpoint_count,
+                "edge_url": edge_base,
             },
             "ai_gateway": {
                 "role": "optional OpenAI-compatible proxy (LiteLLM etc.)",
@@ -143,6 +221,9 @@ def build_topology(cluster: dict, catalog: dict, health: dict) -> dict:
                 "litellm_model": litellm_model,
                 "openai_api_base_path": api_base_path,
                 "routing_strategy": routing_strategy,
+                "upstream": litellm_upstream,
+                "api_base": _openai_api_base(edge_base, api_base_path) if litellm_upstream == "edge" else None,
+                "deployment_count": 1 if litellm_upstream == "edge" else endpoint_count,
                 "artifact": str(OUT_DIR / "litellm-model-list.yaml"),
                 "port": int(
                     gateway.get("openai_proxy_port")
@@ -175,6 +256,10 @@ def build_topology(cluster: dict, catalog: dict, health: dict) -> dict:
             "auth_env": api.get("auth_env") or "INFERENCE_API_KEY",
             "api_key_file": key_file,
             "endpoint_count": endpoint_count,
+            "litellm_upstream": litellm_upstream,
+            "nginx_upstream": nginx_upstream,
+            "edge_url": edge_base,
+            "litellm_api_base": _openai_api_base(edge_base, api_base_path),
             "health": {
                 "ok": health.get("ok_count"),
                 "fail": health.get("fail_count"),
@@ -220,13 +305,47 @@ def render_nginx(
     health_path: str = "/health",
     server_name: str = "_",
     tls: dict | None = None,
+    edge_url: str | None = None,
 ) -> str:
-    servers = "\n".join(
-        f"    server {ep['host']}:{ep['port']} max_fails=2 fail_timeout=5s;"
-        for ep in upstreams
-        if ep.get("host") and ep.get("port") is not None
-    )
+    """渲染 nginx 产物。
+
+    - ``edge_url`` 有值：nginx 只做 Web/TLS 前端，单 upstream 指向 Edge；
+    - 否则：nginx 作为 Edge 的同层替代，直接对节点端口 ``least_conn``。
+    """
     tls = tls or {}
+    proxy_buffering = "        proxy_buffering off;\n        proxy_next_upstream error timeout http_502 http_503 http_504;"
+    if edge_url:
+        parts = urlsplit(edge_url)
+        host = parts.hostname or "127.0.0.1"
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+        servers = f"    server {host}:{port};"
+        upstream_name = "gpu_control_edge"
+        least_conn = ""
+        comment = (
+            "# nginx is only TLS/domain front; Edge owns node LB.\n"
+            "# Recommended: keep this listen port different from Edge (e.g. 443)."
+        )
+        health_path = "/_gpu_control/health"
+    else:
+        server_rows = []
+        for ep in upstreams:
+            host = ep.get("host")
+            port = ep.get("port")
+            if not host or port is None:
+                parsed = urlsplit(str(ep.get("url") or ""))
+                host = host or parsed.hostname
+                port = port if port is not None else parsed.port
+            if host and port is not None:
+                server_rows.append(
+                    f"    server {host}:{port} max_fails=2 fail_timeout=5s;"
+                )
+        servers = "\n".join(server_rows)
+        upstream_name = "inference_pool"
+        least_conn = "    least_conn;\n"
+        comment = (
+            "# Alternative to built-in Edge: nginx itself is the node-LB layer.\n"
+            "# Do not also run Edge against the same node ports."
+        )
     listen_line = f"listen {listen};"
     ssl_block = ""
     if tls.get("enabled") and tls.get("cert_file") and tls.get("key_file"):
@@ -242,13 +361,11 @@ def render_nginx(
             else:
                 ssl_block += "    ssl_verify_client optional;\n"
     return f"""# Generated by gpu-control — do not edit by hand.
-# Edge LB for raw HTTP backends. For OpenAI chat/completions, prefer LiteLLM
-# (see litellm-model-list.yaml) — nginx will not do model_name routing / fallbacks.
+{comment}
 # Install: include from nginx.conf, then nginx -t && reload.
 
-upstream inference_pool {{
-    least_conn;
-{servers}
+upstream {upstream_name} {{
+{least_conn}{servers}
     keepalive 32;
 }}
 
@@ -258,7 +375,7 @@ server {{
 {ssl_block}
     location = {health_path} {{
         proxy_http_version 1.1;
-        proxy_pass http://inference_pool;
+        proxy_pass http://{upstream_name};
         proxy_connect_timeout 2s;
         proxy_read_timeout 5s;
     }}
@@ -269,9 +386,10 @@ server {{
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header Authorization $http_authorization;
+{proxy_buffering}
         proxy_connect_timeout 2s;
         proxy_read_timeout 300s;
-        proxy_pass http://inference_pool;
+        proxy_pass http://{upstream_name};
     }}
 }}
 """
@@ -306,22 +424,60 @@ def render_curl(upstreams: list[dict], pool: dict) -> str:
 
 
 def render_litellm_yaml(upstreams: list[dict], pool: dict) -> str:
-    """渲染 LiteLLM ``model_list`` 片段（相同 ``model_name`` → Router 负载均衡）。"""
+    """渲染 LiteLLM ``model_list``。
+
+    ``litellm_upstream=edge`` 时只生成一个指向 Edge 的 deployment，节点 LB/重试/冷却
+    全部由 Edge 负责；``nodes`` 模式保留逐节点 deployment（旧的直连模式）。
+    """
     model_name = pool.get("model_name") or "gpu-pool"
     litellm_model = pool.get("litellm_model") or f"openai/{model_name}"
     base_path = pool.get("openai_api_base_path") or "/v1"
     auth_env = pool.get("auth_env") or "INFERENCE_API_KEY"
     strategy = pool.get("routing_strategy") or "least-busy"
+    mode = str(pool.get("litellm_upstream") or "nodes").lower()
+    if mode == "edge":
+        api_base = pool.get("litellm_api_base") or _openai_api_base(
+            pool.get("edge_url") or "http://127.0.0.1:18080", base_path
+        )
+        auth_header = str(pool.get("auth_header") or "Authorization")
+        lines = [
+            "# Generated by gpu-control — layering: litellm_upstream=edge",
+            "# Edge is the ONLY node-LB layer. Do not add per-node api_base entries here.",
+            "# LiteLLM provides the OpenAI model name / virtual keys / budgets layer.",
+            "model_list:",
+            f"  - model_name: {model_name}",
+            "    litellm_params:",
+            f"      model: {litellm_model}",
+            f"      api_base: {api_base}",
+        ]
+        if auth_header.lower() == "authorization":
+            lines.append(f"      api_key: os.environ/{auth_env}")
+        else:
+            lines.extend([
+                f"      api_key: os.environ/{auth_env}",
+                "      extra_headers:",
+                f"        {auth_header}: os.environ/{auth_env}",
+            ])
+        lines.extend([
+            "    model_info:",
+            f"      id: {pool.get('litellm_deployment_id') or 'edge-lb'}",
+            "",
+            "router_settings:",
+            "  routing_strategy: simple-shuffle  # single deployment → no node LB here",
+            "  num_retries: 0                    # Edge owns retries",
+            "  cooldown_time: 0",
+            "  enable_pre_call_checks: false",
+            "",
+        ])
+        return "\n".join(lines)
     lines = [
-        "# Generated by gpu-control — merge into your LiteLLM config.yaml",
-        "# Pattern: identical model_name → LiteLLM Router load-balances deployments.",
-        "# Retries stay in-group; configure fallbacks in your full LiteLLM config.",
-        "# Start proxy yourself, e.g.: litellm --config /path/to/config.yaml",
-        "# gpu-control does not run LiteLLM and does not own virtual keys / spend / Redis.",
+        "# Generated by gpu-control — layering: litellm_upstream=nodes",
+        "# Warning: if Edge is also running, you have TWO node-LB layers.",
+        "# Prefer litellm_upstream=edge and let Edge pick nodes.",
         "model_list:",
     ]
     if not upstreams:
-        lines.append(f"  # (no upstreams) add backends, then re-run: gpu-control gateway --write")
+        lines.append("  # (no upstreams) add backends, then re-run: gpu-control gateway render --write")
     for ep in upstreams:
         url = ep.get("url") or ""
         api_base = _openai_api_base(url, base_path)
@@ -418,6 +574,7 @@ def render_snippets(
     notes = render_gateway_notes(topology, upstreams)
     litellm = render_litellm_yaml(upstreams, pool)
     cluster_ingress = {}
+    cluster_doc = {}
     try:
         from paths import cluster_file
 
@@ -431,14 +588,21 @@ def render_snippets(
     domains.extend(str(x) for x in (cluster_ingress.get("domains") or []) if x)
     server_name = " ".join(dict.fromkeys(domains)) if domains else "_"
     tls = cluster_ingress.get("tls") if isinstance(cluster_ingress.get("tls"), dict) else {}
+    cluster_gateway = (cluster_doc.get("gateway") or {}) if isinstance(cluster_doc, dict) else {}
+    nginx_listen = int(cluster_gateway.get("nginx_listen") or 18443)
     return {
         "python": render_python_client(upstreams),
         "nginx": render_nginx(
             upstreams,
-            listen=listen_port,
+            listen=nginx_listen,
             health_path=str(pool.get("health_path") or "/health"),
             server_name=server_name,
             tls=tls,
+            edge_url=(
+                pool.get("edge_url")
+                if str(pool.get("nginx_upstream") or "nodes") == "edge"
+                else None
+            ),
         ),
         "curl": render_curl(upstreams, pool),
         "litellm": litellm,

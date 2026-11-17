@@ -89,7 +89,10 @@
     "openai_proxy_role": "optional LiteLLM（OpenAI 层）；优先 litellm_bin / PATH / ~/.local/bin，装好后 gateway ensure 可随入口启动",
     "extra_http_port": 8080,
     "extra_http_role": "optional extra HTTP service",
-    "nginx_listen": 18080
+    "nginx_listen": 18080,
+    "litellm_upstream": "edge",
+    "nginx_upstream": "nodes",
+    "litellm_edge_url": ""
   },
   "watchdog": {
     "enabled": true,

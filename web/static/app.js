@@ -1482,6 +1482,16 @@ function renderIngressMeta(status) {
   ]
     .filter(Boolean)
     .join(" · ");
+  const layering = status.layering || {};
+  const layEl = document.getElementById("ingress-layering");
+  if (layEl) {
+    const summary = layering.summary || "入口分层未知";
+    const rec = layering.duplicate_node_lb
+      ? " · 建议 litellm_upstream=edge，由 Edge 统一选节点"
+      : "";
+    layEl.textContent = `入口分层：${summary}${rec}`;
+    layEl.dataset.tone = layering.duplicate_node_lb ? "warn" : "";
+  }
   renderIngressDuo(status);
 }
 
@@ -1528,6 +1538,15 @@ function renderIngressDuo(status) {
   if (llUrl) {
     llUrl.textContent = ll.url || "-";
     llUrl.href = ll.url || "#";
+  }
+  const llUp = document.getElementById("litellm-upstream");
+  if (llUp) {
+    const upstream = status?.layering?.litellm_upstream || ll.upstream || "nodes";
+    const edgeUrl = status?.layering?.edge_url || "";
+    llUp.textContent =
+      upstream === "edge"
+        ? `Edge ${edgeUrl}（推荐：节点 LB 由 Edge 负责）`
+        : "节点直连（与 Edge 重复 LB）";
   }
   const binEl = document.getElementById("litellm-card-bin");
   if (binEl) {
