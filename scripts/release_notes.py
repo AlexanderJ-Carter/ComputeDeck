@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CHANGELOG = ROOT / "CHANGELOG.md"
 VERSION_FILE = ROOT / "VERSION"
 PYPROJECT = ROOT / "pyproject.toml"
+VSCODE_PKG = ROOT / "extensions" / "vscode" / "package.json"
 
 
 def _read_pyproject_version() -> str:
@@ -25,6 +26,16 @@ def _read_pyproject_version() -> str:
     match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M)
     if not match:
         raise SystemExit("pyproject.toml 缺少 version")
+    return match.group(1)
+
+
+def _read_vscode_version() -> str | None:
+    if not VSCODE_PKG.is_file():
+        return None
+    text = VSCODE_PKG.read_text(encoding="utf-8")
+    match = re.search(r'^  "version"\s*:\s*"([^"]+)"', text, re.M)
+    if not match:
+        raise SystemExit("extensions/vscode/package.json 缺少 version")
     return match.group(1)
 
 
@@ -51,10 +62,14 @@ def check_versions(version: str) -> None:
         errors.append(f"VERSION={file_ver!r} ≠ {version!r}")
     if py_ver != version:
         errors.append(f"pyproject version={py_ver!r} ≠ {version!r}")
+    vs_ver = _read_vscode_version()
+    if vs_ver is not None and vs_ver != version:
+        errors.append(f"extensions/vscode/package.json version={vs_ver!r} ≠ {version!r}")
     extract_notes(version)
     if errors:
         raise SystemExit("版本不一致：\n- " + "\n- ".join(errors))
-    print(f"ok: VERSION / pyproject / CHANGELOG 均为 {version}")
+    extra = " / VS Code 扩展" if vs_ver is not None else ""
+    print(f"ok: VERSION / pyproject{extra} / CHANGELOG 均为 {version}")
 
 
 def main() -> None:

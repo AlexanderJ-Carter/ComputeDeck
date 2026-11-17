@@ -699,14 +699,32 @@ def exec_command_risk(command: str) -> Risk:
         if args and lowered[0] in {"status", "is-active", "is-enabled", "list-units", "list-unit-files", "show"}:
             return "read"
         return "destructive"
-    if cmd in {"curl", "wget"}:
-        if any(a in lowered for a in ("-x", "--request", "-d", "--data", "--data-raw", "-f", "--form", "-t", "--upload-file")):
+    if cmd == "curl":
+        text_l = text.lower()
+        if any(
+            a in lowered
+            for a in (
+                "-x", "--request", "-d", "--data", "--data-raw", "--data-binary",
+                "-f", "--form", "--upload-file", "-t", "-o", "-O",
+                "--output", "--output-document", "--post-file", "--post-data",
+                "--config", "--create-dirs",
+            )
+        ):
             return "destructive"
         return "read"
-    if cmd == "find" and any(a in lowered for a in ("-delete", "-exec", "-execdir", "-ok")):
+    if cmd == "wget":
+        # wget 默认把响应写到磁盘；即使 -O - 也通常不是纯诊断命令。
+        return "write" if lowered and "--spider" in lowered else "destructive"
+    if cmd == "find" and any(
+        a in lowered for a in ("-delete", "-exec", "-execdir", "-ok", "-fprint", "-fprintf", "-fls")
+    ):
         return "destructive"
-    if cmd == "sed" and any(a in lowered for a in ("-i", "--in-place")):
-        return "write"
+    if cmd == "sed":
+        if any(a in lowered for a in ("-i", "--in-place")):
+            return "write"
+        # sed 的 w / W 命令会写文件，例如 sed -n '1w /tmp/x'
+        if re.search(r"[wW]\s", text):
+            return "destructive"
     if cmd in {"awk", "watch"} and ("system(" in text or "exec(" in text or "popen" in text):
         return "destructive"
     if cmd in _READ_COMMANDS:

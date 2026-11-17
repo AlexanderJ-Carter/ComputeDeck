@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 import _bootstrap  # noqa: F401
 from paths import LOCAL_DIR, PROJECT_DIR, SCRIPTS_DIR, STATE_DIR, VENV_PYTHON, cluster_file, expand_path
@@ -76,14 +77,73 @@ def generate_litellm_master_key() -> str:
     return "sk-cd-" + secrets.token_urlsafe(24)
 
 
+DATABASE_URL_ENV = "DATABASE_URL"
+
+
+def _mask_db_url(url: str) -> str:
+    """日志 / 状态里只显示库地址，绝不回显密码。"""
+    try:
+        parsed = urlparse(str(url).strip())
+    except ValueError:
+        return "(invalid)"
+    if not parsed.scheme:
+        return "(invalid)"
+    user = parsed.username or ""
+    auth = f"{user}@" if user else ""
+    host = parsed.hostname or "?"
+    port = f":{parsed.port}" if parsed.port else ""
+    dbname = (parsed.path or "").lstrip("/")
+    return f"{parsed.scheme}://{auth}{host}{port}/{dbname}"
+
+
+def _litellm_db_url(gateway: dict | None = None) -> tuple[str, str | None]:
+    """读取 LiteLLM 管理库连接串：配置内联 > 文件 > 进程环境。"""
+    gateway = gateway if gateway is not None else {}
+    raw = str(gateway.get("litellm_database_url") or "").strip()
+    if raw:
+        return raw, "config"
+    file_raw = str(gateway.get("litellm_database_url_file") or "").strip()
+    if file_raw:
+        path = Path(expand_path(file_raw))
+        try:
+            raw = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            raw = ""
+        if raw:
+            return raw, "file"
+    raw = str(os.environ.get(DATABASE_URL_ENV) or "").strip()
+    return (raw, "env") if raw else ("", None)
+
+
+def litellm_database(gateway: dict | None = None) -> dict:
+    """LiteLLM Admin UI / 虚拟密钥需要 Postgres；不接库时只保留 Master Key 代理。"""
+    raw, source = _litellm_db_url(gateway)
+    scheme_ok = (not raw) or raw.startswith(("postgres://", "postgresql://"))
+    configured = bool(raw) and scheme_ok
+    if not raw:
+        hint = "未接数据库：Admin UI 不可登录；请用 Master Key 调 /v1（配 gateway.litellm_database_url 可启用管理台）"
+    elif not scheme_ok:
+        hint = "DATABASE_URL 需为 postgres:// 或 postgresql://（LiteLLM 只带 Postgres schema）"
+    else:
+        hint = None
+    return {
+        "configured": configured,
+        "source": source,
+        "url_masked": _mask_db_url(raw) if raw else "",
+        "scheme_ok": scheme_ok,
+        "admin_ui": configured,
+        "hint": hint,
+    }
+
+
 def litellm_master_key_status() -> dict:
     configured = bool(read_litellm_master_key())
     return {
         "configured": configured,
         "path": str(LITELLM_MASTER_KEY_FILE),
-        "login_hint": "Admin UI：用户名随意（如 admin），密码填 Master Key"
+        "login_hint": "API：Authorization: Bearer <Master Key>；Admin UI（需 DATABASE_URL）：用户名 admin，密码 = Master Key"
         if configured
-        else "未配置 Master Key，Admin UI 无法登录",
+        else "未配置 Master Key：API 与 Admin UI 都无法登录",
     }
 
 
@@ -746,6 +806,7 @@ def status_payload() -> dict:
             "log_tail": _log_tail(LITELLM_LOG),
             "last_start": litellm_start,
             "role": "optional",
+            "database": litellm_database(gateway),
             **litellm_master_key_status(),
         },
         "nginx": {
@@ -991,6 +1052,14 @@ def _start_litellm(gateway: dict) -> dict:
     master_key = read_litellm_master_key()
     if master_key:
         env["LITELLM_MASTER_KEY"] = master_key
+    # Admin UI / 虚拟密钥依赖 Postgres；未接库时不注入 DATABASE_URL，
+    # 只保留 Master Key 代理能力（LiteLLM 用错误 Key 时会报 Not connected to DB）。
+    db_url, db_source = _litellm_db_url(gateway)
+    db_ok = bool(db_url) and db_url.startswith(("postgres://", "postgresql://"))
+    if db_ok:
+        env[DATABASE_URL_ENV] = db_url
+    else:
+        env.pop(DATABASE_URL_ENV, None)
     # LiteLLM model_list 用 os.environ/<auth_env> 引用上游推理密钥；启动时注入，
     # 避免依赖操作者当前 shell 是否 export。
     cluster_doc = _load_cluster()
@@ -1067,10 +1136,13 @@ def _start_litellm(gateway: dict) -> dict:
         "config": str(runtime),
         "log": str(LITELLM_LOG),
         "master_key_configured": bool(master_key),
+        "database_configured": db_ok,
+        "database_source": db_source if db_ok else None,
+        "admin_ui": db_ok,
         "error": None if (alive or listen_ok) else "process exited — see ingress-litellm.log",
         "hint": None
         if master_key
-        else "未配置 Master Key：统一入口页可生成；Admin UI 需 Master Key 才能登录",
+        else "未配置 Master Key：统一入口页可生成；没有数据库时 Admin UI 不可登录",
     }
     return finish(result)
 

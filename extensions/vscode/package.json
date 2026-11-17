@@ -2,9 +2,13 @@
   "name": "computedeck-vscode",
   "displayName": "ComputeDeck",
   "description": "ComputeDeck GPU control plane in VS Code: cluster tree, status bar, node/job actions, terminal, diagnostics and MCP.",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "publisher": "computedeck",
   "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AlexanderJ-Carter/ComputeDeck"
+  },
   "engines": {
     "vscode": "^1.101.0"
   },

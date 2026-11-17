@@ -13,6 +13,31 @@
 
 ---
 
+## [1.0.0] - 2026-11-17
+
+### Added
+
+- 交互打磨：左侧导航与配置页签支持方向键 / Home / End；全局 `←` `→` 切页、`?` 打开快捷键帮助；统一悬浮、按下、键盘焦点三态；移动端保留主题切换（自动 / 浅色 / 深色）
+- 页面组织：入口页拆为「入口总览 / 远程接入 / 上游推理端点」独立面板；队列、交互终端、远程命令、运行 Python 等面板补充一句用途说明
+- API 文档页：表格行可 Tab 聚焦、Enter 填入试调；保存 Token 改为内联提示；窄屏表格横向滚动
+- LiteLLM 管理数据库：`gateway.litellm_database_url` / `gateway.litellm_database_url_file`；`gateway status` 增加 `litellm.database`，未接数据库时 Admin UI 链接置灰并提示改用 Master Key
+- 发布：`.github/workflows/release.yml` 统一打包并附加 VSIX；扩展版本随主版本同步；`docker compose` 默认只发布到 `127.0.0.1`（`UI_BIND` 可改）；CI / Release 增加并发控制与超时
+
+### Fixed
+
+- 模型下载、部署、队列提交、工具栈安装在前端约 2 分钟就报超时；现在与后端长任务一致
+- 助手未配置上游时返回 400 导致前端丢掉 `reply` / `open_settings`，现在按正常回复返回
+- LiteLLM 未接数据库时打开 Admin 只会看到 `Authentication Error, Not connected to DB!`；现在入口页与文档明确说明「Admin 需要数据库，API 用 Master Key」
+- 健康卡的 SSH 信号补上数据年龄；状态接口新鲜度按 60 秒分桶，减少无意义刷新
+
+### Security
+
+- 静态页 CSP 外置 `theme-boot.js` / `api-docs.js`，不再依赖内联脚本
+- 跨站写请求与终端 WebSocket 拒绝；终端不再接受 URL 中的长期 token
+- 上游请求不跟随 3xx、拒绝云元数据地址；自定义上游未显式填 Key 时不再回退保存的密钥
+- 非回环监听且未启用鉴权时拒绝启动（容器镜像显式允许，宿主机部署仍受保护）
+
+---
 ## [1.0.0-beta.14] - 2026-11-17
 
 ### Added
@@ -540,6 +565,7 @@ ComputeDeck **1.0 先导测试版**：控制面 / CLI / MCP / 展板已可日常
 4. 版本锚点见下方；具备远程后可改为 compare URL。
 
 [Unreleased]: #unreleased
+[1.0.0]: #100---2026-11-17
 [1.0.0-beta.14]: #100-beta14---2026-11-17
 [1.0.0-beta.13]: #100-beta13---2026-11-17
 [1.0.0-beta.12]: #100-beta12---2026-11-17

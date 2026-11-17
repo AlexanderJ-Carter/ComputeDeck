@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CHANGELOG = ROOT / "CHANGELOG.md"
 VERSION_FILE = ROOT / "VERSION"
 PYPROJECT = ROOT / "pyproject.toml"
+VSCODE_PKG = ROOT / "extensions" / "vscode" / "package.json"
 
 _SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 # 正式版 X.Y.Z，或先导测试版 X.Y.Z-beta.N / -rc.N
@@ -39,6 +40,7 @@ _UNRELEASED = re.compile(
     re.M | re.S,
 )
 _PY_VERSION = re.compile(r'^version\s*=\s*"[^"]*"', re.M)
+_PKG_VERSION = re.compile(r'^(  )"version"\s*:\s*"[^"]*"', re.M)
 
 
 def _is_prerelease(version: str) -> bool:
@@ -106,6 +108,15 @@ def _write_version_files(version: str) -> None:
     if not _PY_VERSION.search(py):
         raise SystemExit("pyproject.toml 缺少 version")
     PYPROJECT.write_text(_PY_VERSION.sub(f'version = "{version}"', py, count=1), encoding="utf-8")
+    # VS Code 扩展与主版本保持一致，Release 上的 VSIX 文件名才有意义。
+    if VSCODE_PKG.is_file():
+        pkg = VSCODE_PKG.read_text(encoding="utf-8")
+        if not _PKG_VERSION.search(pkg):
+            raise SystemExit("extensions/vscode/package.json 缺少 version")
+        VSCODE_PKG.write_text(
+            _PKG_VERSION.sub(lambda m: f'{m.group(1)}"version": "{version}"', pkg, count=1),
+            encoding="utf-8",
+        )
 
 
 def _run_checks(version: str) -> None:
@@ -170,7 +181,10 @@ def main() -> None:
 
     CHANGELOG.write_text(new_changelog, encoding="utf-8")
     _write_version_files(target)
-    print("已写入: VERSION · pyproject.toml · CHANGELOG.md")
+    files = "VERSION · pyproject.toml · CHANGELOG.md"
+    if VSCODE_PKG.is_file():
+        files += " · extensions/vscode/package.json"
+    print(f"已写入: {files}")
 
     if args.check:
         _run_checks(target)

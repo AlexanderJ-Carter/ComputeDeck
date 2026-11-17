@@ -34,6 +34,27 @@ ToolRunner = Callable[[dict[str, Any]], Any]
 DEFAULT_API_KEY_FILE = "config/local/secrets/assistant_api_key"
 DEFAULT_KEY_ENV = "GPU_CONTROL_ASSISTANT_API_KEY"
 _OPENAI_COMPAT_ROOTS = frozenset({"api.openai.com", "api.groq.com", "api.deepseek.com"})
+_METADATA_HOSTS = frozenset({"169.254.169.254", "metadata.google.internal", "100.100.100.200"})
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """不跟随 3xx，避免把 Authorization 带到重定向目标。"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_HTTP_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
+def _open_url(req: urllib.request.Request, *, timeout: int):
+    return _HTTP_OPENER.open(req, timeout=timeout)
+
+
+def _assert_safe_upstream(url: str) -> None:
+    host = (urlparse(url).hostname or "").strip().lower()
+    if host in _METADATA_HOSTS:
+        raise ValueError("Base URL 指向云元数据地址，已拒绝")
 
 
 def _read_cluster() -> dict[str, Any]:
@@ -388,8 +409,9 @@ def _http_json(
     timeout: int = 60,
 ) -> dict[str, Any]:
     data = None if body is None else json.dumps(body).encode("utf-8")
+    _assert_safe_upstream(url)
     req = urllib.request.Request(url, data=data, method=method, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with _open_url(req, timeout=timeout) as resp:
         raw = resp.read().decode("utf-8")
         return json.loads(raw) if raw else {}
 
@@ -406,7 +428,14 @@ def list_upstream_models(
     url_base = _normalize_base_url(raw_base, strict=True)
     if not url_base:
         raise ValueError("请先填写 Base URL（内网请填可达的兼容网关，例如 http://10.x.x.x:8000/v1）")
-    key = (api_key if api_key is not None else cfg["api_key"]).strip()
+    explicit_base = bool(raw_base and _normalize_base_url(raw_base, strict=False) != cfg["base_url"])
+    if api_key is not None:
+        key = str(api_key).strip()
+    elif explicit_base:
+        # 自定义上游没有显式 Key 时绝不回退保存的 Key，避免把密钥发给任意地址。
+        key = ""
+    else:
+        key = cfg["api_key"]
     headers = {"Accept": "application/json"}
     if key:
         headers["Authorization"] = f"Bearer {key}"
@@ -735,8 +764,9 @@ def _http_stream(
 ):
     """流式请求 OpenAI 兼容上游；兼容网关忽略 stream 时回落整包 JSON。"""
     data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+    _assert_safe_upstream(url)
     req = urllib.request.Request(url, data=data, method=method, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with _open_url(req, timeout=timeout) as resp:
         ctype = (resp.headers.get("Content-Type") or "").lower()
         if "text/event-stream" not in ctype:
             raw = resp.read().decode("utf-8", errors="replace")

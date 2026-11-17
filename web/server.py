@@ -1573,7 +1573,7 @@ def build_quality_report() -> dict:
         "hint": hint,
         "components": components,
         "stale": stale_components,
-        "ssh": ssh,
+        "ssh": {**ssh, "fresh": signals["ssh_fresh"], "age_sec": signals["ssh_age_sec"]},
         "api": {
             "ok": api_ok,
             "total": api_total,
@@ -1891,6 +1891,23 @@ class Handler(BaseHTTPRequestHandler):
             headers.update(extra_headers)
         self._send(302, b"", "text/plain; charset=utf-8", extra_headers=headers)
 
+    def _same_origin(self) -> bool:
+        """阻止跨站 WebSocket / 写请求（浏览器会带 Origin；CLI/脚本通常不带）。"""
+        origin = (self.headers.get("Origin") or "").strip()
+        if not origin:
+            return True
+        try:
+            parsed = urlparse(origin)
+        except ValueError:
+            return False
+        host = (self.headers.get("Host") or "").strip()
+        try:
+            host_name = (urlparse(f"//{host}").hostname or "").lower()
+        except ValueError:
+            return False
+        # Cookie 按域名而非端口作用域，比较主机名即可；尊重反代保留的 Host。
+        return bool(parsed.hostname and host_name and parsed.hostname.lower() == host_name)
+
     def _auth_gate(self, path: str, query: str = "") -> bool:
         """鉴权门控。
 
@@ -1935,9 +1952,12 @@ class Handler(BaseHTTPRequestHandler):
     def _call_local_api(self, method: str, path: str, body: dict | None = None, *, timeout: int = 1900) -> dict:
         """从助手执行端点回调本机已有 API，复用同一套校验与锁。"""
         try:
+            bound_host = str(self.server.server_address[0])
             port = int(self.server.server_address[1])
         except (AttributeError, IndexError, TypeError, ValueError):
+            bound_host = ""
             port = int(os.environ.get("GPU_CONTROL_UI_PORT", "8787"))
+        host = bound_host if bound_host not in {"", "0.0.0.0", "::", "::0"} else "127.0.0.1"
         data = None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8")
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         # 转发调用者身份，让内部请求重新通过 auth gate。
@@ -1946,7 +1966,7 @@ class Handler(BaseHTTPRequestHandler):
             if value:
                 headers[name] = value
         req = urllib.request.Request(
-            f"http://127.0.0.1:{port}{path}",
+            f"http://{host}:{port}{path}",
             data=data,
             method=method,
             headers=headers,
@@ -1970,9 +1990,16 @@ class Handler(BaseHTTPRequestHandler):
             return {"ok": False, "status": 0, "error": str(exc), "data": {"error": str(exc)}}
 
     def _handle_terminal_ws(self, parsed) -> None:
-        if not self._auth_gate("/ws/terminal", parsed.query):
+        if not self._same_origin():
+            self._json(403, {"ok": False, "error": "跨站 WebSocket 被拒绝"})
             return
         qs = parse_qs(parsed.query)
+        # 终端不应支持 URL 里的长期 token（会进历史/日志）；用 Cookie 或 Authorization。
+        if qs.get("access_token") or qs.get("token"):
+            self._json(403, {"ok": False, "error": "终端连接请使用 Cookie 或 Authorization，勿用 URL token"})
+            return
+        if not self._auth_gate("/ws/terminal", parsed.query):
+            return
         node = (qs.get("node") or [""])[0].strip()
         cols = int((qs.get("cols") or ["120"])[0])
         rows = int((qs.get("rows") or ["32"])[0])
@@ -2375,7 +2402,7 @@ class Handler(BaseHTTPRequestHandler):
                 if result["rc"] != 0:
                     self._json(500, {"error": "refresh failed", "result": result})
                     return
-            etag = state_fingerprint()
+            etag = state_fingerprint(bucket_sec=60)
             if self.headers.get("If-None-Match") == etag and qs.get("refresh", ["0"])[0] not in {
                 "1",
                 "true",
@@ -2634,6 +2661,10 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        if path.startswith("/api") and not self._same_origin():
+            self._json(403, {"ok": False, "error": "跨站写请求被拒绝"})
+            return
+
         if path.startswith("/api") and not self._auth_gate(path, parsed.query):
             return
 
@@ -2876,8 +2907,8 @@ class Handler(BaseHTTPRequestHandler):
             if active:
                 result["pending_actions"] = active
             result["conversation_id"] = cid
-            code = 200 if result.get("ok", True) else 400
-            self._json(code, result)
+            # 400 会让前端 api() 丢掉 reply/open_settings；未配置上游也是有效回复。
+            self._json(200, result)
             return
 
         if path == "/api/assistant/execute":
@@ -4116,6 +4147,19 @@ def main() -> None:
     # 默认仅回环；cmd_ui 在运维明确要暴露局域网时传入 cluster.control.ui_host。
     host = os.environ.get("GPU_CONTROL_UI_HOST", "127.0.0.1")
     port = int(os.environ.get("GPU_CONTROL_UI_PORT", "8787"))
+    loopback = host in {"127.0.0.1", "localhost", "::1"}
+    if not loopback and str(os.environ.get("GPU_CONTROL_ALLOW_INSECURE", "0")).lower() not in {"1", "true", "yes"}:
+        try:
+            auth_enabled = load_auth_config().enabled
+        except Exception:  # noqa: BLE001
+            auth_enabled = False
+        if not auth_enabled:
+            print(
+                f"refusing to bind {host}:{port} without auth; "
+                "enable auth or set GPU_CONTROL_ALLOW_INSECURE=1 for a trusted lab network",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
     try:
         httpd = ThreadingHTTPServer((host, port), Handler)
     except OSError as exc:

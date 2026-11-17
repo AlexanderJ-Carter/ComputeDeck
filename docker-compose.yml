@@ -10,11 +10,16 @@
 
 services:
   control:
-    build: .
+    build:
+      context: .
+      args:
+        # 本地 build 也写入正确的镜像版本标签；发版流水线由 release.yml 覆盖。
+        VERSION: ${COMPUTEDECK_VERSION:-dev}
     image: ${COMPUTEDECK_IMAGE:-ghcr.io/alexanderj-carter/computedeck:latest}
     container_name: computedeck-control
     ports:
-      - "${UI_PORT:-8787}:8787"
+      # 默认只发布到本机回环；需要局域网访问时设 UI_BIND=0.0.0.0 并先开启鉴权。
+      - "${UI_BIND:-127.0.0.1}:${UI_PORT:-8787}:8787"
     volumes:
       - ./config/local:/app/config/local
       - ./state:/app/state

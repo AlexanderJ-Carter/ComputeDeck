@@ -21,7 +21,7 @@ gpu-control auth status
 
 - 浏览器：`POST /api/auth/login` → HttpOnly Cookie `gc_session`
 - 脚本 / MCP：`Authorization: Bearer <token>`
-- WebSocket 终端：可用查询参数 `?access_token=<token>`
+- WebSocket 终端：使用 Session Cookie 或 `Authorization` 头；出于安全考虑不接受 URL 里的 `?access_token=`
 - 公开发现路径（无需登录）：`/api` · `/api/openapi.json` · `/api/docs` · `/api/health` · `/api/auth/*` · `/api/assistant/policy`
 
 ---

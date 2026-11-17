@@ -19,6 +19,11 @@ permissions:
   id-token: write
   attestations: write
 
+# 同一 tag 重跑时排队，不并发创建 Release / 推同一镜像 tag。
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -84,7 +89,7 @@ jobs:
             echo "- 容器：\`docker pull ghcr.io/alexanderj-carter/computedeck:${{ steps.ver.outputs.version }}\`"
             echo "- Compose：复制 \`.env.example\` → \`.env\` 后 \`docker compose up -d\`"
             echo "- MCP：\`uv pip install -r requirements-mcp.txt\` · 示例 \`config/examples/mcp.*\`"
-            echo "- 展板：https://alexanderj-carter.github.io/ComputeDeck/"
+            echo "- 展板：https://compute.alexander.xin/"
             echo
             echo "官方包已 Public。fork / 新 Package 若匿名 401：Packages → 设置 → Public。"
             echo
@@ -107,6 +112,45 @@ jobs:
             --notes-file /tmp/github-release.md \
             --verify-tag \
             "${EXTRA[@]}"
+
+  vscode:
+    name: VS Code VSIX
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Syntax check
+        working-directory: extensions/vscode
+        run: node --check extension.js
+
+      - name: Package VSIX
+        working-directory: extensions/vscode
+        run: |
+          npx --yes @vscode/vsce package --allow-missing-repository
+          ls -lh *.vsix
+
+      - name: Attach VSIX to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          file="$(ls extensions/vscode/*.vsix | head -n 1)"
+          test -n "$file"
+          gh release upload "$tag" "$file" --clobber
+          echo "attached $file to $tag"
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: computedeck-vscode
+          path: extensions/vscode/*.vsix
+          if-no-files-found: error
 
   image:
     needs: release

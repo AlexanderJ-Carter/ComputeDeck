@@ -34,7 +34,7 @@ docker compose exec control gpu-control doctor
 ```bash
 docker pull ghcr.io/alexanderj-carter/computedeck:latest
 # 或覆盖 compose 镜像：
-# COMPUTEDECK_IMAGE=ghcr.io/alexanderj-carter/computedeck:0.22.0 docker compose up -d
+# COMPUTEDECK_IMAGE=ghcr.io/alexanderj-carter/computedeck:1.0.0 docker compose up -d
 ```
 
 ### 包可见性
@@ -42,7 +42,7 @@ docker pull ghcr.io/alexanderj-carter/computedeck:latest
 官方 `ghcr.io/alexanderj-carter/computedeck` 已 **Public**，可直接：
 
 ```bash
-docker pull ghcr.io/alexanderj-carter/computedeck:0.22.0
+docker pull ghcr.io/alexanderj-carter/computedeck:1.0.0
 ```
 
 GHCR **新建** Package 默认仍私有。fork / 改名后的首次推送若匿名 401：Packages → 该包 → **Package settings** → **Public**。  
@@ -57,8 +57,9 @@ GHCR **新建** Package 默认仍私有。fork / 改名后的首次推送若匿�
 ## 设计取舍
 
 - 容器内建 `.venv`，与仓库 `paths.VENV_*` / Ansible 调用方式一致
+- 镜像构建阶段用 MkDocs 生成文档站并内置 `/help/`（运行时镜像不装 MkDocs）
 - 挂载 `config/local` 与 `state`，配置与租约/队列不进镜像层
-- 默认监听 `0.0.0.0:8787`，**生产必须开鉴权**（password / OIDC + Token）
+- 容器内监听 `0.0.0.0:8787`，compose 默认只发布到宿主机 `127.0.0.1`（`UI_BIND` 可改）；**对外暴露前必须开鉴权**（password / OIDC + Token）
 - compose 里 `GPU_CONTROL_UI_SECURE` 默认 `0`（本机 HTTP）；反代 HTTPS 后再设 `1`
 - 不把 GPU 运行时打进控制面镜像；worker 上的 Docker Job 仍由节点本地 runtime 执行
 - **不发 PyPI / npm**：控制面是仓库/镜像交付，不是库包（见 [ci.md](ci.md)）

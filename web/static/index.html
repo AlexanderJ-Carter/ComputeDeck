@@ -9,17 +9,7 @@
   <link rel="stylesheet" href="/static/vendor/xterm/xterm-6.1.0.css" />
   <link rel="stylesheet" href="/static/tokens.css?v=__UI_VERSION__" />
   <link rel="stylesheet" href="/static/style.css?v=__UI_VERSION__.dash3" />
-  <script>
-    (function () {
-      var mode = localStorage.getItem("gpu-control-theme") || "auto";
-      var resolved =
-        mode === "auto"
-          ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
-          : mode;
-      document.documentElement.setAttribute("data-theme", resolved);
-      document.documentElement.setAttribute("data-theme-mode", mode);
-    })();
-  </script>
+  <script src="/static/theme-boot.js?v=__UI_VERSION__"></script>
 </head>
 
 <body>
@@ -32,30 +22,32 @@
           <div class="logo-sub" id="ui-version">v__UI_VERSION__</div>
         </div>
       </div>
-      <nav class="rail-nav" id="rail-nav">
+      <nav class="rail-nav" id="rail-nav" aria-label="主导航">
         <div class="nav-group">
           <span class="nav-label">总览</span>
-          <button class="nav-item active" data-view="actions">看板</button>
+          <button class="nav-item active" data-view="actions"
+            title="看板 · 健康评分、GPU 池、趋势与 AI 告警">看板</button>
         </div>
         <div class="nav-group">
           <span class="nav-label">集群</span>
-          <button class="nav-item" data-view="cluster">节点</button>
-          <button class="nav-item" data-view="workloads">任务</button>
-          <button class="nav-item" data-view="endpoints">入口与网关</button>
+          <button class="nav-item" data-view="cluster" title="节点 · 哪台空闲、哪台异常；探活、隔离或打开终端">节点</button>
+          <button class="nav-item" data-view="workloads" title="任务 · 部署 Job、启停任务、队列与租约">任务</button>
+          <button class="nav-item" data-view="endpoints"
+            title="入口与网关 · Edge / LiteLLM / 远程接入与上游端点">入口与网关</button>
         </div>
         <div class="nav-group">
           <span class="nav-label">资源</span>
-          <button class="nav-item" data-view="models">模型</button>
-          <button class="nav-item" data-view="toolkits">工具栈</button>
+          <button class="nav-item" data-view="models" title="模型 · 拉取与校验模型，再把参数交给任务">模型</button>
+          <button class="nav-item" data-view="toolkits" title="工具栈 · 探测与安装训练 / 推理依赖">工具栈</button>
         </div>
         <div class="nav-group">
           <span class="nav-label">运维</span>
-          <button class="nav-item" data-view="ops">批量命令</button>
-          <button class="nav-item" data-view="terminal">交互终端</button>
+          <button class="nav-item" data-view="ops" title="批量命令 · 对多节点执行命令或 Python 脚本">批量命令</button>
+          <button class="nav-item" data-view="terminal" title="交互终端 · 连接单台节点的 SSH PTY">交互终端</button>
         </div>
         <div class="nav-group">
           <span class="nav-label">系统</span>
-          <button class="nav-item" data-view="config">配置</button>
+          <button class="nav-item" data-view="config" title="配置 · SSH、节点清单、Job、Watchdog 与鉴权">配置</button>
         </div>
       </nav>
       <div class="theme-toggle" id="theme-toggle" role="group" aria-label="主题">
@@ -65,7 +57,12 @@
       </div>
       <div class="rail-foot">
         <div class="cli-hint">等价 CLI</div>
-        <code id="cli-hint-code">gpu-control doctor</code>
+        <code id="cli-hint-code" tabindex="0" role="button" aria-label="复制等价 CLI 命令"
+          title="点击或回车复制">gpu-control doctor</code>
+        <button type="button" id="btn-shortcuts" class="rail-help" data-keep-enabled="1"
+          title="查看快捷键、键盘操作与文档入口">
+          <span>快捷键与帮助</span><kbd>?</kbd>
+        </button>
       </div>
     </aside>
 
@@ -73,7 +70,7 @@
       <header class="topbar">
         <div class="topbar-copy">
           <p class="eyebrow" id="strategy-line">GPU 控制面</p>
-          <h1 id="view-title">看板</h1>
+          <h1 id="view-title" aria-live="polite">看板</h1>
           <p class="page-purpose" id="view-purpose">一眼看清集群状态；具体操作去对应页面</p>
         </div>
         <div class="topbar-actions">
@@ -89,9 +86,11 @@
             aria-controls="notices-pop" title="公告">
             公告<span id="notices-badge" class="notices-badge" hidden>0</span>
           </button>
-          <span id="busy-indicator" class="chip chip--info" hidden>执行中…</span>
-          <button type="button" id="console-unread" class="chip warn console-unread" hidden
-            data-keep-enabled="1">有新输出</button>
+          <span id="busy-indicator" class="chip chip--info" role="status" aria-live="polite" hidden>执行中…</span>
+          <span class="console-unread-wrap" role="status" aria-live="polite">
+            <button type="button" id="console-unread" class="chip warn console-unread" hidden
+              data-keep-enabled="1">有新输出</button>
+          </span>
           <span id="auth-session-chip" class="chip chip--neutral" hidden data-keep-enabled="1"></span>
           <button id="btn-logout" class="ghost tiny" data-keep-enabled="1" hidden>退出</button>
         </div>
@@ -387,6 +386,7 @@ gpu-control jobs install vllm-serve --name vllm</pre>
               <h2>队列 / 占用</h2>
               <button id="btn-queue-submit" class="ghost tiny" data-action="1">按 Job 默认 GPU 入队</button>
             </div>
+            <p class="meta">排队任务按 GPU 数调度；占用登记显示谁占着哪些卡，释放前请确认对应 Job。</p>
             <div id="queue" class="list"></div>
             <h3 class="sub">占用登记</h3>
             <div id="leases" class="list"></div>
@@ -513,18 +513,19 @@ gpu-control jobs install vllm-serve --name vllm</pre>
                 <h3>LiteLLM · OpenAI 层（可选，经 Edge）</h3>
                 <span class="chip" id="litellm-card-state">-</span>
               </header>
-              <p class="meta">统一 <code>model</code> 名与官方 Admin。Admin 用户名随意（如
-                <code>admin</code>），密码 = Master Key。虚拟密钥/预算仍在 Admin 内管理。</p>
+              <p class="meta">统一 <code>model</code> 名与虚拟密钥层。API 用 <strong>Master Key</strong>
+                调 <code>/v1</code> 即可；LiteLLM Admin UI 依赖数据库，未接数据库时按钮会置灰。</p>
               <div class="kv"><b>地址</b> <a id="litellm-card-url" href="#" target="_blank" rel="noopener">-</a></div>
               <div class="kv"><b>上游</b> <span id="litellm-upstream">-</span></div>
               <div class="kv"><b>二进制</b> <code id="litellm-card-bin">-</code></div>
               <div class="kv"><b>Master Key</b> <span id="litellm-key-meta">未加载</span></div>
+              <div class="kv"><b>管理台</b> <span id="litellm-db-meta">检测中…</span></div>
               <div class="btn-row" style="margin-bottom:8px">
                 <button id="btn-litellm-start" class="primary tiny" data-keep-enabled="1" data-action="1">启动</button>
                 <button id="btn-litellm-stop" class="ghost tiny" data-keep-enabled="1" data-action="1">停止</button>
                 <button id="btn-litellm-restart" class="ghost tiny" data-keep-enabled="1" data-action="1">重启</button>
                 <a id="litellm-ui-link" class="ghost tiny" href="http://127.0.0.1:4000/ui/" target="_blank"
-                  rel="noopener" data-keep-enabled="1">打开 Admin</a>
+                  rel="noopener" data-keep-enabled="1" title="LiteLLM Admin UI 需要数据库（DATABASE_URL）">打开 Admin</a>
               </div>
               <label class="field"><span>设置 / 生成 Master Key</span>
                 <input id="litellm-master-key" type="password" placeholder="sk-… 或点生成" autocomplete="off"
@@ -543,6 +544,7 @@ gpu-control jobs install vllm-serve --name vllm</pre>
               </details>
             </article>
           </div>
+        </div>
 
         <section class="panel dash-remote" aria-labelledby="dash-remote-title">
           <header class="panel-h">
@@ -559,9 +561,12 @@ gpu-control jobs install vllm-serve --name vllm</pre>
           </div>
         </section>
 
-
-          <h3 class="sub">上游推理端点（节点 GPU 端口 · 勿当产品首页）</h3>
-          <p class="meta" id="pool-meta"></p>
+        <section class="panel endpoints-pool" aria-labelledby="pool-title">
+          <header class="panel-h">
+            <h2 id="pool-title">上游推理端点</h2>
+            <span class="meta" id="pool-meta"></span>
+          </header>
+          <p class="meta">这里列出节点 GPU 端口，只给 Edge 当上游；不要把产品导航或业务流量直接指到这里。</p>
           <div id="api-mosaic" class="api-mosaic"></div>
 
           <details class="fold" style="margin-top:12px">
@@ -593,7 +598,7 @@ gpu-control jobs install vllm-serve --name vllm</pre>
             </div>
             <pre id="client-snippet" class="snippet"></pre>
           </details>
-        </div>
+        </section>
       </section>
 
       <section class="view" data-view-panel="terminal">
@@ -607,7 +612,8 @@ gpu-control jobs install vllm-serve --name vllm</pre>
               <button id="btn-metrics-refresh" class="ghost" data-keep-enabled="1">刷新主机指标</button>
             </div>
           </div>
-          <span class="meta" id="term-status">未连接</span>
+          <p class="meta">交互终端通过主控 SSH 到所选节点，使用节点自己的端口与用户；断开后进程不会自动停止。</p>
+          <span class="meta" id="term-status" role="status" aria-live="polite">未连接</span>
           <div id="term" class="term-host"></div>
         </div>
         <div class="panel">
@@ -615,6 +621,7 @@ gpu-control jobs install vllm-serve --name vllm</pre>
             <h2>主机资源</h2>
             <span class="meta" id="metrics-at">尚未采集</span>
           </div>
+          <p class="meta">CPU / 内存 / 磁盘 / GPU 快照；点「刷新主机指标」会按需探活并重新采集。</p>
           <div id="host-metrics" class="metrics-grid"></div>
         </div>
       </section>
@@ -625,6 +632,7 @@ gpu-control jobs install vllm-serve --name vllm</pre>
             <div class="panel-h">
               <h2>远程命令</h2>
             </div>
+            <p class="meta">在所选节点上执行单条命令；只读命令自动执行，写操作按风险提示确认。</p>
             <label class="field"><span>目标</span><select id="exec-target"></select></label>
             <div class="preset-grid" id="exec-presets"></div>
             <div class="row exec-suggest-row">
@@ -641,14 +649,15 @@ gpu-control jobs install vllm-serve --name vllm</pre>
             <div class="panel-h">
               <h2>运行 Python</h2>
             </div>
+            <p class="meta">在所选节点执行脚本或 <code>-c</code> 代码；长任务勾选后台 nohup，输出进控制台。</p>
             <label class="field"><span>目标</span><select id="py-target"></select></label>
             <label class="field"><span>解释器</span><input id="py-bin" value="" placeholder="/usr/bin/python3" /></label>
             <label class="field"><span>脚本</span><input id="py-script" placeholder="/path/script.py" /></label>
             <label class="field"><span>参数</span><input id="py-args" placeholder="--flag" /></label>
             <label class="field"><span>代码 (-c)</span><input id="py-code" placeholder="print(1)" /></label>
             <div class="row gap">
-              <input id="py-cuda" placeholder="CUDA_VISIBLE_DEVICES" />
-              <input id="py-cwd" placeholder="工作目录" />
+              <input id="py-cuda" placeholder="CUDA_VISIBLE_DEVICES" aria-label="CUDA_VISIBLE_DEVICES" />
+              <input id="py-cwd" placeholder="工作目录" aria-label="工作目录" />
             </div>
             <label class="check" for="py-bg"><input type="checkbox" id="py-bg" /><span>后台 nohup</span></label>
             <button id="btn-run-py" class="primary wide" data-action="1">运行 Python</button>
@@ -657,14 +666,19 @@ gpu-control jobs install vllm-serve --name vllm</pre>
       </section>
 
       <section class="view" data-view-panel="config">
-        <div class="tabs" id="config-tabs">
-          <button class="tab active" data-tab="wizard" data-keep-enabled="1">配置向导</button>
-          <button class="tab" data-tab="checklist" data-keep-enabled="1">检查清单</button>
-          <button class="tab" data-tab="docs" data-keep-enabled="1">文档与 API</button>
-          <button class="tab" data-tab="raw" data-keep-enabled="1">高级配置</button>
+        <div class="tabs" id="config-tabs" role="tablist" aria-label="配置分区">
+          <button class="tab active" id="tab-wizard" role="tab" aria-selected="true"
+            aria-controls="tabpanel-wizard" tabindex="0" data-tab="wizard" data-keep-enabled="1">配置向导</button>
+          <button class="tab" id="tab-checklist" role="tab" aria-selected="false" aria-controls="tabpanel-checklist"
+            tabindex="-1" data-tab="checklist" data-keep-enabled="1">检查清单</button>
+          <button class="tab" id="tab-docs" role="tab" aria-selected="false" aria-controls="tabpanel-docs"
+            tabindex="-1" data-tab="docs" data-keep-enabled="1">文档与 API</button>
+          <button class="tab" id="tab-raw" role="tab" aria-selected="false" aria-controls="tabpanel-raw"
+            tabindex="-1" data-tab="raw" data-keep-enabled="1">高级配置</button>
         </div>
 
-        <div class="tab-panel active" data-tab-panel="wizard">
+        <div class="tab-panel active" id="tabpanel-wizard" role="tabpanel" aria-labelledby="tab-wizard"
+          tabindex="0" data-tab-panel="wizard">
           <div class="config-hero">
             <div>
               <h2>配置向导</h2>
@@ -877,7 +891,8 @@ gpu-control jobs install vllm-serve --name vllm</pre>
           </section>
         </div>
 
-        <div class="tab-panel" data-tab-panel="checklist">
+        <div class="tab-panel" id="tabpanel-checklist" role="tabpanel" aria-labelledby="tab-checklist" tabindex="0"
+          data-tab-panel="checklist">
           <div class="panel">
             <div class="panel-h">
               <h2>就绪检查</h2>
@@ -891,7 +906,8 @@ gpu-control jobs install vllm-serve --name vllm</pre>
           </div>
         </div>
 
-        <div class="tab-panel" data-tab-panel="docs">
+        <div class="tab-panel" id="tabpanel-docs" role="tabpanel" aria-labelledby="tab-docs" tabindex="0"
+          data-tab-panel="docs">
           <div class="panel">
             <div class="panel-h">
               <h2>上手步骤</h2>
@@ -927,7 +943,8 @@ gpu-control ui --background</pre>
           </div>
         </div>
 
-        <div class="tab-panel" data-tab-panel="raw">
+        <div class="tab-panel" id="tabpanel-raw" role="tabpanel" aria-labelledby="tab-raw" tabindex="0"
+          data-tab-panel="raw">
           <div class="panel">
             <div class="panel-h">
               <h2>配置说明</h2>
@@ -959,9 +976,9 @@ gpu-control ui --background</pre>
     </div>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-  <div id="notices-pop" class="notices-pop" hidden role="dialog" aria-label="公告">
+  <div id="notices-pop" class="notices-pop" hidden role="dialog" aria-labelledby="notices-pop-title">
     <header class="notices-pop-h">
-      <strong>公告</strong>
+      <strong id="notices-pop-title">公告</strong>
       <div class="btn-row">
         <button type="button" id="btn-notices-read-all" class="ghost tiny" data-keep-enabled="1">全部已读</button>
         <button type="button" id="btn-notices-close" class="ghost tiny" data-keep-enabled="1">关闭</button>
@@ -1036,10 +1053,38 @@ gpu-control ui --background</pre>
       </form>
     </div>
   </section>
-  <div id="auth-gate" class="auth-gate" hidden>
+  <dialog id="shortcuts-dialog" class="shortcuts-dialog" aria-labelledby="shortcuts-title">
+    <div class="shortcuts-card">
+      <div class="panel-h">
+        <h2 id="shortcuts-title">快捷键与帮助</h2>
+        <button type="button" class="ghost tiny" id="shortcuts-close" data-keep-enabled="1">关闭</button>
+      </div>
+      <p class="meta">输入框内不触发页面快捷键；弹层打开时快捷键暂停。</p>
+      <dl class="shortcuts-grid">
+        <dt><kbd>1</kbd>–<kbd>9</kbd></dt>
+        <dd>切换左侧页面</dd>
+        <dt><kbd>←</kbd> <kbd>→</kbd></dt>
+        <dd>上一页 / 下一页</dd>
+        <dt><kbd>r</kbd></dt>
+        <dd>刷新 GPU 快照</dd>
+        <dt><kbd>h</kbd></dt>
+        <dd>探测 API 健康</dd>
+        <dt><kbd>?</kbd></dt>
+        <dd>打开本帮助</dd>
+        <dt><kbd>Esc</kbd></dt>
+        <dd>关闭弹层 / 助手面板</dd>
+        <dt><kbd>Tab</kbd></dt>
+        <dd>在按钮、输入框间移动焦点</dd>
+      </dl>
+      <p class="meta">完整说明见 <a href="/help/" target="_blank" rel="noopener">文档站</a> ·
+        <a href="/api/docs" target="_blank" rel="noopener">API / Swagger</a> ·
+        <a href="/api" target="_blank" rel="noopener">API 目录</a>。</p>
+    </div>
+  </dialog>
+  <div id="auth-gate" class="auth-gate" role="dialog" aria-modal="true" aria-labelledby="auth-gate-title" hidden>
     <form id="auth-form" class="auth-card" autocomplete="current-password">
       <div class="auth-brand">ComputeDeck</div>
-      <h2>控制面登录</h2>
+      <h2 id="auth-gate-title">控制面登录</h2>
       <p class="meta" id="auth-hint">已启用鉴权 · 会话 Cookie · HttpOnly</p>
       <div id="auth-oidc-box" hidden>
         <a class="btn primary" id="auth-oidc-btn" href="/api/auth/oidc/login" data-keep-enabled="1">使用企业账号登录（OIDC）</a>
@@ -1048,7 +1093,8 @@ gpu-control ui --background</pre>
       <div id="auth-password-box">
         <label class="field">
           <span>密码</span>
-          <input id="auth-password" type="password" minlength="8" placeholder="管理员密码" autocomplete="current-password" />
+          <input id="auth-password" type="password" minlength="8" placeholder="管理员密码" autocomplete="current-password"
+            required />
         </label>
         <button type="submit" class="primary" id="auth-submit" data-keep-enabled="1">进入控制台</button>
       </div>

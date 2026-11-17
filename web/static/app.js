@@ -445,7 +445,7 @@ function revealConsole() {
     const toggle = $("btn-console-toggle");
     if (toggle) toggle.textContent = "收起";
   }
-  wrap.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  wrap.scrollIntoView({ behavior: scrollBehavior(), block: "nearest" });
   hideConsoleUnread();
 }
 
@@ -1555,14 +1555,29 @@ function renderIngressDuo(status) {
   const meta = document.getElementById("litellm-key-meta");
   if (meta) {
     meta.textContent = ll.configured
-      ? `已配置${ll.login_hint ? " · 密码=Master Key" : ""}`
-      : "未配置（Admin 无法登录）";
+      ? "已配置 · API 用 Bearer <Master Key>"
+      : "未配置（API 与 Admin 都无法登录）";
+  }
+  const db = ll.database || {};
+  const dbMeta = document.getElementById("litellm-db-meta");
+  if (dbMeta) {
+    dbMeta.textContent = db.configured
+      ? `Admin 可用 · ${db.url_masked || "DATABASE_URL"}`
+      : db.hint || "未接数据库：Admin UI 不可登录，请用 Master Key 调 /v1";
+    dbMeta.classList.toggle("bad", Boolean(db.scheme_ok === false));
   }
   const link = document.getElementById("litellm-ui-link");
   if (link) {
+    const adminReady = db.configured || ll.phase === "unmanaged";
     link.href =
       ll.ui_url ||
       (ll.url ? `${String(ll.url).replace(/\/$/, "")}/ui/` : "http://127.0.0.1:4000/ui/");
+    link.classList.toggle("is-disabled", !adminReady);
+    link.setAttribute("aria-disabled", adminReady ? "false" : "true");
+    link.title = adminReady
+      ? "LiteLLM Admin UI（用户名 admin，密码 = Master Key）"
+      : "LiteLLM Admin UI 需要数据库；请先配 gateway.litellm_database_url 或直接用 Master Key 调 /v1";
+    if (!adminReady) link.href = "#";
   }
   const reasons = document.getElementById("litellm-card-reasons");
   if (reasons) {
@@ -2685,6 +2700,7 @@ async function runToolkit(action, extra = {}) {
   try {
     const body = { ...extra };
     const data = await api(`/api/toolkits/${action}`, {
+      timeoutMs: 1900000,
       method: "POST",
       body: JSON.stringify(body),
     });
@@ -3206,6 +3222,7 @@ function hideExecSuggest() {
   list.innerHTML = "";
   execSuggestItems = [];
   execSuggestIndex = -1;
+  $("exec-custom")?.removeAttribute("aria-activedescendant");
 }
 
 function renderExecSuggest(items) {
@@ -3220,18 +3237,39 @@ function renderExecSuggest(items) {
   list.innerHTML = execSuggestItems
     .map(
       (row, i) =>
-        `<li role="option" data-idx="${i}" class="${i === 0 ? "is-active" : ""}">` +
+        `<li role="option" id="exec-suggest-opt-${i}" aria-selected="${i === 0}" data-idx="${i}" class="${i === 0 ? "is-active" : ""}">` +
         `<strong>${escapeHtml(row.label || row.command)}</strong>` +
         `<code>${escapeHtml(row.command)}</code></li>`
     )
     .join("");
   list.hidden = false;
+  syncExecSuggestActive();
   list.querySelectorAll("li").forEach((li) => {
     li.addEventListener("mousedown", (ev) => {
       ev.preventDefault();
       applyExecSuggest(Number(li.dataset.idx));
     });
   });
+}
+
+/** 键盘高亮与 aria-activedescendant 同步，屏幕阅读器才知道当前候选。 */
+function syncExecSuggestActive() {
+  const input = $("exec-custom");
+  const list = $("exec-suggest-list");
+  if (!list || list.hidden) {
+    input?.removeAttribute("aria-activedescendant");
+    return;
+  }
+  list.querySelectorAll("li").forEach((li, i) => {
+    const active = i === execSuggestIndex;
+    li.classList.toggle("is-active", active);
+    li.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  if (execSuggestIndex >= 0) {
+    input?.setAttribute("aria-activedescendant", `exec-suggest-opt-${execSuggestIndex}`);
+  } else {
+    input?.removeAttribute("aria-activedescendant");
+  }
 }
 
 function applyExecSuggest(idx) {
@@ -3285,13 +3323,13 @@ function bindExecSuggest() {
     if (ev.key === "ArrowDown" && open) {
       ev.preventDefault();
       execSuggestIndex = (execSuggestIndex + 1) % execSuggestItems.length;
-      list.querySelectorAll("li").forEach((li, i) => li.classList.toggle("is-active", i === execSuggestIndex));
+      syncExecSuggestActive();
       return;
     }
     if (ev.key === "ArrowUp" && open) {
       ev.preventDefault();
       execSuggestIndex = (execSuggestIndex - 1 + execSuggestItems.length) % execSuggestItems.length;
-      list.querySelectorAll("li").forEach((li, i) => li.classList.toggle("is-active", i === execSuggestIndex));
+      syncExecSuggestActive();
       return;
     }
     if (ev.key === "Tab" && open && execSuggestIndex >= 0) {
@@ -3437,16 +3475,29 @@ const VIEW_ORDER = [
   "workloads",
   "endpoints",
   "models",
+  "toolkits",
   "ops",
+  "terminal",
   "config",
 ];
 
-function setConfigTab(name, { updateHash = false } = {}) {
+/** 尊重系统「减少动态效果」：平滑滚动只在允许时使用。 */
+function scrollBehavior() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+}
+
+function setConfigTab(name, { updateHash = false, focus = false } = {}) {
   document.querySelectorAll("#config-tabs .tab").forEach((t) => {
-    t.classList.toggle("active", t.dataset.tab === name);
+    const active = t.dataset.tab === name;
+    t.classList.toggle("active", active);
+    t.setAttribute("aria-selected", active ? "true" : "false");
+    t.tabIndex = active ? 0 : -1;
+    if (active && focus) t.focus();
   });
   document.querySelectorAll("[data-tab-panel]").forEach((p) => {
-    p.classList.toggle("active", p.dataset.tabPanel === name);
+    const active = p.dataset.tabPanel === name;
+    p.classList.toggle("active", active);
+    p.hidden = !active;
   });
   if (updateHash && state.view === "config") {
     history.replaceState(null, "", `#/config/${name}`);
@@ -4386,8 +4437,31 @@ async function boot() {
       closeNodeDrawer();
     });
   }
-  document.querySelectorAll("#config-tabs .tab").forEach((btn) => {
+  const configTabs = Array.from(document.querySelectorAll("#config-tabs .tab"));
+  configTabs.forEach((btn, idx) => {
     btn.addEventListener("click", () => setConfigTab(btn.dataset.tab, { updateHash: true }));
+    btn.addEventListener("keydown", (ev) => {
+      const target =
+        ev.key === "ArrowLeft" ? idx - 1
+          : ev.key === "ArrowRight" ? idx + 1
+            : ev.key === "Home" ? 0
+              : ev.key === "End" ? configTabs.length - 1
+                : null;
+      if (target == null || !configTabs.length) return;
+      ev.preventDefault();
+      const next = configTabs[(target + configTabs.length) % configTabs.length];
+      setConfigTab(next.dataset.tab, { updateHash: true, focus: true });
+    });
+  });
+  const shortcutsDialog = $("shortcuts-dialog");
+  const openShortcuts = () => {
+    if (!shortcutsDialog) return;
+    if (!shortcutsDialog.open) shortcutsDialog.showModal();
+  };
+  $("btn-shortcuts")?.addEventListener("click", openShortcuts);
+  $("shortcuts-close")?.addEventListener("click", () => shortcutsDialog?.close());
+  shortcutsDialog?.addEventListener("click", (ev) => {
+    if (ev.target === shortcutsDialog) shortcutsDialog.close();
   });
   window.addEventListener("hashchange", () => {
     const route = currentRoute();
@@ -4425,15 +4499,22 @@ async function boot() {
   const cliHint = $("cli-hint-code");
   if (cliHint) {
     cliHint.classList.add("cli-hint-clickable");
-    cliHint.title = "点击复制 CLI 命令";
-    cliHint.addEventListener("click", async () => {
+    cliHint.title = "点击或回车复制 CLI 命令";
+    const copyCliHint = async () => {
       const ok = await copyText(cliHint.textContent || "");
       toastOk(ok ? "已复制 CLI 命令" : "复制失败");
+    };
+    cliHint.addEventListener("click", copyCliHint);
+    cliHint.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") {
+        ev.preventDefault();
+        copyCliHint();
+      }
     });
   }
   document.querySelectorAll("[data-config-jump]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.getElementById(btn.dataset.configJump)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      document.getElementById(btn.dataset.configJump)?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
     });
   });
 
@@ -4575,6 +4656,13 @@ async function boot() {
   document.getElementById("btn-litellm-start")?.addEventListener("click", () => litellmLifecycle("start"));
   document.getElementById("btn-litellm-stop")?.addEventListener("click", () => litellmLifecycle("stop"));
   document.getElementById("btn-litellm-restart")?.addEventListener("click", () => litellmLifecycle("restart"));
+  document.getElementById("litellm-ui-link")?.addEventListener("click", (ev) => {
+    const link = ev.currentTarget;
+    if (link.getAttribute("aria-disabled") === "true") {
+      ev.preventDefault();
+      toast("LiteLLM Admin 需要数据库；未接数据库时请用 Master Key 调 /v1", { tone: "warn", timeout: 4200 });
+    }
+  });
   document.getElementById("btn-save-ssh").addEventListener("click", saveSsh);
   document.getElementById("btn-test-ssh").addEventListener("click", testSsh);
   document.getElementById("btn-render").addEventListener("click", async () => {
@@ -4787,7 +4875,7 @@ async function boot() {
       if (registerId) body.register_id = registerId;
       if (node) body.node = node;
       else body.nodes = "all";
-      const data = await api("/api/models/pull", { method: "POST", body: JSON.stringify(body) });
+      const data = await api("/api/models/pull", { method: "POST", body: JSON.stringify(body), timeoutMs: 3700000 });
       if (data.results?.length) showResults(data.results, "下载模型");
       else writeConsoleText(data.result?.stdout || data.result?.stderr || "pull done", { meta: "下载" });
       if (data.models) renderModels(data.models);
@@ -4912,7 +5000,7 @@ async function boot() {
     if (!ok) return;
     setBusy(true);
     try {
-      const data = await api("/api/deploy", { method: "POST", body: JSON.stringify(body) });
+      const data = await api("/api/deploy", { method: "POST", body: JSON.stringify(body), timeoutMs: 1900000 });
       writeConsoleText(data.result.stdout || data.result.stderr || "deploy done", {
         meta: "deploy",
       });
@@ -4937,6 +5025,7 @@ async function boot() {
       const data = await api("/api/queue/submit", {
         method: "POST",
         body: JSON.stringify({ job, gpus, note: "from-ui" }),
+        timeoutMs: 1900000,
       });
       log(data.result.stdout || "submitted");
       toastOk(`已入队 ${job} · ${gpus} GPU`);
@@ -4959,10 +5048,36 @@ async function boot() {
   });
   document.getElementById("btn-console-connect").addEventListener("click", () => runOneclick("connect"));
 
+  const focusActiveNav = () => {
+    document.querySelector(".nav-item.active")?.focus({ preventScroll: true });
+  };
   window.addEventListener("keydown", (ev) => {
     if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.repeat) return;
+    // 弹层打开时让快捷键让位给对话框；输入框内也不劫持按键。
+    if (document.querySelector("dialog[open]")) return;
     const target = ev.target;
     if (target && (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable)) {
+      return;
+    }
+    if (ev.key === "?" || (ev.key === "/" && ev.shiftKey)) {
+      ev.preventDefault();
+      openShortcuts();
+      return;
+    }
+    if (ev.key === "Escape") {
+      if (noticesState.open) {
+        ev.preventDefault();
+        setNoticesPopOpen(false);
+      }
+      return;
+    }
+    if (assistantState.open) return;
+    if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
+      ev.preventDefault();
+      const idx = Math.max(0, VIEW_ORDER.indexOf(state.view));
+      const delta = ev.key === "ArrowRight" ? 1 : -1;
+      setView(VIEW_ORDER[(idx + delta + VIEW_ORDER.length) % VIEW_ORDER.length]);
+      focusActiveNav();
       return;
     }
     const map = Object.fromEntries(VIEW_ORDER.map((view, index) => [String(index + 1), view]));
@@ -4970,6 +5085,7 @@ async function boot() {
     if (map[ev.key]) {
       ev.preventDefault();
       setView(map[ev.key]);
+      focusActiveNav();
     }
     if (ev.key === "r" || ev.key === "R") {
       ev.preventDefault();
@@ -5211,11 +5327,18 @@ function renderNotices(payload) {
 }
 
 function setNoticesPopOpen(open) {
-  noticesState.open = !!open;
   const pop = $("notices-pop");
   const btn = $("btn-notices");
+  const wasOpen = noticesState.open;
+  const focusInside = Boolean(pop && pop.contains(document.activeElement));
+  noticesState.open = !!open;
   if (pop) pop.hidden = !open;
   if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) {
+    $("btn-notices-close")?.focus();
+  } else if (wasOpen && focusInside) {
+    btn?.focus();
+  }
 }
 
 async function syncNotices({ toast: showToast = false } = {}) {
@@ -5388,6 +5511,9 @@ function setAssistantOpen(open) {
     restoreAssistantConversation().catch(() => {});
     if (assistantState.settingsOpen) $("assistant-base-url")?.focus();
     else $("assistant-input")?.focus();
+  } else {
+    const focusInside = Boolean(panel && panel.contains(document.activeElement));
+    if (focusInside) fab?.focus();
   }
 }
 

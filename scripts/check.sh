@@ -16,6 +16,8 @@ NODE_BIN="${NODE_BIN:-$(command -v node || true)}"
 if [[ -n "$NODE_BIN" ]] && "$NODE_BIN" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 16 ? 0 : 1)' 2>/dev/null; then
   echo "== javascript syntax =="
   "$NODE_BIN" --check web/static/app.js
+  "$NODE_BIN" --check web/static/api-docs.js
+  "$NODE_BIN" --check web/static/theme-boot.js
   "$NODE_BIN" --check web/static/xterm-fit.js
   "$NODE_BIN" --check extensions/vscode/extension.js
 else

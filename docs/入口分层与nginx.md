@@ -61,6 +61,7 @@ ComputeDeck 的推荐分工：
 | `litellm_upstream` | `nodes` / `edge` | `edge` 时 LiteLLM 只生成一个指向 Edge 的 deployment；`nodes` 为旧的直连模式 |
 | `nginx_upstream` | `nodes` / `edge` | `edge` 时 nginx 只做 TLS/Web 前端；`nodes` 时 nginx 作为 Edge 的同层替代 |
 | `litellm_edge_url` | URL | 可选；默认 `http://127.0.0.1:<ingress.port>` |
+| `litellm_database_url` / `litellm_database_url_file` | `postgres://…` | 可选；LiteLLM Admin UI 与虚拟密钥依赖 Postgres |
 
 改完后：
 
@@ -79,6 +80,14 @@ grep 'api_base:' state/gateway/litellm-model-list.yaml
 # 应为 http://127.0.0.1:18080/v1
 gpu-control gateway status
 ```
+
+### 3.1 LiteLLM Admin UI 与数据库
+
+LiteLLM 的 `/ui` 管理员登录和虚拟密钥都依赖 Postgres：
+
+- **未配数据库**：只能把 Master Key 当 `Authorization: Bearer` 调 `/v1`。用错误的 Key 请求时，LiteLLM 会回 `Authentication Error, Not connected to DB!`，这不是 Edge 的问题。
+- **要开 Admin UI**：配 `gateway.litellm_database_url`（或 `litellm_database_url_file`），安装 LiteLLM 的数据库依赖并确保 `prisma` 客户端可用，然后重启 LiteLLM。管理台登录用户名 `admin`（`UI_USERNAME` 可覆盖），密码 = Master Key。
+- 控制面「入口与网关」卡片会在未接数据库时把「打开 Admin」置灰，并提示改用 Master Key；`gpu-control gateway status` 的 `litellm.database` 字段给出同样的判断。
 
 ## 4. nginx 的四种用法
 

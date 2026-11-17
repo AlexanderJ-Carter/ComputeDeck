@@ -34,10 +34,10 @@ code --extensionDevelopmentPath="$PWD"
 
 ```bash
 ./scripts/package_extension.sh
-code --install-extension extensions/vscode/computedeck-vscode-0.1.0.vsix
+code --install-extension extensions/vscode/computedeck-vscode-1.0.0.vsix
 ```
 
-CI：`.github/workflows/vscode.yml` 会在 `extensions/vscode/**` 变更时打包 VSIX 并上传 artifact；打 `v*` tag 时把 VSIX 附加到对应 GitHub Release。
+CI：`.github/workflows/vscode.yml` 会在 `extensions/vscode/**` 变更时打包 VSIX 并上传 artifact；打 `v*` tag 时由 `.github/workflows/release.yml` 重新打包并把 VSIX 附加到对应 GitHub Release（扩展版本与主版本同步）。
 
 ## 3. 连接与鉴权
 

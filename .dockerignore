@@ -21,7 +21,6 @@ deploy/ssh/**
 uv.lock
 agent-transcripts/
 *.tmp
-docs/assets/*.jpg
 docs/superpowers/
 *.md
 !README.md
@@ -32,5 +31,3 @@ docs/superpowers/
 !NOTICE
 tests/
 examples/
-mkdocs.yml
-requirements-docs.txt

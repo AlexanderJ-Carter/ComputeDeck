@@ -4,16 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>gpu-control API · Swagger</title>
-  <script>
-    (function () {
-      var mode = localStorage.getItem("gpu-control-theme") || "auto";
-      var resolved =
-        mode === "auto"
-          ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
-          : mode;
-      document.documentElement.setAttribute("data-theme", resolved);
-    })();
-  </script>
+  <script src="/static/theme-boot.js"></script>
   <link rel="stylesheet" href="/static/tokens.css" />
   <style>
     :root {
@@ -32,11 +23,24 @@
     .meta { color: var(--muted); font-size: 13px; }
     .links { display: flex; gap: 8px; flex-wrap: wrap; }
     a.btn, button.btn {
-      display: inline-flex; align-items: center; padding: 6px 10px;
+      display: inline-flex; align-items: center; min-height: 34px; padding: 0 12px;
       border: 1px solid var(--line); border-radius: 8px; color: var(--ink);
-      text-decoration: none; font-size: 13px; background: var(--panel); cursor: pointer; font: inherit;
+      text-decoration: none; font-size: 13px; font-weight: 600; background: var(--panel); cursor: pointer; font: inherit;
+      transition: border-color 0.14s ease, background-color 0.14s ease, transform 0.14s ease;
     }
-    a.btn.primary, button.btn.primary { background: var(--accent); border-color: transparent; color: #fff; }
+    a.btn:hover, button.btn:hover {
+      border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+      background: color-mix(in srgb, var(--accent) 7%, var(--panel));
+      transform: translateY(-1px);
+    }
+    a.btn:active, button.btn:active { transform: translateY(0); }
+    a.btn.primary, button.btn.primary { background: var(--accent); border-color: transparent; color: var(--accent-ink); }
+    a.btn.primary:hover, button.btn.primary:hover { filter: brightness(1.05); }
+    a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible,
+    textarea:focus-visible, summary:focus-visible, tr[tabindex]:focus-visible {
+      outline: 2px solid color-mix(in srgb, var(--accent) 75%, transparent);
+      outline-offset: 2px;
+    }
     main { max-width: 1100px; margin: 0 auto; padding: 20px; }
     .card {
       background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
@@ -46,6 +50,8 @@
     .auth-box { border-left: 3px solid var(--accent); padding-left: 12px; color: var(--muted); font-size: 13px; }
     code, .mono { font-family: var(--mono); font-size: 12px; background: var(--code); padding: 1px 5px; border-radius: 4px; }
     .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+    .toolbar input { flex: 1 1 260px; width: auto; }
+    .toolbar select { flex: 0 1 220px; width: auto; }
     input, select, textarea {
       border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
       background: var(--panel); color: var(--ink); font: inherit; width: 100%;
@@ -68,15 +74,25 @@
     }
     .public { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
     details { margin-top: 6px; }
-    summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+    summary { cursor: pointer; color: var(--muted); font-size: 12px; transition: color 0.14s ease; }
+    summary:hover { color: var(--ink); }
     pre {
       margin: 8px 0 0; padding: 10px; overflow: auto; background: var(--code);
       border-radius: 8px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap;
     }
     .err { color: var(--bad); } .ok { color: var(--ok); }
-    tr.active { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+    .table-wrap { overflow-x: auto; }
+    .table-wrap table { min-width: 560px; }
+    tbody tr { cursor: pointer; transition: background-color 0.14s ease; }
+    tbody tr:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+    tbody tr.active { background: color-mix(in srgb, var(--accent) 10%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
+    tbody tr:active { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+    .hint { margin-top: 10px; }
     .try-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     @media (max-width: 900px) { .try-grid { grid-template-columns: 1fr; } .row { grid-template-columns: 1fr; } }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+    }
   </style>
 </head>
 <body>
@@ -103,6 +119,7 @@
           <input id="token" type="password" placeholder="gpu-control auth issue-token" autocomplete="off" />
           <button class="btn" type="button" id="btn-save-token">保存</button>
         </div>
+        <p class="meta" id="token-status" role="status" aria-live="polite" hidden></p>
       </div>
     </section>
 
@@ -131,190 +148,22 @@
       </div>
     </section>
 
+    <p class="meta hint">表格行可用 Tab 聚焦、Enter 填入试调；筛选框支持直接输入 path / summary / tag。</p>
     <div class="toolbar">
-      <input id="q" placeholder="筛选 path / summary / tag" />
-      <select id="tag"><option value="">全部分组</option></select>
+      <input id="q" placeholder="筛选 path / summary / tag" aria-label="筛选接口" />
+      <select id="tag" aria-label="按分组筛选"><option value="">全部分组</option></select>
     </div>
     <section class="card">
-      <table>
-        <thead>
-          <tr><th style="width:70px">方法</th><th>路径</th><th>说明</th></tr>
-        </thead>
-        <tbody id="rows"></tbody>
-      </table>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th scope="col" style="width:70px">方法</th><th scope="col">路径</th><th scope="col">说明</th></tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
     </section>
   </main>
-  <script>
-    const TOKEN_KEY = "gpu-control-api-token";
-    const state = { paths: {}, auth: null, info: null, rows: [] };
-
-    function escapeHtml(s) {
-      return String(s)
-        .replaceAll("&", "&amp;").replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;").replaceAll('"', "&quot;");
-    }
-
-    function methodClass(m) { return (m || "get").toLowerCase(); }
-
-    function authHeaders() {
-      const token = (document.getElementById("token").value || "").trim();
-      const h = { Accept: "application/json" };
-      if (token) h.Authorization = "Bearer " + token;
-      return h;
-    }
-
-    function renderAuth(auth) {
-      const el = document.getElementById("auth-box");
-      if (!auth) { el.textContent = "无鉴权元数据"; return; }
-      const schemes = (auth.schemes || []).join(" / ") || "（未启用）";
-      el.innerHTML = [
-        `<div><b>mode</b> = <code>${escapeHtml(auth.mode)}</code> · enabled=${auth.enabled} · ${schemes}</div>`,
-        `<div style="margin-top:6px">${escapeHtml(auth.note || "")}</div>`,
-        `<div style="margin-top:6px">签发：<code>${escapeHtml(auth.issue_token || "")}</code></div>`,
-      ].join("");
-    }
-
-    function flatten() {
-      const rows = [];
-      for (const [path, methods] of Object.entries(state.paths)) {
-        for (const [method, op] of Object.entries(methods)) {
-          rows.push({
-            method: method.toUpperCase(),
-            path,
-            summary: op.summary || "",
-            tags: op.tags || [],
-            security: op.security,
-            body: op.requestBody || null,
-            params: op.parameters || [],
-          });
-        }
-      }
-      rows.sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method));
-      return rows;
-    }
-
-    function fillTry(row) {
-      document.getElementById("try-method").value = row.method;
-      document.getElementById("try-path").value = row.path;
-      if (row.body && row.body.content && row.body.content["application/json"]) {
-        const schema = row.body.content["application/json"].schema || {};
-        document.getElementById("try-body").value = JSON.stringify(exampleFromSchema(schema), null, 2);
-      }
-      document.querySelectorAll("#rows tr").forEach((tr) => tr.classList.remove("active"));
-    }
-
-    function exampleFromSchema(schema) {
-      if (!schema || typeof schema !== "object") return {};
-      if (schema.example != null) return schema.example;
-      if (schema.type === "object" || schema.properties) {
-        const out = {};
-        for (const [k, v] of Object.entries(schema.properties || {})) {
-          if (v.enum) out[k] = v.enum[0];
-          else if (v.type === "boolean") out[k] = false;
-          else if (v.type === "integer" || v.type === "number") out[k] = 0;
-          else if (v.type === "array") out[k] = [];
-          else if (v.type === "object") out[k] = {};
-          else out[k] = "";
-        }
-        return out;
-      }
-      return {};
-    }
-
-    function render() {
-      const q = (document.getElementById("q").value || "").trim().toLowerCase();
-      const tag = document.getElementById("tag").value;
-      const tbody = document.getElementById("rows");
-      const rows = flatten().filter((r) => {
-        if (tag && !(r.tags || []).includes(tag)) return false;
-        if (!q) return true;
-        return `${r.method} ${r.path} ${r.summary} ${(r.tags || []).join(" ")}`.toLowerCase().includes(q);
-      });
-      state.rows = rows;
-      tbody.innerHTML = rows.map((r, idx) => {
-        const publicOp = Array.isArray(r.security) && r.security.length === 0;
-        const tags = (r.tags || []).map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("");
-        const pub = publicOp ? `<span class="tag public">公开</span>` : "";
-        let detail = "";
-        if ((r.params && r.params.length) || r.body) {
-          detail = `<details><summary>参数 / 请求体</summary><pre>${escapeHtml(JSON.stringify({ parameters: r.params, requestBody: r.body }, null, 2))}</pre></details>`;
-        }
-        return `<tr data-idx="${idx}">
-          <td><span class="method ${methodClass(r.method)}">${r.method}</span></td>
-          <td><div class="path">${escapeHtml(r.path)}</div>${tags}${pub}${detail}</td>
-          <td>${escapeHtml(r.summary)}</td>
-        </tr>`;
-      }).join("") || `<tr><td colspan="3" class="meta">无匹配接口</td></tr>`;
-
-      tbody.querySelectorAll("tr[data-idx]").forEach((tr) => {
-        tr.addEventListener("click", (ev) => {
-          if (ev.target.closest("details")) return;
-          const row = state.rows[Number(tr.dataset.idx)];
-          if (!row) return;
-          fillTry(row);
-          tr.classList.add("active");
-        });
-      });
-    }
-
-    async function sendTry() {
-      const method = document.getElementById("try-method").value;
-      let path = (document.getElementById("try-path").value || "").trim();
-      if (!path.startsWith("/")) path = "/" + path;
-      const out = document.getElementById("try-out");
-      out.textContent = "请求中…";
-      const opts = { method, headers: authHeaders(), credentials: "same-origin" };
-      if (method !== "GET" && method !== "HEAD") {
-        opts.headers["Content-Type"] = "application/json";
-        const raw = document.getElementById("try-body").value.trim();
-        opts.body = raw || "{}";
-      }
-      try {
-        const res = await fetch(path, opts);
-        const text = await res.text();
-        let body = text;
-        try { body = JSON.stringify(JSON.parse(text), null, 2); } catch (_) {}
-        out.innerHTML = `<span class="${res.ok ? "ok" : "err"}">HTTP ${res.status}</span>\n${escapeHtml(body)}`;
-      } catch (err) {
-        out.innerHTML = `<span class="err">${escapeHtml(err.message || err)}</span>`;
-      }
-    }
-
-    async function boot() {
-      document.getElementById("token").value = localStorage.getItem(TOKEN_KEY) || "";
-      document.getElementById("btn-save-token").addEventListener("click", () => {
-        localStorage.setItem(TOKEN_KEY, document.getElementById("token").value.trim());
-        alert("已保存 Token");
-      });
-      document.getElementById("btn-send").addEventListener("click", sendTry);
-      document.getElementById("q").addEventListener("input", render);
-      document.getElementById("tag").addEventListener("change", render);
-      try {
-        const res = await fetch("/api/openapi.json", { credentials: "same-origin", headers: authHeaders() });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const doc = await res.json();
-        state.paths = doc.paths || {};
-        state.auth = doc["x-gpu-control-auth"] || null;
-        state.info = doc.info || {};
-        document.getElementById("hdr-meta").textContent =
-          `${state.info.title || "gpu-control"} · v${state.info.version || "?"} · OpenAPI ${doc.openapi || "3"}`;
-        renderAuth(state.auth);
-        const tags = new Set();
-        for (const methods of Object.values(state.paths)) {
-          for (const op of Object.values(methods)) (op.tags || []).forEach((t) => tags.add(t));
-        }
-        const sel = document.getElementById("tag");
-        [...tags].sort().forEach((t) => {
-          const opt = document.createElement("option");
-          opt.value = t; opt.textContent = t; sel.appendChild(opt);
-        });
-        render();
-      } catch (err) {
-        document.getElementById("hdr-meta").innerHTML = `<span class="err">${escapeHtml(err.message || err)}</span>`;
-        document.getElementById("auth-box").textContent = "无法加载 openapi.json；可先填写 Bearer 再刷新";
-      }
-    }
-    boot();
-  </script>
+  <script src="/static/api-docs.js"></script>
 </body>
 </html>
