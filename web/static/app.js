@@ -3723,7 +3723,7 @@ function renderNodesCards(doc) {
           <label class="field"><span>名称</span><input data-nc="name" value="${escapeHtml(name)}" /></label>
           <label class="field"><span>地址</span><input data-nc="host" value="${escapeHtml(meta.ansible_host || "")}" /></label>
           <label class="field"><span>GPU</span><input data-nc="gpus" type="number" value="${escapeHtml(meta.gpus_per_node ?? "")}" /></label>
-          <label class="field"><span>SSH 端口（可选）</span><input data-nc="port" type="number" placeholder="默认端口" value="${escapeHtml(meta.ansible_port ?? "")}" /></label>
+          <label class="field"><span>SSH 端口</span><input data-nc="port" type="number" placeholder="默认" value="${escapeHtml(meta.ansible_port ?? "")}" /></label>
         </div>
         <label class="field"><span>标签（逗号）</span><input data-nc="labels" value="${escapeHtml(labels)}" /></label>
         <label class="field"><span>备注</span><input data-nc="note" value="${escapeHtml(meta.note || "")}" /></label>

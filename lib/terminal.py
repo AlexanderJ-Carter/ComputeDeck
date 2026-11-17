@@ -41,14 +41,16 @@ def load_node_ssh(name: str) -> NodeSSH:
     host = str(meta.get("ansible_host") or "")
     if not host:
         raise ValueError(f"节点 {name} 缺少 ansible_host")
-    key = expand_path(str(defaults.get("ansible_ssh_private_key_file") or ""))
+    key = expand_path(
+        str(meta.get("ansible_ssh_private_key_file") or defaults.get("ansible_ssh_private_key_file") or "")
+    )
     if not key or not Path(key).is_file():
         raise FileNotFoundError(f"SSH 私钥不存在: {key or '(空)'}")
     return NodeSSH(
         name=name,
         host=host,
-        user=str(defaults.get("ansible_user") or "root"),
-        port=int(defaults.get("ansible_port") or 22),
+        user=str(meta.get("ansible_user") or defaults.get("ansible_user") or "root"),
+        port=int(meta.get("ansible_port") or defaults.get("ansible_port") or 22),
         key=key,
     )
 
