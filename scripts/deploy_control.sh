@@ -6,12 +6,14 @@
 #   CONTROL_HOST=user@host CONTROL_DIR=/opt/ComputeDeck ./scripts/deploy_control.sh
 set -euo pipefail
 
+SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3)
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST="${CONTROL_HOST:?请设置 CONTROL_HOST，例如 control.example.com}"
 DIR="${CONTROL_DIR:-}"
 if [[ -z "$DIR" ]]; then
   # 默认沿用远端家目录下的 gpu-control；不在仓库里写死某台机器的绝对路径。
-  DIR="$(ssh -o BatchMode=yes "$HOST" 'cd "$HOME/gpu-control" 2>/dev/null && pwd || printf "%s" "$HOME/gpu-control"')"
+  DIR="$(ssh "${SSH_OPTS[@]}" "$HOST" 'cd "$HOME/gpu-control" 2>/dev/null && pwd || printf "%s" "$HOME/gpu-control"')"
 fi
 [[ -n "$DIR" ]] || { echo "无法确定远端目录，请设置 CONTROL_DIR" >&2; exit 1; }
 
@@ -19,7 +21,7 @@ cd "$ROOT"
 
 if [[ "${SKIP_BACKUP:-0}" != "1" ]]; then
   echo "== backup config/local + state → ${HOST}:~ =="
-  ssh -o BatchMode=yes "$HOST" "set -e; cd '$DIR'; ts=\$(date +%Y%m%d-%H%M%S); \
+  ssh "${SSH_OPTS[@]}" "$HOST" "set -e; cd '$DIR'; ts=\$(date +%Y%m%d-%H%M%S); \
     tar czf \"\$HOME/gpu-control-backup-\$ts.tar.gz\" \
       --exclude='state/*.log' --exclude='state/snapshots' config/local state 2>/dev/null || true; \
     ls -lh \"\$HOME/gpu-control-backup-\$ts.tar.gz\" 2>/dev/null | tail -1"
@@ -48,18 +50,18 @@ tar \
   --exclude='._*' \
   --exclude='**/._*' \
   . \
-| ssh -o BatchMode=yes "$HOST" "mkdir -p '$DIR' && cd '$DIR' && tar xf - && find . -name '._*' -type f -delete"
+| ssh "${SSH_OPTS[@]}" "$HOST" "mkdir -p '$DIR' && cd '$DIR' && tar xf - && find . -name '._*' -type f -delete"
 
 # 文档站是构建产物，主工作树同步时排除；控制机没有 MkDocs 时单独带上。
 if [[ -f web/static/help/index.html ]]; then
   echo "== sync docs → ${HOST}:${DIR}/web/static/help =="
   tar "${TAR_FLAGS[@]}" --exclude='._*' -C web/static/help . \
-    | ssh -o BatchMode=yes "$HOST" \
+    | ssh "${SSH_OPTS[@]}" "$HOST" \
       "mkdir -p '$DIR/web/static/help' && tar xf - -C '$DIR/web/static/help' && find '$DIR/web/static/help' -name '._*' -type f -delete"
 fi
 
 echo "== restart UI =="
-ssh -o BatchMode=yes "$HOST" "bash -s" <<REMOTE
+ssh "${SSH_OPTS[@]}" "$HOST" "bash -s" <<REMOTE
 set -euo pipefail
 cd '$DIR'
 find . -name '._*' -type f -delete 2>/dev/null || true

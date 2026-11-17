@@ -1669,15 +1669,12 @@ def build_quality_report() -> dict:
     stale_components = [name for name, item in components.items() if not item.get("fresh")]
     stale_labels = {"ssh": "SSH", "api": "API", "mesh": "互通", "snapshots": "GPU 快照"}
     if offline:
-        hint = f"离线节点：{', '.join(offline)}；GPU 统计已排除这些节点的旧快照。"
+        hint = f"离线：{', '.join(offline)}"
     elif stale_components:
-        hint = (
-            "健康数据已过期："
-            + "、".join(stale_labels.get(name, name) for name in stale_components)
-            + "。点健康卡「全部复检」重新采集。"
-        )
+        hint = "部分数据已过期 · 点「全部复检」"
+
     else:
-        hint = "各健康信号均在有效期内。"
+        hint = "数据在有效期内。"
     return {
         "score": score,
         "grade": grade,

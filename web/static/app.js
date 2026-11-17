@@ -233,6 +233,12 @@ function confirmDialog({
 }
 
 const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+function shortConfigPath(value, fallback = "") {
+  const text = String(value || "");
+  const idx = text.indexOf("config/local/");
+  return idx >= 0 ? text.slice(idx) : text || fallback;
+}
+
 function splitList(value) {
   return String(value || "")
     .split(/[,，\s]+/)
@@ -1601,6 +1607,7 @@ function renderIngressDuo(status) {
   const prismaReady = db.server?.prisma_ready;
   const dbServerDown = db.embedded && db.server_running === false;
   if (dbMeta) {
+    dbMeta.title = "";
     if (!db.configured) {
       dbMeta.textContent = db.hint || "未接数据库：Admin UI 不可登录，请用 Master Key 调 /v1";
     } else if (prismaReady === false) {
@@ -1608,7 +1615,8 @@ function renderIngressDuo(status) {
     } else if (dbServerDown) {
       dbMeta.textContent = "已配嵌入式数据库，但 Postgres 未运行；启动 LiteLLM 时会自动拉起";
     } else {
-      dbMeta.textContent = `Admin 可用 · ${db.url_masked || "DATABASE_URL"}`;
+      dbMeta.textContent = "Admin 可用 · 数据库已连接";
+      dbMeta.title = db.url_masked || "";
     }
     dbMeta.classList.toggle(
       "bad",
@@ -2498,8 +2506,8 @@ function syncJobArgsHint(jobs) {
 function renderSecretsMeta(secrets) {
   const el = document.getElementById("secrets-meta");
   if (!el) return;
-  const hf = secrets?.hf_configured ? "HF✓" : "HF–";
-  const ms = secrets?.modelscope_configured ? "MS✓" : "MS–";
+  const hf = secrets?.hf_configured ? "HF 已配" : "HF 未配";
+  const ms = secrets?.modelscope_configured ? "MS 已配" : "MS 未配";
   el.textContent = `${hf} · ${ms}`;
 }
 
@@ -3807,8 +3815,10 @@ function editorToNodes(text, baseDoc) {
 function fillJobForm(job, fallbackName = "") {
   const name = (job && job.name) || fallbackName || "";
   $("job-name").value = name;
-  $("setup-job-path").textContent =
-    (job && job.path) || (name ? `config/local/jobs/${name}.json` : "config/local/jobs/<name>.json");
+  $("setup-job-path").textContent = shortConfigPath(
+    job && job.path,
+    name ? `config/local/jobs/${name}.json` : "config/local/jobs/<name>.json"
+  );
   $("job-desc").value = (job && job.description) || "";
   $("job-gpus").value = job && job.gpus_per_node != null ? job.gpus_per_node : 4;
   $("job-python").value = (job && job.python) || "";
@@ -4116,8 +4126,16 @@ function fillSetupForm(data) {
   const api = cluster.api || {};
   const scheduling = cluster.scheduling || {};
 
-  document.getElementById("setup-nodes-path").textContent = data.nodes_path || "";
-  document.getElementById("setup-cluster-path").textContent = data.cluster_path || "";
+  const nodesPath = document.getElementById("setup-nodes-path");
+  if (nodesPath) {
+    nodesPath.textContent = shortConfigPath(data.nodes_path, "config/local/nodes.json");
+    nodesPath.title = data.nodes_path || "";
+  }
+  const clusterPath = document.getElementById("setup-cluster-path");
+  if (clusterPath) {
+    clusterPath.textContent = shortConfigPath(data.cluster_path, "config/local/cluster.json");
+    clusterPath.title = data.cluster_path || "";
+  }
   document.getElementById("ssh-key").value = defaults.ansible_ssh_private_key_file || "";
   document.getElementById("ssh-user").value = defaults.ansible_user || "";
   document.getElementById("ssh-port").value = defaults.ansible_port ?? "";
