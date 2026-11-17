@@ -795,7 +795,11 @@ def gc_exec_preset(node: str, preset: str) -> dict:
 
 @mcp.tool()
 def gc_exec(command: str, node: str | None = None, nodes: str = "all") -> dict:
-    """在工作节点执行 shell 命令。"""
+    """在工作节点执行 shell 命令；只读诊断优先用 gc_exec_preset。
+
+    客户端应自行按命令风险确认：只读命令可直接执行，修改类命令一次确认，
+    rm/kill/reboot/python -c/重定向等危险命令二次确认。
+    """
     if _prefer_http():
         body: dict[str, Any] = {"command": command}
         if node:

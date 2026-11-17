@@ -582,6 +582,12 @@ def http_endpoints() -> list[dict[str, Any]]:
             "body": "assistant_chat",
         },
         {
+            "method": "GET",
+            "path": "/api/assistant/session",
+            "summary": "读取助手会话与待确认动作（?conversation_id=）",
+            "group": "meta",
+        },
+        {
             "method": "POST",
             "path": "/api/assistant/execute",
             "summary": "确认并执行助手动作；结果回喂模型",
@@ -828,6 +834,7 @@ def catalog_payload() -> dict[str, Any]:
             "analyze": "/api/assistant/analyze",
             "probe": "/api/assistant/probe",
             "chat": "/api/assistant/chat",
+            "session": "/api/assistant/session",
             "execute": "/api/assistant/execute",
         },
         "liveness": "/api/liveness",

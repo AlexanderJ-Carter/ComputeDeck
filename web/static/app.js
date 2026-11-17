@@ -4335,6 +4335,15 @@ async function boot() {
   setupAutoRefresh();
   document.getElementById("auto-refresh").addEventListener("change", setupAutoRefresh);
   $("term-node")?.addEventListener("change", syncTerminalTargetState);
+  const cliHint = $("cli-hint-code");
+  if (cliHint) {
+    cliHint.classList.add("cli-hint-clickable");
+    cliHint.title = "点击复制 CLI 命令";
+    cliHint.addEventListener("click", async () => {
+      const ok = await copyText(cliHint.textContent || "");
+      toastOk(ok ? "已复制 CLI 命令" : "复制失败");
+    });
+  }
   document.querySelectorAll("[data-config-jump]").forEach((btn) => {
     btn.addEventListener("click", () => {
       document.getElementById(btn.dataset.configJump)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -5227,6 +5236,9 @@ const assistantState = {
   models: [],
   conversationId: null,
   pending: [],
+  quickActions: [],
+  streamController: null,
+  restored: false,
 };
 try {
   assistantState.conversationId = localStorage.getItem(ASSISTANT_CONV_KEY) || null;
@@ -5244,10 +5256,41 @@ function setAssistantConversation(id) {
   }
 }
 
+async function restoreAssistantConversation() {
+  if (!assistantState.conversationId || assistantState.restored) return;
+  const thread = $("assistant-thread");
+  if (!thread || thread.children.length) return;
+  assistantState.restored = true;
+  try {
+    const data = await api(
+      `/api/assistant/session?conversation_id=${encodeURIComponent(assistantState.conversationId)}`,
+      { timeoutMs: 15000 }
+    );
+    if (!data.exists) {
+      setAssistantConversation(null);
+      return;
+    }
+    thread.innerHTML = "";
+    assistantState.messages = [];
+    for (const msg of data.messages || []) {
+      if (!msg || !msg.content) continue;
+      assistantState.messages.push({ role: msg.role, content: msg.content });
+      appendAssistantMsg(msg.role === "user" ? "user" : "bot", msg.content, {
+        markdown: msg.role !== "user",
+      });
+    }
+    renderAssistantPending(data.pending_actions || []);
+  } catch (err) {
+    assistantState.restored = false;
+    log(`assistant restore: ${err.message || err}`);
+  }
+}
+
 function newAssistantConversation() {
   setAssistantConversation(null);
   assistantState.messages = [];
   assistantState.pending = [];
+  assistantState.restored = true;
   const thread = $("assistant-thread");
   if (thread) thread.innerHTML = "";
   renderAssistantPending([]);
@@ -5261,6 +5304,7 @@ function setAssistantOpen(open) {
   if (panel) panel.hidden = !open;
   if (fab) fab.setAttribute("aria-expanded", open ? "true" : "false");
   if (open) {
+    restoreAssistantConversation().catch(() => {});
     if (assistantState.settingsOpen) $("assistant-base-url")?.focus();
     else $("assistant-input")?.focus();
   }
@@ -5380,15 +5424,15 @@ function scrollAssistantThread() {
   if (thread) thread.scrollTop = thread.scrollHeight;
 }
 
-async function postAssistantStream(payload, onEvent, { timeoutMs = 240000 } = {}) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+async function postAssistantStream(payload, onEvent, { timeoutMs = 240000, controller = null } = {}) {
+  const ctrl = controller || new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const resp = await fetch("/api/assistant/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
       body: JSON.stringify({ ...payload, stream: true }),
-      signal: controller.signal,
+      signal: ctrl.signal,
     });
     if (!resp.ok || !resp.body) {
       let detail = "";
@@ -5436,6 +5480,7 @@ async function postAssistantStream(payload, onEvent, { timeoutMs = 240000 } = {}
 function renderAssistantQuick(actions) {
   const root = $("assistant-quick");
   if (!root) return;
+  assistantState.quickActions = Array.isArray(actions) ? actions : [];
   root.innerHTML = (actions || [])
     .map(
       (a) =>
@@ -5444,7 +5489,7 @@ function renderAssistantQuick(actions) {
     .join("");
   root.querySelectorAll("[data-assistant-quick]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const action = (assistantState.status?.quick_actions || []).find((x) => x.id === btn.dataset.assistantQuick);
+      const action = (assistantState.quickActions || []).find((x) => x.id === btn.dataset.assistantQuick);
       if (!action?.prompt) return;
       if (action.prompt === "__open_settings__") {
         setAssistantSettingsOpen(true);
@@ -5714,6 +5759,10 @@ async function sendAssistant(text) {
 
   const payload = { message: content };
   if (assistantState.conversationId) payload.conversation_id = assistantState.conversationId;
+  const streamController = new AbortController();
+  assistantState.streamController = streamController;
+  const stopBtn = $("assistant-stop");
+  if (stopBtn) stopBtn.hidden = false;
   const bubble = appendAssistantStreamingMsg();
   let streamed = "";
   let donePayload = null;
@@ -5763,10 +5812,15 @@ async function sendAssistant(text) {
       } else if (event === "error") {
         donePayload = { ...data, ok: false, reply: data.reply || data.error || "上游错误" };
       }
-    });
+    }, { controller: streamController });
   } catch (err) {
-    // 流式不可用（老网关 / 反代缓冲）时回落到普通请求；已经输出过内容则不重复。
-    if (!streamed && bubble) {
+    if (err && err.name === "AbortError") {
+      donePayload = {
+        ok: false,
+        reply: streamed ? `${streamed}\n\n（已停止）` : "已停止。",
+      };
+    } else if (!streamed && bubble) {
+      // 流式不可用（老网关 / 反代缓冲）时回落到普通请求；已经输出过内容则不重复。
       bubble.remove();
       try {
         const data = await api("/api/assistant/chat", {
@@ -5793,6 +5847,8 @@ async function sendAssistant(text) {
   }
 
   assistantState.busy = false;
+  assistantState.streamController = null;
+  if (stopBtn) stopBtn.hidden = true;
   if (sendBtn) sendBtn.disabled = false;
 }
 
@@ -5816,6 +5872,13 @@ function bindAssistant() {
   }
   if (closeBtn) closeBtn.addEventListener("click", () => setAssistantOpen(false));
   if (newConvBtn) newConvBtn.addEventListener("click", newAssistantConversation);
+  $("assistant-stop")?.addEventListener("click", () => assistantState.streamController?.abort());
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Escape" || !assistantState.open) return;
+    if (document.querySelector("dialog[open]")) return;
+    setAssistantOpen(false);
+    document.getElementById("assistant-fab")?.focus();
+  });
   if (settingsBtn) {
     settingsBtn.addEventListener("click", () => {
       setAssistantSettingsOpen(!assistantState.settingsOpen);

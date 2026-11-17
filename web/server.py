@@ -2233,6 +2233,40 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, policy_payload())
             return
 
+        if path == "/api/assistant/session":
+            qs = parse_qs(parsed.query)
+            cid = assistant_session.valid_id((qs.get("conversation_id") or [""])[0])
+            if not cid:
+                self._json(400, {"ok": False, "error": "conversation_id 不合法"})
+                return
+            session = assistant_session.load(cid)
+            raw = session.get("messages") or []
+            messages = []
+            for row in raw:
+                if not isinstance(row, dict):
+                    continue
+                role = str(row.get("role") or "")
+                content = str(row.get("content") or "").strip()
+                if role in {"user", "assistant"} and content:
+                    messages.append({"role": role, "content": content})
+            pending = [
+                assistant_session.public_pending(row)
+                for row in (session.get("pending") or {}).values()
+                if isinstance(row, dict)
+                and str(row.get("status") or "pending") in {"pending", "armed"}
+            ]
+            self._json(
+                200,
+                {
+                    "ok": True,
+                    "conversation_id": cid,
+                    "exists": bool(raw or pending),
+                    "messages": messages[-80:],
+                    "pending_actions": pending,
+                },
+            )
+            return
+
         if path == "/api/assistant/status":
             cluster = _read_json(cluster_file(), {})
             overview = build_overview(light=True)

@@ -4674,3 +4674,19 @@ body {
   fill: var(--muted);
   font-size: 11px;
 }
+
+.assistant-form {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+#assistant-stop[hidden] {
+  display: none;
+}
+
+.cli-hint-clickable {
+  cursor: pointer;
+}
+
+.cli-hint-clickable:hover {
+  color: var(--accent-hot);
+}

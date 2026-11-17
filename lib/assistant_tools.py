@@ -567,7 +567,7 @@ _SPECS: list[dict[str, Any]] = [
     ),
     _spec(
         "gc_exec",
-        "在单个工作节点执行任意 shell 命令（破坏性，需二次确认）。只读诊断请优先用 gc_exec_preset；必须指定 node，禁止 all。",
+        "在单个工作节点执行 shell 命令；按命令风险自动分级：只读命令自动执行，修改类命令一次确认，rm/kill/reboot/python 等危险命令二次确认。只读预设优先用 gc_exec_preset；必须指定 node，禁止 all。",
         parameters=_obj(
             command={"type": "string"},
             node={"type": "string"},
@@ -873,8 +873,11 @@ def summary_for(name: str, args: dict[str, Any], target: dict[str, Any] | None =
         label = f"运行只读诊断：{EXEC_PRESETS.get(preset, {}).get('label', preset)} @ {node_text or args.get('node')}"
         summary = f"预设命令：{EXEC_PRESETS.get(preset, {}).get('command', preset)}（只读，自动执行）"
     elif name == "gc_exec":
-        label = f"在 {node_text or args.get('node')} 执行命令"
-        summary = f"command: {args.get('command')}"
+        command = str(args.get("command") or "")
+        risk = exec_command_risk(command)
+        risk_label = {"read": "只读命令", "write": "修改命令", "destructive": "危险命令"}.get(risk, "命令")
+        label = f"{risk_label} @ {node_text or args.get('node')}"
+        summary = f"{risk_label}：{command}"
     elif name == "gc_models":
         label = f"模型 {action}"
         summary = {
