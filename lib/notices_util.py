@@ -134,6 +134,56 @@ def mark_notices(*, ids: list[str] | None = None, read: bool | None = None, dism
     return list_notices()
 
 
+_MANAGED_PREFIXES = (
+    "node:offline:",
+    "node:degraded:",
+    "snapshot:stale:",
+    "quality:low-score",
+    "endpoints:api-fail",
+    "watchdog:not-running",
+    "liveness:",
+)
+
+
+def reconcile_notices(
+    active_rows: list[dict[str, Any]],
+    *,
+    prefixes: tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """清除已恢复的规则公告（条件消失后不再留在列表里）。"""
+    active_ids = {
+        str(row.get("id"))
+        for row in (active_rows or [])
+        if isinstance(row, dict) and row.get("id")
+    }
+    managed = prefixes or _MANAGED_PREFIXES
+    current = load_notices()
+    resolved = [
+        str(item.get("id"))
+        for item in current.get("items") or []
+        if isinstance(item, dict)
+        and item.get("id")
+        and any(str(item["id"]).startswith(prefix) for prefix in managed)
+        and str(item["id"]) not in active_ids
+    ]
+    if not resolved:
+        return list_notices()
+    drop = set(resolved)
+
+    def mutator(data: dict[str, Any] | None) -> dict[str, Any]:
+        doc = data if isinstance(data, dict) else _empty()
+        doc["items"] = [
+            item
+            for item in doc.get("items") or []
+            if isinstance(item, dict) and str(item.get("id") or "") not in drop
+        ]
+        doc["updated_at"] = _now()
+        return doc
+
+    update_json(NOTICES_FILE, mutator, default=_empty())
+    return list_notices()
+
+
 def findings_to_notices(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """将 diagnose findings 转为公告行。"""
     rows: list[dict[str, Any]] = []
@@ -173,11 +223,21 @@ def overview_to_notices(overview: dict[str, Any]) -> list[dict[str, Any]]:
                 "fix": "gpu-control watchdog --background",
             }
         )
+    live = overview.get("liveness") if isinstance(overview.get("liveness"), dict) else None
+    if live:
+        from liveness import offline_notices, stale_notices
+
+        rows.extend(offline_notices(live))
+        rows.extend(stale_notices(live))
+
     quality = overview.get("quality") if isinstance(overview.get("quality"), dict) else {}
     score = quality.get("score")
     try:
         score_n = float(score) if score is not None else None
     except (TypeError, ValueError):
+        score_n = None
+    known = quality.get("known")
+    if known is False:
         score_n = None
     if score_n is not None and score_n < 60:
         rows.append(

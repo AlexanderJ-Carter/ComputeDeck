@@ -2,6 +2,9 @@
 - name: Collect GPU resource snapshots
   hosts: gpu_workers
   gather_facts: false
+  # 单台节点不可达不应让整批采集失败：可达节点仍更新快照，
+  # 不可达节点由 parse_resources.py 按 collected_at 标记 stale。
+  ignore_unreachable: true
 
   tasks:
     - name: Query GPU information
@@ -40,4 +43,6 @@
           collected_at: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
           gpu_rows: "{{ gpu_info.stdout_lines | default([]) | select('truthy') | list }}"
           process_rows: "{{ process_info.stdout_lines | default([]) | select('truthy') | list }}"
+      # 不可达主机不会执行 raw 任务；不要为它写一个“0 卡且刚采集”的假快照。
+      when: gpu_info is defined and (gpu_info.rc | default(1)) == 0
       delegate_to: localhost

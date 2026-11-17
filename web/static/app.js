@@ -22,37 +22,36 @@ const VIEW_TITLE = {
   cluster: "节点",
   workloads: "任务",
   endpoints: "入口与网关",
-  models: "模型与工具",
-  toolkits: "模型与工具",
-  ops: "终端与命令",
-  terminal: "终端与命令",
+  models: "模型",
+  toolkits: "工具栈",
+  ops: "批量命令",
+  terminal: "交互终端",
   config: "配置",
 };
 
-/** 顶层导航分组：子页共用同一个侧栏入口 */
-const VIEW_GROUPS = {
-  models: "models",
-  toolkits: "models",
-  ops: "ops",
-  terminal: "ops",
+/** 每页一句话目的：显示在标题下方，避免用户猜这页该做什么 */
+const VIEW_META = {
+  actions: { group: "总览", purpose: "一眼看清集群状态；具体操作去对应页面" },
+  cluster: { group: "集群", purpose: "哪台空闲、哪台异常；隔离、探活或打开终端" },
+  workloads: { group: "集群", purpose: "部署 Job、启停任务、队列与租约" },
+  endpoints: { group: "集群", purpose: "把推理端口暴露成稳定入口；Edge / LiteLLM / 远程接入" },
+  models: { group: "资源", purpose: "拉取与校验模型，再把参数交给任务" },
+  toolkits: { group: "资源", purpose: "探测与安装训练 / 推理依赖" },
+  ops: { group: "运维", purpose: "对多节点执行命令与 Python 脚本" },
+  terminal: { group: "运维", purpose: "连上单台节点的 SSH 终端" },
+  config: { group: "系统", purpose: "编辑集群配置并验证就绪" },
 };
 
-/** 子页签：模型/工具栈、批量命令/交互终端 */
-const VIEW_SUBNAV = {
-  models: [
-    { view: "models", label: "模型" },
-    { view: "toolkits", label: "工具栈" },
-  ],
-  ops: [
-    { view: "ops", label: "批量命令" },
-    { view: "terminal", label: "交互终端" },
-  ],
-};
+/** 顶层导航分组：现在每一项都是独立页面，不再共用子页签 */
+const VIEW_GROUPS = {};
+
+/** 子页签：保留给 config 之外的未来扩展 */
+const VIEW_SUBNAV = {};
 
 /** 旧 hash 别名 → 现行视图（及可选配置 Tab） */
 const VIEW_ALIASES = {
   guide: { view: "config", tab: "docs" },
-  nodes: { view: "config", tab: "wizard" },
+  nodes: { view: "cluster" },
   runtime: { view: "models" },
   shell: { view: "ops" },
 };
@@ -253,6 +252,189 @@ function safeHref(url) {
   if (/^(https?:)?\/\//i.test(value)) return value;
   if (value.startsWith("/") || value.startsWith("#")) return value;
   return "#";
+}
+
+/* ---------- 轻量 Markdown（安全渲染，不引入外部依赖） ---------- */
+function renderInlineMarkdown(text) {
+  let s = escapeHtml(text);
+  s = s.replace(/`([^`\n]+)`/g, (_m, code) => `<code>${code}</code>`);
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+  s = s.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
+  s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, label, url) => {
+    const href = safeHref(url);
+    return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+  });
+  return s;
+}
+
+function renderCodeBlock(code, lang) {
+  const language = lang ? escapeHtml(lang) : "code";
+  const body = escapeHtml(String(code || "").replace(/\n$/, ""));
+  return `<div class="md-code">
+    <div class="md-code-h"><span>${language}</span><button type="button" class="ghost tiny" data-copy-code data-keep-enabled="1">复制</button></div>
+    <pre><code>${body}</code></pre>
+  </div>`;
+}
+
+function renderTableBlock(lines) {
+  const rows = lines
+    .map((line) => line.trim().replace(/^\|/, "").replace(/\|$/, ""))
+    .filter((line) => line.length)
+    .map((line) => line.split("|").map((cell) => cell.trim()));
+  if (rows.length < 2) return `<p>${renderInlineMarkdown(lines.join(" "))}</p>`;
+  const head = rows[0];
+  const bodyRows = rows.slice(2);
+  const thead = `<thead><tr>${head.map((c) => `<th>${renderInlineMarkdown(c)}</th>`).join("")}</tr></thead>`;
+  const tbody = bodyRows.length
+    ? `<tbody>${bodyRows
+        .map((row) => `<tr>${row.map((c) => `<td>${renderInlineMarkdown(c)}</td>`).join("")}</tr>`)
+        .join("")}</tbody>`
+    : "";
+  return `<div class="md-table-wrap"><table>${thead}${tbody}</table></div>`;
+}
+
+function renderMarkdownText(text) {
+  const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
+  const out = [];
+  let i = 0;
+  const isTableSep = (line) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(line);
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (!trimmed) {
+      i += 1;
+      continue;
+    }
+    if (/^```/.test(trimmed)) {
+      // 未闭合的围栏：按普通段落处理，避免吞掉后续内容
+      i += 1;
+      continue;
+    }
+    const heading = trimmed.match(/^(#{1,6})\s+(.*)$/);
+    if (heading) {
+      const level = Math.min(6, heading[1].length + 2);
+      out.push(`<h${level} class="md-heading">${renderInlineMarkdown(heading[2])}</h${level}>`);
+      i += 1;
+      continue;
+    }
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+      out.push("<hr>");
+      i += 1;
+      continue;
+    }
+    if (/^>\s?/.test(trimmed)) {
+      const quoted = [];
+      while (i < lines.length && /^\s*>\s?/.test(lines[i])) {
+        quoted.push(lines[i].replace(/^\s*>\s?/, ""));
+        i += 1;
+      }
+      out.push(`<blockquote>${renderMarkdownText(quoted.join("\n"))}</blockquote>`);
+      continue;
+    }
+    if (/\|/.test(trimmed) && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+      const tableLines = [lines[i], lines[i + 1]];
+      i += 2;
+      while (i < lines.length && /\|/.test(lines[i]) && lines[i].trim()) {
+        tableLines.push(lines[i]);
+        i += 1;
+      }
+      out.push(renderTableBlock(tableLines));
+      continue;
+    }
+    if (/^[-*+]\s+/.test(trimmed)) {
+      const items = [];
+      while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) {
+        items.push(lines[i].replace(/^\s*[-*+]\s+/, ""));
+        i += 1;
+      }
+      out.push(`<ul>${items.map((x) => `<li>${renderInlineMarkdown(x)}</li>`).join("")}</ul>`);
+      continue;
+    }
+    if (/^\d+[.)]\s+/.test(trimmed)) {
+      const items = [];
+      while (i < lines.length && /^\s*\d+[.)]\s+/.test(lines[i])) {
+        items.push(lines[i].replace(/^\s*\d+[.)]\s+/, ""));
+        i += 1;
+      }
+      out.push(`<ol>${items.map((x) => `<li>${renderInlineMarkdown(x)}</li>`).join("")}</ol>`);
+      continue;
+    }
+    const para = [line];
+    i += 1;
+    while (
+      i < lines.length &&
+      lines[i].trim() &&
+      !/^(#{1,6})\s+/.test(lines[i].trim()) &&
+      !/^[-*+]\s+/.test(lines[i].trim()) &&
+      !/^\d+[.)]\s+/.test(lines[i].trim()) &&
+      !/^\s*>\s?/.test(lines[i]) &&
+      !/^(-{3,}|\*{3,}|_{3,})$/.test(lines[i].trim()) &&
+      !(/\|/.test(lines[i]) && i + 1 < lines.length && isTableSep(lines[i + 1]))
+    ) {
+      para.push(lines[i]);
+      i += 1;
+    }
+    out.push(`<p>${para.map(renderInlineMarkdown).join("<br>")}</p>`);
+  }
+  return out.join("");
+}
+
+function renderMarkdown(text) {
+  const src = String(text || "").replace(/\r\n/g, "\n");
+  const parts = src.split(/```([\w.+#-]*)\n?([\s\S]*?)```/g);
+  let html = "";
+  for (let i = 0; i < parts.length; i += 3) {
+    html += renderMarkdownText(parts[i] || "");
+    if (i + 2 < parts.length) {
+      html += renderCodeBlock(parts[i + 2] || "", parts[i + 1] || "");
+    }
+  }
+  return html || `<p>${escapeHtml(src)}</p>`;
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (_) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try {
+      ok = document.execCommand("copy");
+    } catch (_) {
+      ok = false;
+    }
+    ta.remove();
+    return ok;
+  }
+}
+
+function bindCopyButtons(root) {
+  root.querySelectorAll("[data-copy-code]").forEach((btn) => {
+    if (btn.dataset.copyBound) return;
+    btn.dataset.copyBound = "1";
+    btn.addEventListener("click", async () => {
+      const code = btn.closest(".md-code")?.querySelector("code");
+      const text = code ? code.textContent : "";
+      const ok = await copyText(text || "");
+      btn.textContent = ok ? "已复制" : "复制失败";
+      setTimeout(() => {
+        btn.textContent = "复制";
+      }, 1200);
+    });
+  });
+}
+
+function setMarkdown(el, text) {
+  if (!el) return;
+  el.classList.add("markdown");
+  el.innerHTML = renderMarkdown(text);
+  bindCopyButtons(el);
 }
 
 function revealConsole() {
@@ -624,7 +806,15 @@ function fillSelectPreserve(el, html, prefer) {
 
 function nodeOption(n) {
   const name = escapeHtml(n.name);
-  return `<option value="${name}">${name}</option>`;
+  const note =
+    n.state === "offline"
+      ? " · 离线"
+      : n.state === "degraded"
+        ? " · 探活异常"
+        : n.snapshot_stale
+          ? " · 快照过期"
+          : "";
+  return `<option value="${name}">${name}${escapeHtml(note)}</option>`;
 }
 
 function fillTargetSelects(nodes) {
@@ -666,14 +856,227 @@ function renderSummary(summary) {
     const el = $(id);
     if (el) el.textContent = text;
   };
-  set("dash-occ-gpu", total ? `${used}/${total}（${Math.round((used / total) * 100)}%）` : "-");
-  set("dash-occ-nodes", `${summary.busy_nodes ?? "-"} / ${summary.free_nodes ?? "-"}`);
+  const smUtil = summary.gpu_sm_util_pct;
+  set(
+    "dash-occ-gpu",
+    total
+      ? `${used}/${total}（${Math.round((used / total) * 100)}%）${
+          smUtil == null ? "" : ` · 算力 ${Math.round(Number(smUtil))}%`
+        }`
+      : "-"
+  );
+  const offline = Number(summary.nodes_offline || 0);
+  const stale = Number(summary.nodes_stale || 0);
+  const nodeNote = [
+    offline ? `${offline} 离线` : "",
+    stale ? `${stale} 快照过期` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  set(
+    "dash-occ-nodes",
+    `${summary.busy_nodes ?? "-"} / ${summary.free_nodes ?? "-"}${nodeNote ? ` · ${nodeNote}` : ""}`
+  );
   set("dash-queue-2", String(summary.queue_pending ?? 0));
   set("dash-cordon-2", String(summary.cordoned ?? 0));
   set(
     "dash-api",
     summary.api_total != null ? `${summary.api_ok ?? 0}/${summary.api_total}` : "-"
   );
+}
+
+function renderFreshnessBanner(data) {
+  const root = $("freshness-banner");
+  if (!root) return;
+  const summary = data.summary || {};
+  const offline = summary.offline_nodes || [];
+  const stale = summary.stale_nodes || [];
+  const nodes = data.nodes || [];
+  const titleEl = $("freshness-title");
+  const detailEl = $("freshness-detail");
+  if (offline.length) {
+    root.hidden = false;
+    root.dataset.tone = "bad";
+    if (titleEl) titleEl.textContent = `${offline.length} 个节点离线`;
+    if (detailEl) {
+      const details = offline
+        .map((name) => {
+          const node = nodes.find((x) => x.name === name) || {};
+          const err = node.liveness_error ? `（${node.liveness_error}）` : "";
+          return `${name}${err}`;
+        })
+        .join("、");
+      detailEl.textContent = `${details}；GPU 空闲/占用统计已排除这些节点的旧快照。`;
+    }
+    return;
+  }
+  const degraded = Number(summary.nodes_degraded || 0);
+  if (degraded) {
+    root.hidden = false;
+    root.dataset.tone = "warn";
+    if (titleEl) titleEl.textContent = `${degraded} 个节点探活不稳定`;
+    if (detailEl) {
+      const names = nodes
+        .filter((n) => n.state === "degraded")
+        .map((n) => n.name)
+        .join("、");
+      detailEl.textContent = `${names}；连续失败达到阈值后会标记离线。可点「立即探活」复测。`;
+    }
+    return;
+  }
+  if (stale.length) {
+    root.hidden = false;
+    root.dataset.tone = "warn";
+    if (titleEl) titleEl.textContent = `${stale.length} 个节点快照过期`;
+    if (detailEl) detailEl.textContent = `${stale.join("、")}；请刷新 GPU 后再判断占用。`;
+    return;
+  }
+  if (summary.nodes_unknown) {
+    root.hidden = false;
+    root.dataset.tone = "warn";
+    if (titleEl) titleEl.textContent = `${summary.nodes_unknown} 个节点尚未探活`;
+    if (detailEl) detailEl.textContent = "点「立即探活」确认节点是否在线。";
+    return;
+  }
+  root.hidden = true;
+  root.dataset.tone = "";
+}
+
+async function refreshRemoteStatus() {
+  const meta = $("remote-meta");
+  const body = $("remote-body");
+  if (!body) return;
+  try {
+    const data = await api("/api/remote", { timeoutMs: 20000 });
+    renderRemote(data);
+  } catch (err) {
+    if (meta) meta.textContent = "远程接入状态不可用";
+    body.innerHTML = `<p class="meta">${escapeHtml(String(err.message || err))}</p>`;
+  }
+}
+
+function renderRemote(data) {
+  const meta = $("remote-meta");
+  const body = $("remote-body");
+  if (!body) return;
+  const tail = data.tailscale || {};
+  const cf = data.cloudflared || {};
+  if (meta) meta.textContent = data.summary || "已检测";
+  const rows = [];
+  rows.push(
+    tail.installed
+      ? `Tailscale：${tail.backend_state || "已安装"}${tail.dns_name ? ` · ${tail.dns_name}` : ""}`
+      : "Tailscale：未安装"
+  );
+  rows.push(cf.installed ? `Cloudflare：${cf.running ? "运行中" : "已安装"}` : "Cloudflare：未安装");
+  if (!data.auth_enabled) rows.push("⚠ 控制面鉴权未开启，公网接入会被阻止");
+  const rec = data.recommended || {};
+  if (rec.commands && rec.commands.length) {
+    rows.push(`推荐：${rec.mode}${rec.urls && rec.urls[0] ? ` → ${rec.urls[0]}` : ""}`);
+  }
+  for (const warning of data.warnings || []) rows.push(`⚠ ${warning}`);
+  body.innerHTML = rows
+    .map((row) => `<p>${escapeHtml(row)}</p>`)
+    .join("");
+}
+
+async function remotePlan() {
+  const body = $("remote-body");
+  try {
+    const data = await api("/api/remote?plan=1&mode=auto", { timeoutMs: 20000 });
+    if (body) {
+      const lines = [
+        `模式：${data.mode}`,
+        ...(data.commands || []).map((c) => `$ ${c}`),
+        ...(data.urls || []).map((u) => `URL：${u}`),
+        ...(data.notes || []),
+        ...(data.blocking || []).map((b) => `阻塞：${b}`),
+      ];
+      body.innerHTML = lines
+        .map((line) => `<p>${escapeHtml(line)}</p>`)
+        .join("");
+    }
+    const meta = $("remote-meta");
+    if (meta) meta.textContent = data.ok ? `计划：${data.mode}` : "计划有阻塞项";
+  } catch (err) {
+    toastBad(`生成计划失败：${err.message || err}`);
+  }
+}
+
+async function remoteUp() {
+  const ok = await confirmDialog({
+    title: "启动远程接入",
+    message:
+      "将按检测结果启动 Tailscale serve 或 Cloudflare 接入。\n默认只暴露到 tailnet；公网模式必须已有鉴权。",
+    tone: "primary",
+    confirmText: "启动",
+  });
+  if (!ok) return;
+  try {
+    const data = await api("/api/remote/action", {
+      method: "POST",
+      body: JSON.stringify({ action: "up", mode: "auto", confirm: true }),
+      timeoutMs: 60000,
+    });
+    if (data.ok) toastOk(`远程接入已启动：${data.mode || ""}`);
+    else toastBad(data.detail || data.error || "启动失败");
+    if (data.plan) {
+      const body = $("remote-body");
+      if (body) {
+        body.innerHTML = [
+          `模式：${data.plan.mode}`,
+          ...(data.plan.commands || []).map((c) => `$ ${c}`),
+          ...(data.plan.urls || []).map((u) => `URL：${u}`),
+          ...(data.plan.blocking || []).map((b) => `阻塞：${b}`),
+        ]
+          .map((line) => `<p>${escapeHtml(line)}</p>`)
+          .join("");
+      }
+    }
+    await refreshRemoteStatus();
+  } catch (err) {
+    toastBad(`启动失败：${err.message || err}`);
+  }
+}
+
+async function remoteDown() {
+  const ok = await confirmDialog({
+    title: "关闭远程接入",
+    message: "将重置 Tailscale serve/funnel，并结束由控制面托管的 cloudflared。",
+    tone: "danger",
+    confirmText: "关闭",
+  });
+  if (!ok) return;
+  try {
+    const data = await api("/api/remote/action", {
+      method: "POST",
+      body: JSON.stringify({ action: "down", mode: "all", confirm: true }),
+      timeoutMs: 60000,
+    });
+    toastOk(data.ok ? "远程接入已关闭" : data.error || "关闭失败");
+    await refreshRemoteStatus();
+  } catch (err) {
+    toastBad(`关闭失败：${err.message || err}`);
+  }
+}
+
+async function runLivenessCheck() {
+  const btn = $("btn-liveness-check");
+  if (btn) btn.disabled = true;
+  try {
+    const data = await api("/api/liveness/check", {
+      method: "POST",
+      body: "{}",
+      timeoutMs: 60000,
+    });
+    const summary = data.summary || data.liveness?.summary || {};
+    toastOk(`探活完成：在线 ${summary.online ?? 0} · 离线 ${summary.offline ?? 0}`);
+    await refresh(false, { light: true });
+  } catch (err) {
+    toastBad(`探活失败：${err.message || err}`);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 function renderPresets(presets) {
@@ -1137,7 +1540,6 @@ async function saveLitellmMasterKey({ generate = false, clear = false } = {}) {
     });
     if (data.status) {
       renderIngressMeta(data.status);
-      renderDashGateway(data.status);
     }
     if (reveal) {
       if (data.master_key) {
@@ -1168,7 +1570,6 @@ async function saveLitellmMasterKey({ generate = false, clear = false } = {}) {
 async function refreshIngressStatus() {
   const data = await api("/api/gateway/status");
   renderIngressMeta(data);
-  renderDashGateway(data);
   return data;
 }
 async function startIngress() {
@@ -1205,6 +1606,16 @@ async function stopIngress() {
   }
 }
 
+function formatAgeSec(seconds) {
+  const value = Number(seconds);
+  if (!Number.isFinite(value) || value < 0) return "-";
+  const s = Math.round(value);
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
+}
+
 function renderNodes(nodes) {
   const root = $("nodes");
   if (!root) return;
@@ -1218,25 +1629,44 @@ function renderNodes(nodes) {
     .map((node) => {
       const selected = state.selectedNode === node.name;
       const hasSnapshot = Boolean(node.collected_at) || (node.gpus || []).length > 0;
-      const rawState = node.cordoned
-        ? "cordoned"
-        : hasSnapshot
-          ? node.used
-            ? "busy"
-            : "free"
-          : "unknown";
-      const st = ["free", "busy", "cordoned", "unknown"].includes(rawState) ? rawState : "free";
+      const counted = node.counted !== false;
+      const rawState =
+        node.state ||
+        (node.cordoned
+          ? "cordoned"
+          : hasSnapshot
+            ? node.used
+              ? "busy"
+              : "free"
+            : "unknown");
+      const st = ["free", "busy", "cordoned", "unknown", "offline", "degraded", "stale"].includes(
+        rawState
+      )
+        ? rawState
+        : "free";
       const name = escapeHtml(node.name);
       const leaseJob = node.lease && node.lease.job ? escapeHtml(node.lease.job) : "";
-      const badge = node.cordoned
-        ? `<span class="chip warn">已隔离</span>`
-        : leaseJob
-          ? `<span class="chip warn">${leaseJob}</span>`
-          : !hasSnapshot
-            ? `<span class="chip chip--neutral">无快照</span>`
-            : node.used
-              ? `<span class="chip warn">占用中</span>`
-              : `<span class="chip ok">空闲</span>`;
+      const lastSeen = node.last_seen_age_sec != null ? formatAgeSec(node.last_seen_age_sec) : "";
+      const snapshotAge =
+        node.snapshot_age_sec != null ? formatAgeSec(node.snapshot_age_sec) : "";
+      let badge = "";
+      if (rawState === "offline") {
+        badge = `<span class="chip bad">离线${lastSeen ? " · " + lastSeen : ""}</span>`;
+      } else if (rawState === "degraded") {
+        badge = `<span class="chip warn">探活异常${lastSeen ? " · " + lastSeen : ""}</span>`;
+      } else if (rawState === "stale") {
+        badge = `<span class="chip warn">快照过期${snapshotAge ? " · " + snapshotAge : ""}</span>`;
+      } else if (node.cordoned) {
+        badge = `<span class="chip warn">已隔离</span>`;
+      } else if (leaseJob) {
+        badge = `<span class="chip warn">${leaseJob}</span>`;
+      } else if (!hasSnapshot) {
+        badge = `<span class="chip chip--neutral">无快照</span>`;
+      } else if (node.used) {
+        badge = `<span class="chip warn">占用中</span>`;
+      } else {
+        badge = `<span class="chip ok">空闲</span>`;
+      }
       const bars = (node.gpus || [])
         .map((g) => {
           const cls = g.status === "free" ? "free" : "occupied";
@@ -1247,14 +1677,33 @@ function renderNodes(nodes) {
           return `<i class="bar ${cls}" title="${escapeHtml(title)}"></i>`;
         })
         .join("");
-      const freeText = hasSnapshot ? node.free : "—";
+      const freeText = hasSnapshot && counted ? node.free : "—";
+      const hasHost =
+        node.cpu_percent != null || node.load1 != null || node.mem_used_mb != null;
+      const gpuUtils = (node.gpus || [])
+        .map((g) => g.utilization_percent)
+        .filter((v) => v != null)
+        .map(Number);
+      const gpuAvg = gpuUtils.length
+        ? `${Math.round(gpuUtils.reduce((a, b) => a + b, 0) / gpuUtils.length)}%`
+        : "-";
+      const hostPart = hasHost
+        ? `CPU ${node.cpu_percent ?? "-"}% · 负载 ${node.load1 ?? "-"} · 内存 ${
+            node.mem_used_mb != null ? Math.round(node.mem_used_mb / 1024) + "G" : "-"
+          }`
+        : "主机指标未采集";
+      const usage = `${hostPart} · GPU 算力 ${gpuAvg}${
+        node.snapshot_stale ? " · 数据过期" : ""
+      }`;
       return `<button type="button" class="node-tile ${selected ? "selected" : ""} state-${st}"
-          data-select="${name}" aria-pressed="${selected ? "true" : "false"}">
+          data-select="${name}" aria-pressed="${selected ? "true" : "false"}"
+          title="${escapeHtml(
+            node.liveness_error ? `探活错误：${node.liveness_error}` : `最后成功：${node.last_seen || "未知"}`
+          )}">
         <span class="name">${name}</span>
         <span class="host">${escapeHtml(node.host || "-")}</span>
         <span class="stats"><span class="meta">空闲 ${freeText}/${node.total ?? "—"}</span>${badge}</span>
-        <span class="meta node-usage">CPU ${node.cpu_percent ?? "-"}% · 负载 ${node.load1 ?? "-"} · 内存 ${node.mem_used_mb != null ? Math.round(node.mem_used_mb / 1024) + "G" : "-"
-        }</span>
+        <span class="meta node-usage">${escapeHtml(usage)}</span>
         <span class="bars">${bars || '<span class="meta">暂无快照</span>'}</span>
       </button>`;
     })
@@ -1294,6 +1743,13 @@ function renderDrawer({ open = false } = {}) {
     return;
   }
   const cordon = node.cordon || {};
+  const liveState = node.liveness_state || node.state || "unknown";
+  const offline = liveState === "offline";
+  const degraded = liveState === "degraded";
+  const stale = Boolean(node.snapshot_stale);
+  const staleData = offline || stale;
+  const snapshotAge = node.snapshot_age_text || formatAgeSec(node.snapshot_age_sec) || "-";
+  const lastSeen = node.last_seen_age_sec != null ? formatAgeSec(node.last_seen_age_sec) : "从未";
   const procs = [];
   for (const g of node.gpus || []) {
     for (const p of g.processes || []) {
@@ -1305,57 +1761,82 @@ function renderDrawer({ open = false } = {}) {
       });
     }
   }
+  const killDisabled = offline ? "disabled" : "";
+  const staleNote = offline
+    ? `节点离线（${escapeHtml(node.liveness_error || "不可达")}）。下表 GPU / 进程 / CPU 数据来自 ${snapshotAge} 前的旧快照，<strong>不代表当前状态</strong>。`
+    : stale
+      ? `资源快照已过期（${snapshotAge} 前采集），以下占用与进程数据可能不是当前状态。`
+      : "";
   const procRows = procs.length
-    ? `<table class="table"><thead><tr><th>GPU</th><th>PID</th><th>MEM</th><th>NAME</th><th></th></tr></thead><tbody>
+    ? `<div class="${staleData ? "stale-block" : ""}">
+        <table class="table"><thead><tr><th>GPU</th><th>PID</th><th>MEM</th><th>NAME</th><th></th></tr></thead><tbody>
         ${procs
-      .map(
-        (p) => `<tr>
+          .map(
+            (p) => `<tr>
               <td>${escapeHtml(String(p.gpu))}</td>
               <td>${escapeHtml(String(p.pid))}</td>
               <td>${escapeHtml(String(p.memory_mib))}MiB</td>
               <td class="meta">${escapeHtml(p.name || "-")}</td>
               <td><button class="danger tiny" data-kill-pid="${p.pid}" data-kill-node="${escapeHtml(
-          node.name
-        )}">结束</button></td>
+              node.name
+            )}" ${killDisabled} title="${offline ? "节点离线，无法结束进程" : ""}">结束</button></td>
             </tr>`
-      )
-      .join("")}
-      </tbody></table>`
-    : '<p class="muted tiny">当前快照无 GPU compute 进程</p>';
+          )
+          .join("")}
+        </tbody></table></div>`
+    : `<p class="muted tiny">${offline ? "节点离线，无法读取当前 GPU 进程。" : stale ? "快照已过期，暂无可信的 GPU 进程数据。" : "当前快照无 GPU compute 进程"}</p>`;
   const safeName = escapeHtml(node.name);
   const actions = node.cordoned
     ? `<button data-uncordon="${safeName}">取消隔离</button>
-       <button data-free="${safeName}" class="danger">腾空</button>`
+       <button data-free="${safeName}" class="danger" ${killDisabled} title="${offline ? "节点离线，无法腾空" : ""}">腾空</button>`
     : `<button data-cordon="${safeName}">隔离</button>
-       <button data-free="${safeName}" class="danger">腾空</button>
-       <button data-free-cordon="${safeName}" class="danger">腾空并隔离</button>`;
+       <button data-free="${safeName}" class="danger" ${killDisabled} title="${offline ? "节点离线，无法腾空" : ""}">腾空</button>
+       <button data-free-cordon="${safeName}" class="danger" ${killDisabled} title="${offline ? "节点离线，无法腾空" : ""}">腾空并隔离</button>`;
+  const stateText = offline
+    ? `离线 · 最后成功 ${lastSeen}`
+    : degraded
+      ? `探活异常 · 最后成功 ${lastSeen}`
+      : stale
+        ? `在线 · 快照过期 ${snapshotAge}`
+        : node.cordoned
+          ? "已隔离"
+          : node.used
+            ? "占用中"
+            : "可调度";
+  const stateTone = offline ? "bad" : degraded || stale ? "warn" : node.cordoned || node.used ? "warn" : "ok";
   body.innerHTML = `
-    <h3>${escapeHtml(node.name)}</h3>
+    <div class="drawer-title-row">
+      <h3>${escapeHtml(node.name)}</h3>
+      <span class="chip chip--${stateTone}">${escapeHtml(stateText)}</span>
+    </div>
+    ${staleNote ? `<div class="data-freshness-warning ${offline ? "tone-bad" : "tone-warn"}" role="alert">${staleNote}</div>` : ""}
     <div class="kv"><b>地址</b> ${escapeHtml(node.host || "-")}</div>
     <div class="kv"><b>角色</b> ${escapeHtml(node.role || "-")}</div>
     <div class="kv"><b>标签</b> ${escapeHtml((node.labels || []).join(", ") || "-")}</div>
-    <div class="kv"><b>状态</b> ${node.cordoned ? "已隔离" : node.used ? "占用中" : "可调度"}</div>
-    <div class="kv"><b>GPU</b> 空闲 ${node.free} / 占用 ${node.used} / 共 ${node.total}</div>
-    <div class="kv"><b>CPU</b> ${node.cpu_percent ?? "-"}% · 负载 ${node.load1 ?? "-"} / ${node.cores ?? "-"} 核</div>
-    <div class="kv"><b>内存</b> ${node.mem_used_mb ?? "-"} / ${node.mem_total_mb ?? "-"} MB</div>
+    <div class="kv"><b>状态</b> ${escapeHtml(stateText)}</div>
+    <div class="kv"><b>GPU</b> 空闲 ${staleData ? "—" : node.free} / 占用 ${staleData ? "—" : node.used} / 共 ${node.total}${staleData ? ` <span class="meta">（${offline ? "离线节点已排除" : "快照过期"}）</span>` : ""}</div>
+    <div class="kv"><b>CPU</b> ${node.cpu_percent != null ? `${node.cpu_percent}%` : "-"} · 负载 ${node.load1 ?? "-"} / ${node.cores ?? "-"} 核${staleData ? ' <span class="meta">（旧）</span>' : ""}</div>
+    <div class="kv"><b>内存</b> ${node.mem_used_mb ?? "-"} / ${node.mem_total_mb ?? "-"} MB${staleData ? ' <span class="meta">（旧）</span>' : ""}</div>
+    <div class="kv"><b>最后采集</b> ${escapeHtml(node.collected_at || "-")}${stale ? ` · ${escapeHtml(snapshotAge)} 前` : ""}</div>
+    <div class="kv"><b>最后成功探活</b> ${escapeHtml(node.last_seen || "从未")}</div>
     <div class="kv"><b>占用</b> ${escapeHtml(node.lease ? node.lease.job + " / " + node.lease.id : "-")}</div>
     <div class="kv"><b>隔离原因</b> ${escapeHtml(node.cordoned ? (cordon.reason || "cordoned") : "-")}</div>
     <div class="kv"><b>备注</b> ${escapeHtml(node.note || "-")}</div>
-    <h3 class="sub">GPU 进程</h3>
+    <h3 class="sub">GPU 进程${staleData ? ' <span class="chip chip--warn">旧快照</span>' : ""}</h3>
     ${procRows}
     <div class="btn-row" style="margin:8px 0">
-      <button data-procs-refresh="${safeName}" data-keep-enabled="1">刷新进程</button>
-      <button data-procs-kill-all="${safeName}" class="danger">结束全部 GPU 进程</button>
+      <button data-procs-refresh="${safeName}" data-keep-enabled="1" ${offline ? "disabled" : ""} title="${offline ? "节点离线，无法刷新" : ""}">刷新进程</button>
+      <button data-procs-kill-all="${safeName}" class="danger" ${killDisabled} title="${offline ? "节点离线，无法结束进程" : ""}">结束全部 GPU 进程</button>
     </div>
-    <p class="muted tiny">腾空 = 停注册 Job + 结束 GPU 进程 + 释 lease + 校验空闲。</p>
+    <p class="muted tiny">腾空 = 停注册 Job + 结束 GPU 进程 + 释 lease + 校验空闲。离线节点请先恢复网络再执行破坏性操作。</p>
     <div class="actions">${actions}
       <button data-open-term="${node.name}" class="primary">打开终端</button>
     </div>
-    <p class="meta" style="margin-top:12px">CLI: gpu-control procs list --node ${escapeHtml(
+    <p class="meta" style="margin-top:12px">CLI: gpu-control liveness check --node ${escapeHtml(
     node.name
-  )} --refresh<br/>gpu-control procs kill --node ${escapeHtml(node.name)} --all<br/>gpu-control free --node ${escapeHtml(
+  )}<br/>gpu-control procs list --node ${escapeHtml(
     node.name
-  )}</p>`;
+  )} --refresh<br/>gpu-control free --node ${escapeHtml(node.name)}</p>`;
   bindNodeActions(body);
   body.querySelectorAll("[data-open-term]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -1985,6 +2466,7 @@ function applyOverview(data) {
     ? `${strategyLabel} · 主控 ${ctrl.node || "control"}@${ctrlHost} · UI :${ctrlPort}`
     : `${strategyLabel} · 主控统一调度`;
   renderSummary(data.summary || {});
+  renderFreshnessBanner(data);
   fillTargetSelects(data.nodes || []);
   renderPresets(data.exec_presets || []);
   renderJobs(data.jobs || []);
@@ -2005,19 +2487,24 @@ function renderClusterKpis(summary) {
   const nodeTotal = nodes.reduce((sum, node) => sum + Number(node.total || 0), 0);
   const nodeFree = nodes.reduce((sum, node) => sum + Number(node.free || 0), 0);
   const nodeUsed = nodes.reduce((sum, node) => sum + Number(node.used || 0), 0);
-  const used = Number(summary.gpus_used || nodeUsed || 0);
-  const free = Number(summary.gpus_free || nodeFree || 0);
-  const total = Number(summary.gpus_total || nodeTotal || used + free) || 0;
-  const busy = summary.busy_nodes ?? nodes.filter((node) => Number(node.used || 0) > 0).length;
-  const idle = summary.free_nodes ?? nodes.filter((node) => Number(node.used || 0) === 0).length;
-  const hasSnapshot = nodes.some(
-    (node) => Boolean(node.collected_at) || (node.gpus || []).length > 0
-  );
+  const used = summary.gpus_used != null ? Number(summary.gpus_used) : nodeUsed;
+  const free = summary.gpus_free != null ? Number(summary.gpus_free) : nodeFree;
+  const total = summary.gpus_total != null ? Number(summary.gpus_total) : nodeTotal;
+  const counted = nodes.filter((node) => node.counted !== false && node.state !== "offline");
+  const busy =
+    summary.busy_nodes ??
+    counted.filter((node) => node.state === "busy").length;
+  const idle =
+    summary.free_nodes ??
+    counted.filter((node) => node.state === "free").length;
   const items = [
     ["节点", summary.nodes ?? nodes.length],
-    ["GPU", total ? (hasSnapshot ? `${used}/${total}` : `—/${total}`) : "-"],
-    ["空闲 GPU", total ? (hasSnapshot ? free : "—") : "-"],
-    ["忙 / 闲", hasSnapshot ? `${busy} / ${idle}` : "— / —"],
+    ["在线", summary.nodes_online ?? "-"],
+    ["离线", summary.nodes_offline ?? 0],
+    ["计入 GPU", total ? `${used}/${total}` : "0（全部排除）"],
+    ["空闲 GPU", total ? free : "—"],
+    ["排除 GPU", summary.gpus_excluded ?? 0],
+    ["忙 / 闲", total ? `${busy} / ${idle}` : "— / —"],
     ["隔离", summary.cordoned ?? 0],
     ["队列", summary.queue_pending ?? 0],
   ];
@@ -2274,11 +2761,6 @@ function renderAccessStatus(data) {
     .join("");
   const at = $("dash-board-at");
   if (at) at.textContent = data.generated_at || "实时总览";
-  const urlEl = $("dash-ingress-url");
-  if (urlEl) {
-    const url = ingress.public_base_url || edge.url || "";
-    urlEl.textContent = url ? `对外 ${url}` : "对外 URL 未配置";
-  }
 }
 
 function renderGpuPool(data) {
@@ -2301,11 +2783,30 @@ function renderGpuPool(data) {
   if (bar) bar.style.width = `${usedPct}%`;
   const meter = document.querySelector(".dash-bar[role='progressbar']");
   if (meter) meter.setAttribute("aria-valuenow", String(usedPct));
+  const smUtil = summary.gpu_sm_util_pct;
+  const memUtil = summary.gpu_mem_util_pct;
+  const fmtPct = (v) => (v == null || Number.isNaN(Number(v)) ? "-" : `${Math.round(Number(v))}%`);
+  const loadEl = $("dash-gpu-load");
+  if (loadEl) {
+    loadEl.textContent =
+      smUtil == null && memUtil == null
+        ? "暂无实测（等待下一次 nvidia-smi 采集）"
+        : `算力 ${fmtPct(smUtil)} · 显存 ${fmtPct(memUtil)}`;
+  }
+  const loadBar = $("dash-bar-load");
+  if (loadBar) {
+    const pct = smUtil == null ? 0 : Math.max(0, Math.min(100, Number(smUtil)));
+    loadBar.style.width = `${pct}%`;
+    const loadMeter = loadBar.closest(".meter");
+    if (loadMeter) loadMeter.setAttribute("aria-valuenow", String(Math.round(pct)));
+  }
   const meta = $("dash-gpu-meta");
   if (meta) {
     meta.textContent = total
-      ? `${used}/${total} 占用 · ${usedPct}%${data.cached ? " · 缓存" : ""}`
-      : "暂无 GPU 数据";
+      ? `${used}/${total} 槽位 · 算力 ${fmtPct(smUtil)}${data.cached ? " · 缓存" : ""}`
+      : summary.gpus_excluded
+        ? `无计入节点 · ${summary.gpus_excluded} 张卡因离线/快照过期排除`
+        : "暂无 GPU 数据";
   }
 
   const strip = $("dash-node-strip");
@@ -2318,14 +2819,25 @@ function renderGpuPool(data) {
         const totalGpus = Number(node.total || (node.gpus || []).length) || 0;
         const usedGpus = Number(node.used || 0);
         const hasSnapshot = Boolean(node.collected_at) || (node.gpus || []).length > 0;
-        const cls = node.cordoned
-          ? "cordoned"
-          : hasSnapshot
-            ? usedGpus
-              ? "busy"
-              : "free"
-            : "unknown";
+        const counted = node.counted !== false;
+        const cls =
+          node.state ||
+          (node.cordoned
+            ? "cordoned"
+            : hasSnapshot
+              ? usedGpus
+                ? "busy"
+                : "free"
+              : "unknown");
         const leaseJob = node.lease && node.lease.job ? escapeHtml(node.lease.job) : "";
+        const stateNote =
+          cls === "offline"
+            ? " · 离线"
+            : cls === "degraded"
+              ? " · 探活异常"
+              : cls === "stale"
+                ? " · 快照过期"
+                : "";
         const gpus =
           (node.gpus || []).length > 0
             ? node.gpus
@@ -2344,10 +2856,10 @@ function renderGpuPool(data) {
           })
           .join("");
         return `<button type="button" class="gpu-node-row ${cls}" data-select="${name}"
-            title="${escapeHtml(node.host || "")}${leaseJob ? " · " + leaseJob : ""}">
-          <span class="gpu-node-name">${name}${leaseJob ? `<span class="meta"> · ${leaseJob}</span>` : ""}</span>
+            title="${escapeHtml(node.host || "")}${leaseJob ? " · " + leaseJob : ""}${stateNote}">
+          <span class="gpu-node-name">${name}${leaseJob ? `<span class="meta"> · ${leaseJob}</span>` : ""}${stateNote ? `<span class="meta">${escapeHtml(stateNote)}</span>` : ""}</span>
           <span class="gpu-segments" aria-hidden="true">${segs}</span>
-          <span class="gpu-node-count">${hasSnapshot ? usedGpus : "—"}/${totalGpus || "-"}</span>
+          <span class="gpu-node-count">${hasSnapshot && counted ? usedGpus : "—"}/${totalGpus || "-"}</span>
         </button>`;
       })
       .join("") || '<p class="meta">暂无节点快照</p>';
@@ -2402,151 +2914,13 @@ function renderDashboard(data) {
   setText("dash-queue-2", String(summary.queue_pending ?? 0));
   setText("dash-cordon-2", String(summary.cordoned ?? 0));
 
-  const leasesRoot = $("dash-leases-list");
-  if (leasesRoot) {
-    const leases = data.leases || [];
-    leasesRoot.innerHTML =
-      leases
-        .slice(0, 8)
-        .map((lease) => {
-          const nodes = (lease.nodes || []).join(", ");
-          return `<div class="item">
-            <div><strong>${escapeHtml(lease.job || lease.id || "lease")}</strong>
-              <div class="meta">${escapeHtml(nodes)} · ${escapeHtml(lease.gpus ?? "?")}GPU${lease.note ? " · " + escapeHtml(lease.note) : ""}</div>
-            </div>
-          </div>`;
-        })
-        .join("") || '<div class="empty-state compact"><strong>无占用登记</strong><p>节点全部空闲或未登记 Lease。</p></div>';
-  }
-
-  renderDashGateway(data.ingress || state.ingress);
   if (data.ingress) state.ingress = data.ingress;
   if (data.notices) renderNotices(data.notices);
   if (data.metrics_tail) renderTrends(data.metrics_tail);
   const syncAt = $("notices-sync-at");
   if (syncAt && data.generated_at) syncAt.textContent = `规则告警 · ${data.generated_at}`;
 
-  const tk = data.toolkits || {};
-  const chips = $("dash-toolkit-chips");
-  if (chips) {
-    const rows = tk.by_id || [];
-    chips.innerHTML =
-      rows
-        .map((r) => {
-          const ok = (r.ok || 0) > 0 && (r.fail || 0) === 0;
-          const mixed = (r.ok || 0) > 0 && (r.fail || 0) > 0;
-          const cls = ok ? "ok" : mixed ? "" : "bad";
-          const ver = (r.versions || [])[0] || "";
-          return `<span class="chip ${cls}">${escapeHtml(r.id)}${ver ? " " + escapeHtml(ver) : ""} · ${r.ok || 0}ok</span>`;
-        })
-        .join("") || '<span class="meta">尚未探测工具栈</span>';
-  }
-  const tkMeta = $("dash-toolkit-meta");
-  if (tkMeta) {
-    tkMeta.textContent = tk.generated_at
-      ? `探测于 ${tk.generated_at}`
-      : "尚未探测工具栈";
-  }
   syncJobSelectHint(data.jobs || []);
-}
-
-function renderDashGateway(status) {
-  const root = document.getElementById("dash-gateway");
-  if (!root) return;
-  if (!status) {
-    root.innerHTML = '<p class="muted">入口状态未加载</p>';
-    return;
-  }
-  state.ingress = status;
-  renderIngressMeta(status);
-  const edge = status.edge || {};
-  const ll = status.litellm || {};
-  const nginx = status.nginx || {};
-  const pool = (edge.status && edge.status.pool) || {};
-  const settings = (edge.status && edge.status.settings) || {};
-  const publicUrl = status.public_base_url || edge.url || "";
-  const healthz = edge.healthz || (publicUrl ? `${publicUrl}/_gpu_control/health` : "");
-  const companions = Array.isArray(status.companions) ? status.companions : null;
-  const rows = companions
-    ? companions.map((c) => {
-      const links = [];
-      if (c.id === "edge") {
-        if (publicUrl) links.push({ href: publicUrl, label: publicUrl });
-        if (healthz) links.push({ href: healthz, label: "health" });
-      } else if (c.id === "litellm" && ll.url && (ll.running || ll.available)) {
-        links.push({ href: ll.url, label: ll.url });
-      }
-      let detail = c.detail || "";
-      if (c.id === "edge") {
-        const extra = [
-          settings.strategy ? `LB ${settings.strategy}` : null,
-          pool.upstream_count != null ? `上游 ${pool.available ?? "?"}/${pool.upstream_count}` : null,
-        ]
-          .filter(Boolean)
-          .join(" · ");
-        if (extra) detail = detail ? `${detail} · ${extra}` : extra;
-      }
-      if (c.id === "litellm" && detail.includes("/")) {
-        detail = detail.replace(/\/opt\/[^\s·]+/g, (p) => {
-          const parts = p.split("/").filter(Boolean);
-          return parts.length > 2 ? `…/${parts.slice(-2).join("/")}` : p;
-        });
-      }
-      return {
-        name: c.name,
-        tone: c.state === "running" || c.state === "installed" || c.state === "ready" || c.state === "not_needed"
-          ? c.state === "running" || c.state === "installed"
-            ? "on"
-            : "idle"
-          : c.severity === "error" || c.severity === "warn"
-            ? "bad"
-            : "off",
-        chip: c.label,
-        detail,
-        links,
-      };
-    })
-    : [
-      {
-        name: "Edge LB",
-        tone: edge.running ? "on" : "bad",
-        chip: edge.running ? "运行中" : "应启动",
-        detail: edge.listen || "",
-        links: [
-          publicUrl ? { href: publicUrl, label: publicUrl } : null,
-          healthz ? { href: healthz, label: "health" } : null,
-        ].filter(Boolean),
-      },
-      {
-        name: "nginx",
-        tone: nginx.binary ? "on" : "idle",
-        chip: nginx.binary ? "已装" : nginx.needed ? "未装" : "不必装",
-        detail: nginx.hint || "",
-        links: [],
-      },
-      {
-        name: "LiteLLM",
-        tone: ll.running ? "on" : ll.ready ? "idle" : "off",
-        chip: ll.running ? "运行中" : ll.ready ? "可选·就绪" : "可选·未配",
-        detail: ll.dir || "",
-        links: [],
-      },
-    ];
-  root.innerHTML = rows
-    .map((row) => {
-      const links = (row.links || [])
-        .map((l) => `<a href="${escapeHtml(safeHref(l.href))}" target="_blank" rel="noopener">${escapeHtml(l.label)}</a>`)
-        .join("");
-      return `<div class="dash-gw-row ${row.tone || "off"}">
-        <div class="name">${escapeHtml(row.name)}</div>
-        <div>
-          <div class="meta">${escapeHtml(row.detail || "")}</div>
-          <div class="links">${links || '<span class="meta">—</span>'}</div>
-        </div>
-        <span class="chip">${escapeHtml(row.chip || "")}</span>
-      </div>`;
-    })
-    .join("");
 }
 
 function renderQuality(q) {
@@ -2570,96 +2944,33 @@ function renderQuality(q) {
   const api = q.api || {};
   const mesh = q.mesh || {};
   const gpus = q.gpus || {};
-  set("q-ssh", ssh.total != null ? `${ssh.ok_count ?? 0}/${ssh.total}` : "-");
-  set("q-api", api.total != null ? `${api.ok ?? 0}/${api.total}` : "-");
-  set("q-mesh", mesh.total ? `${mesh.ok}/${mesh.total}` : "-");
-  set("q-gpu", gpus.total != null ? `${gpus.free}/${gpus.total}` : "-");
+  const sshText = ssh.total ? `${ssh.ok_count ?? 0}/${ssh.total}` : ssh.fresh === false ? "未探测" : "-";
+  const apiText = api.total ? `${api.ok ?? 0}/${api.total}` : api.fresh === false ? "未探测" : "-";
+  const meshText = mesh.total ? `${mesh.ok}/${mesh.total}` : mesh.fresh === false ? "未探测" : "-";
+  set("q-ssh", ssh.fresh === false && ssh.total ? `${sshText} 过期` : sshText);
+  set("q-api", api.fresh === false && api.total ? `${apiText} 过期` : apiText);
+  set("q-mesh", mesh.fresh === false && mesh.total ? `${meshText} 过期` : meshText);
+  set(
+    "q-gpu",
+    gpus.total
+      ? `${gpus.free}/${gpus.total}${gpus.excluded ? ` (+${gpus.excluded} 排除)` : ""}`
+      : gpus.excluded
+        ? `0（${gpus.excluded} 排除）`
+        : "-"
+  );
   set(
     "quality-updated",
-    q.updated_at ? `更新于 ${q.updated_at}` : "完成「全量同步」或「一键连通」后更新评分"
+    q.summary ||
+      (q.updated_at ? `更新于 ${q.updated_at}` : "完成「全量同步」或「一键连通」后更新评分")
   );
 
-  const results = (ssh.results || []).slice().sort((a, b) => (a.node || "").localeCompare(b.node || ""));
-  const maxLat = Math.max(1, ...results.map((r) => r.latency_ms || 0));
-  const bars = $("ssh-latency-bars");
-  if (!bars) return;
-  if (!results.length) {
-    bars.innerHTML = '<p class="muted">尚未探测 SSH</p>';
-    set("ssh-latency-meta", "尚未探测");
-  } else {
-    const lat = ssh.latency_ms || {};
-    set(
-      "ssh-latency-meta",
-      `平均 ${lat.avg ?? "-"}ms · 最快 ${lat.min ?? "-"}ms · 最慢 ${lat.max ?? "-"}ms`
-    );
-    bars.innerHTML = results
-      .map((r) => {
-        const pct = r.ok ? Math.max(6, Math.round(((r.latency_ms || 0) / maxLat) * 100)) : 100;
-        return `<div class="latency-row ${r.ok ? "" : "fail"}">
-          <span>${escapeHtml(r.node)}</span>
-          <div class="latency-track"><div class="latency-fill" style="width:${pct}%"></div></div>
-          <span>${r.ok ? `${r.latency_ms}ms` : "失败"}</span>
-        </div>`;
-      })
-      .join("");
-  }
-}
 
-function renderActionSteps(steps, elapsed) {
-  const root = document.getElementById("action-steps");
-  if (!steps || !steps.length) {
-    root.innerHTML = '<p class="muted">暂无步骤</p>';
-    return;
-  }
-  root.innerHTML =
-    steps
-      .map(
-        (s) => `<div class="step-item ${s.ok ? "ok" : "fail"}">
-          <span>${escapeHtml(s.name)}${s.error ? " · " + escapeHtml(s.error) : ""}</span>
-          <span class="meta">${s.ok ? "成功" : "失败"} · ${s.ms}ms</span>
-        </div>`
-      )
-      .join("") +
-    `<div class="meta" style="margin-top:6px">总耗时 ${elapsed ?? "-"}ms</div>`;
 }
 
 async function loadQuality() {
   const q = await api("/api/quality");
   renderQuality(q);
   return q;
-}
-
-function renderRunlog(payload) {
-  const root = document.getElementById("runlog-list");
-  const meta = document.getElementById("runlog-meta");
-  if (!root) return;
-  const items = payload.items || [];
-  root.innerHTML =
-    items
-      .slice(0, 12)
-      .map((item) => {
-        const cls = item.ok === false ? "fail" : item.ok ? "ok" : "";
-        return `<div class="item ${cls}">
-          <div><strong>${escapeHtml(item.kind || "")}</strong>
-            <span class="meta"> ${escapeHtml(item.ts || "")}</span>
-            <div class="meta">${escapeHtml(item.summary || "")}</div>
-          </div>
-          <span class="chip">${item.ok === false ? "失败" : item.ok ? "成功" : "—"}</span>
-        </div>`;
-      })
-      .join("") ||
-    '<div class="empty-state compact"><strong>暂无运行日志</strong><p>CLI / 一键动作 / 检测修复会自动记录。</p></div>';
-  if (meta) {
-    meta.textContent = payload.total
-      ? `${items.length}/${payload.total} · ${payload.path || "state/runlog.jsonl"}`
-      : "记录 CLI / 一键动作 / 检测修复";
-  }
-}
-
-async function refreshRunlog() {
-  const data = await api("/api/runlog?limit=30");
-  renderRunlog(data);
-  return data;
 }
 
 async function runOneclick(action, extra = {}) {
@@ -2689,10 +3000,8 @@ async function runOneclick(action, extra = {}) {
       method: "POST",
       body: JSON.stringify(body),
     });
-    renderActionSteps(data.steps || [], data.elapsed_ms);
     if (data.quality) renderQuality(data.quality);
     if (data.overview) applyOverview(data.overview);
-    refreshRunlog().catch(() => { });
     if (data.error && !(data.steps || []).length) {
       showSteps([{ name: action, ok: false, ms: data.elapsed_ms, error: data.error }], action);
     } else {
@@ -3081,8 +3390,11 @@ function setView(name, { updateHash = true } = {}) {
   document.querySelectorAll(".view").forEach((v) => {
     v.classList.toggle("active", v.dataset.viewPanel === name);
   });
+  const meta = VIEW_META[name] || {};
   const title = $("view-title");
   if (title) title.textContent = VIEW_TITLE[name] || name;
+  const purpose = $("view-purpose");
+  if (purpose) purpose.textContent = meta.purpose || "";
   const sub = VIEW_SUBNAV[navKey]?.find((item) => item.view === name);
   document.title = `ComputeDeck · ${sub ? `${VIEW_TITLE[navKey]} / ${sub.label}` : VIEW_TITLE[name] || name}`;
   renderSubnav(name);
@@ -3108,7 +3420,6 @@ function setView(name, { updateHash = true } = {}) {
   }
   if (name === "actions") {
     if (!state.quality) loadQuality().catch(() => { });
-    refreshRunlog().catch(() => { });
   }
   if (name === "actions" || name === "endpoints") {
     refreshIngressStatus().catch(() => { });
@@ -4005,6 +4316,11 @@ async function boot() {
       setBusy(false);
     }
   });
+  $("btn-liveness-check")?.addEventListener("click", runLivenessCheck);
+  $("btn-fresh-refresh")?.addEventListener("click", () => $("btn-refresh")?.click());
+  $("btn-remote-plan")?.addEventListener("click", remotePlan);
+  $("btn-remote-up")?.addEventListener("click", remoteUp);
+  $("btn-remote-down")?.addEventListener("click", remoteDown);
   document.getElementById("btn-reload").addEventListener("click", async () => {
     try {
       await refresh(false);
@@ -4022,19 +4338,12 @@ async function boot() {
     }
   });
   document.getElementById("btn-doctor").addEventListener("click", runDoctor);
-  document.getElementById("btn-doctor-2").addEventListener("click", runDoctor);
-  document.getElementById("btn-goto-config")?.addEventListener("click", () => {
-    setView("config");
-    setConfigTab("wizard");
-  });
+  document.getElementById("btn-doctor-2")?.addEventListener("click", runDoctor);
   document.addEventListener("click", (ev) => {
     const jump = ev.target && ev.target.closest ? ev.target.closest("[data-view-jump]") : null;
     if (jump) setView(jump.dataset.viewJump);
   });
   document.getElementById("btn-full-sync").addEventListener("click", () => runOneclick("full-sync"));
-  document.getElementById("btn-runlog-refresh")?.addEventListener("click", () => {
-    refreshRunlog().then(() => toast("日志已刷新")).catch((err) => log(String(err.message || err)));
-  });
   on("btn-load-quality", "click", async () => {
     try {
       await loadQuality();
@@ -4179,7 +4488,7 @@ async function boot() {
   on("btn-notices-sync", "click", () => syncNotices({ toast: true }));
   on("btn-ai-analyze", "click", runAiAnalyze);
   document.getElementById("btn-api-health").addEventListener("click", runApiHealth);
-  document.getElementById("btn-api-health-2").addEventListener("click", runApiHealth);
+  document.getElementById("btn-api-health-2")?.addEventListener("click", runApiHealth);
   document.getElementById("btn-probe").addEventListener("click", async () => {
     setBusy(true);
     try {
@@ -4567,6 +4876,7 @@ async function boot() {
     await seedConsole();
     hideConsoleUnread();
     await loadAssistantStatus();
+    refreshRemoteStatus().catch(() => {});
   } catch (err) {
     log(String(err.message || err));
     writeConsoleText(`初始化失败：${err.message || err}\n\n可以点「一键连通」重试。`, {
@@ -4810,7 +5120,7 @@ function restoreAiAnalyze() {
     const saved = JSON.parse(raw);
     const box = $("ai-analyze-box");
     const at = $("ai-analyze-at");
-    if (box && saved.reply) box.textContent = saved.reply;
+    if (box && saved.reply) setMarkdown(box, saved.reply);
     if (at && saved.at) at.textContent = saved.at;
   } catch (_) {
     /* ignore */
@@ -4832,7 +5142,7 @@ async function runAiAnalyze() {
     });
     const reply = data.reply || data.error || "（无解读）";
     const stamp = new Date().toLocaleString();
-    if (box) box.textContent = reply;
+    if (box) setMarkdown(box, reply);
     if (at) at.textContent = stamp;
     localStorage.setItem(
       "gpu-control-ai-analyze",
@@ -4864,6 +5174,7 @@ function bindNotices() {
   });
 }
 
+const ASSISTANT_CONV_KEY = "gc_assistant_conversation_v1";
 const assistantState = {
   open: false,
   busy: false,
@@ -4871,7 +5182,34 @@ const assistantState = {
   messages: [],
   status: null,
   models: [],
+  conversationId: null,
+  pending: [],
 };
+try {
+  assistantState.conversationId = localStorage.getItem(ASSISTANT_CONV_KEY) || null;
+} catch (_) {
+  assistantState.conversationId = null;
+}
+
+function setAssistantConversation(id) {
+  assistantState.conversationId = id || null;
+  try {
+    if (id) localStorage.setItem(ASSISTANT_CONV_KEY, id);
+    else localStorage.removeItem(ASSISTANT_CONV_KEY);
+  } catch (_) {
+    /* ignore quota */
+  }
+}
+
+function newAssistantConversation() {
+  setAssistantConversation(null);
+  assistantState.messages = [];
+  assistantState.pending = [];
+  const thread = $("assistant-thread");
+  if (thread) thread.innerHTML = "";
+  renderAssistantPending([]);
+  appendAssistantMsg("bot", "新对话已开始。你可以让我巡检、部署、腾空节点或检查入口。");
+}
 
 function setAssistantOpen(open) {
   assistantState.open = !!open;
@@ -4964,10 +5302,14 @@ function applyAssistantStatus(data) {
 
 function appendAssistantMsg(role, text, extra = {}) {
   const thread = $("assistant-thread");
-  if (!thread) return;
+  if (!thread) return null;
   const el = document.createElement("div");
   el.className = `assistant-msg ${role === "user" ? "user" : "bot"}`;
-  el.textContent = text || "";
+  if (extra.markdown && role !== "user") {
+    setMarkdown(el, text || "");
+  } else {
+    el.textContent = text || "";
+  }
   if (extra.warning) {
     const w = document.createElement("span");
     w.className = "warn";
@@ -4976,6 +5318,76 @@ function appendAssistantMsg(role, text, extra = {}) {
   }
   thread.appendChild(el);
   thread.scrollTop = thread.scrollHeight;
+  return el;
+}
+
+function appendAssistantStreamingMsg() {
+  const thread = $("assistant-thread");
+  if (!thread) return null;
+  const el = document.createElement("div");
+  el.className = "assistant-msg bot markdown streaming";
+  el.textContent = "正在处理…";
+  thread.appendChild(el);
+  thread.scrollTop = thread.scrollHeight;
+  return el;
+}
+
+function scrollAssistantThread() {
+  const thread = $("assistant-thread");
+  if (thread) thread.scrollTop = thread.scrollHeight;
+}
+
+async function postAssistantStream(payload, onEvent, { timeoutMs = 240000 } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch("/api/assistant/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      body: JSON.stringify({ ...payload, stream: true }),
+      signal: controller.signal,
+    });
+    if (!resp.ok || !resp.body) {
+      let detail = "";
+      try {
+        detail = await resp.text();
+      } catch (_) {
+        detail = "";
+      }
+      throw new Error(detail || `HTTP ${resp.status}`);
+    }
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx = buffer.indexOf("\n\n");
+      while (idx >= 0) {
+        const block = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        let event = "message";
+        let data = "";
+        for (const line of block.split("\n")) {
+          if (line.startsWith("event:")) event = line.slice(6).trim();
+          else if (line.startsWith("data:")) data += line.slice(5).trim();
+        }
+        if (data) {
+          let parsed = null;
+          try {
+            parsed = JSON.parse(data);
+          } catch (_) {
+            parsed = null;
+          }
+          if (parsed) onEvent(event, parsed);
+        }
+        idx = buffer.indexOf("\n\n");
+      }
+    }
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function renderAssistantQuick(actions) {
@@ -5004,6 +5416,7 @@ function renderAssistantPending(pending) {
   const root = $("assistant-pending");
   if (!root) return;
   const items = pending || [];
+  assistantState.pending = items;
   if (!items.length) {
     root.hidden = true;
     root.innerHTML = "";
@@ -5012,56 +5425,123 @@ function renderAssistantPending(pending) {
   root.hidden = false;
   root.innerHTML = items
     .map((row, i) => {
-      const tool = row.tool || "";
-      const args = JSON.stringify(row.args || {});
-      return `<button type="button" data-pending-idx="${i}"><strong>${escapeHtml(tool)}</strong> · ${escapeHtml(row.risk || "")}<br><code>${escapeHtml(args)}</code></button>`;
+      const risk = row.risk || "write";
+      const tone = risk === "destructive" ? "bad" : risk === "write" ? "warn" : "info";
+      const target = row.target || {};
+      const targetBits = [];
+      if ((target.nodes || []).length) targetBits.push(`节点：${target.nodes.join("、")}`);
+      if ((target.jobs || []).length) targetBits.push(`Job：${target.jobs.join("、")}`);
+      const warnings = (row.warnings || []).map((w) => `<p class="warn">${escapeHtml(w)}</p>`).join("");
+      const args = row.display_args || row.args || {};
+      return `<div class="assistant-action" data-risk="${escapeHtml(risk)}">
+        <div class="assistant-action-h">
+          <strong>${escapeHtml(row.label || row.tool || "操作")}</strong>
+          <span class="chip chip--${tone}">${escapeHtml(risk === "destructive" ? "高风险" : risk === "write" ? "写操作" : "只读")}</span>
+        </div>
+        <p>${escapeHtml(row.summary || "")}</p>
+        ${targetBits.length ? `<p class="meta">${escapeHtml(targetBits.join(" · "))}</p>` : ""}
+        ${warnings}
+        <details><summary>参数</summary><pre>${escapeHtml(JSON.stringify(args, null, 2))}</pre></details>
+        <div class="btn-row">
+          <button type="button" class="ghost tiny" data-pending-cancel="${i}">取消</button>
+          <button type="button" class="${risk === "destructive" ? "danger" : "primary"} tiny" data-pending-ok="${i}">确认执行</button>
+        </div>
+      </div>`;
     })
     .join("");
-  root.querySelectorAll("[data-pending-idx]").forEach((btn) => {
+  root.querySelectorAll("[data-pending-ok]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const row = items[Number(btn.dataset.pendingIdx)];
+      const row = items[Number(btn.dataset.pendingOk)];
       if (row) runAssistantPending(row);
+    });
+  });
+  root.querySelectorAll("[data-pending-cancel]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const row = items[Number(btn.dataset.pendingCancel)];
+      if (row) rejectAssistantPending(row);
     });
   });
 }
 
-async function runAssistantPending(row) {
-  const tool = row.tool;
-  const args = row.args || {};
+function assistantTargetText(row) {
+  const target = row.target || {};
+  const bits = [];
+  if ((target.nodes || []).length) bits.push(`节点：${target.nodes.join("、")}`);
+  if ((target.jobs || []).length) bits.push(`Job：${target.jobs.join("、")}`);
+  return bits.join("；");
+}
+
+async function rejectAssistantPending(row) {
   try {
-    if (tool === "gc_deploy") {
-      await api("/api/deploy", {
+    if (assistantState.conversationId) {
+      await api("/api/assistant/execute", {
         method: "POST",
         body: JSON.stringify({
-          job: args.job,
-          nodes: args.nodes,
-          force: !!args.force,
+          conversation_id: assistantState.conversationId,
+          action_id: row.id,
+          stage: "reject",
         }),
+        timeoutMs: 30000,
       });
-      toastOk(`已部署 ${args.job || ""}`);
-    } else if (tool === "gc_free_node") {
-      await api("/api/free", {
-        method: "POST",
-        body: JSON.stringify({ node: args.node, cordon: !!args.cordon }),
-      });
-      toastOk(`已腾空 ${args.node || ""}`);
-    } else if (tool === "gc_job_action") {
-      const name = args.name;
-      const action = args.action;
-      await api(`/api/jobs/${encodeURIComponent(name)}/action`, {
-        method: "POST",
-        body: JSON.stringify({ action, node: args.node }),
-      });
-      toastOk(`Job ${name} ${action}`);
-    } else {
-      toastBad(`暂不支持一键确认：${tool}`);
-      return;
     }
-    appendAssistantMsg("bot", `已执行 ${tool}。可在「执行输出」查看细节。`);
-    renderAssistantPending([]);
-    await refresh(false);
   } catch (err) {
-    actionError("助手建议操作", err);
+    log(`assistant reject: ${err.message || err}`);
+  }
+  renderAssistantPending((assistantState.pending || []).filter((x) => x.id !== row.id));
+  appendAssistantMsg("bot", "已取消该操作。");
+}
+
+async function runAssistantPending(row) {
+  if (!assistantState.conversationId) {
+    toastBad("会话已失效，请重新提问");
+    return;
+  }
+  const destructive = row.risk === "destructive" || row.confirm_level === "confirm_twice";
+  const detail = `${row.summary || ""}${assistantTargetText(row) ? "\n" + assistantTargetText(row) : ""}`;
+  const ok = await confirmDialog({
+    title: `确认：${row.label || row.tool}`,
+    message: detail,
+    tone: destructive ? "danger" : "primary",
+    confirmText: "执行",
+  });
+  if (!ok) return;
+  if (destructive) {
+    const again = await confirmDialog({
+      title: "再次确认（破坏性操作）",
+      message: `${row.label || row.tool}\n${detail}\n\n该操作会停止任务或结束进程，确认继续？`,
+      tone: "danger",
+      confirmText: "我确认执行",
+    });
+    if (!again) return;
+  }
+  const sendBtn = $("assistant-send");
+  if (sendBtn) sendBtn.disabled = true;
+  assistantState.busy = true;
+  try {
+    appendAssistantMsg("bot", `正在执行：${row.label || row.tool}…`);
+    const data = await api("/api/assistant/execute", {
+      method: "POST",
+      body: JSON.stringify({
+        conversation_id: assistantState.conversationId,
+        action_id: row.id,
+        confirm: destructive ? "EXECUTE" : true,
+      }),
+      timeoutMs: 1900000,
+    });
+    if (data.conversation_id) setAssistantConversation(data.conversation_id);
+    const reply = data.reply || (data.ok ? "操作已执行。" : `执行失败：${data.status || ""}`);
+    appendAssistantMsg("bot", reply, { markdown: true });
+    assistantState.messages.push({ role: "assistant", content: reply });
+    renderAssistantPending(data.pending_actions || []);
+    if (data.ok) toastOk("操作已执行");
+    else toastBad("操作失败");
+    await refresh(false, { light: true });
+  } catch (err) {
+    appendAssistantMsg("bot", `执行失败：${err.message || err}`);
+    toastBad(`执行失败：${err.message || err}`);
+  } finally {
+    assistantState.busy = false;
+    if (sendBtn) sendBtn.disabled = false;
   }
 }
 
@@ -5188,24 +5668,89 @@ async function sendAssistant(text) {
   assistantState.busy = true;
   const sendBtn = $("assistant-send");
   if (sendBtn) sendBtn.disabled = true;
-  try {
-    const data = await api("/api/assistant/chat", {
-      method: "POST",
-      body: JSON.stringify({ messages: assistantState.messages }),
-      timeoutMs: 120000,
-    });
-    const reply = data.reply || data.error || "（无回复）";
+
+  const payload = { message: content };
+  if (assistantState.conversationId) payload.conversation_id = assistantState.conversationId;
+  const bubble = appendAssistantStreamingMsg();
+  let streamed = "";
+  let donePayload = null;
+  const toolLabels = [];
+
+  const finish = (data) => {
+    if (data?.conversation_id) setAssistantConversation(data.conversation_id);
+    const reply = data?.reply || data?.error || "（无回复）";
+    if (bubble && bubble.isConnected) {
+      bubble.classList.remove("streaming");
+      setMarkdown(bubble, reply);
+      if (toolLabels.length) {
+        const trace = document.createElement("div");
+        trace.className = "assistant-traces";
+        trace.textContent = `工具：${toolLabels.join(" · ")}`;
+        bubble.appendChild(trace);
+      }
+      scrollAssistantThread();
+    } else {
+      appendAssistantMsg("bot", reply, { markdown: true, warning: data?.warning });
+    }
     assistantState.messages.push({ role: "assistant", content: reply });
-    appendAssistantMsg("bot", reply, { warning: data.warning });
-    if (data.quick_actions) renderAssistantQuick(data.quick_actions);
-    renderAssistantPending(data.pending_actions || []);
-    if (data.open_settings) setAssistantSettingsOpen(true);
+    if (data?.quick_actions) renderAssistantQuick(data.quick_actions);
+    renderAssistantPending(data?.pending_actions || []);
+    if (data?.open_settings) setAssistantSettingsOpen(true);
+  };
+
+  try {
+    await postAssistantStream(payload, (event, data) => {
+      if (event === "meta") {
+        if (data.conversation_id) setAssistantConversation(data.conversation_id);
+      } else if (event === "delta") {
+        const piece = String(data.text || "");
+        if (!piece) return;
+        streamed += piece;
+        if (bubble) {
+          if (streamed === piece) bubble.textContent = "";
+          bubble.textContent = streamed;
+          scrollAssistantThread();
+        }
+      } else if (event === "tool") {
+        const label = data.label || data.tool || "工具";
+        if (!toolLabels.includes(label)) toolLabels.push(label);
+        if (bubble && !streamed) bubble.textContent = `正在调用 ${label}…`;
+      } else if (event === "done") {
+        donePayload = data;
+      } else if (event === "error") {
+        donePayload = { ...data, ok: false, reply: data.reply || data.error || "上游错误" };
+      }
+    });
   } catch (err) {
-    appendAssistantMsg("bot", `请求失败：${err.message || err}`);
-  } finally {
-    assistantState.busy = false;
-    if (sendBtn) sendBtn.disabled = false;
+    // 流式不可用（老网关 / 反代缓冲）时回落到普通请求；已经输出过内容则不重复。
+    if (!streamed && bubble) {
+      bubble.remove();
+      try {
+        const data = await api("/api/assistant/chat", {
+          method: "POST",
+          body: JSON.stringify(payload),
+          timeoutMs: 180000,
+        });
+        finish(data);
+      } catch (fallbackErr) {
+        appendAssistantMsg("bot", `请求失败：${fallbackErr.message || fallbackErr}`);
+      }
+    } else if (!donePayload) {
+      donePayload = { ok: false, reply: streamed || `请求中断：${err.message || err}` };
+    }
   }
+
+  if (donePayload) {
+    finish(donePayload);
+  } else if (streamed) {
+    finish({ ok: true, reply: streamed });
+  } else if (bubble) {
+    bubble.classList.remove("streaming");
+    bubble.textContent = "（上游没有返回内容）";
+  }
+
+  assistantState.busy = false;
+  if (sendBtn) sendBtn.disabled = false;
 }
 
 function bindAssistant() {
@@ -5213,6 +5758,7 @@ function bindAssistant() {
   const closeBtn = $("assistant-close");
   const form = $("assistant-form");
   const settingsBtn = $("assistant-settings-btn");
+  const newConvBtn = $("assistant-new");
   const settingsBack = $("assistant-settings-back");
   const fetchBtn = $("assistant-fetch-models");
   const probeBtn = $("assistant-probe");
@@ -5226,6 +5772,7 @@ function bindAssistant() {
     });
   }
   if (closeBtn) closeBtn.addEventListener("click", () => setAssistantOpen(false));
+  if (newConvBtn) newConvBtn.addEventListener("click", newAssistantConversation);
   if (settingsBtn) {
     settingsBtn.addEventListener("click", () => {
       setAssistantSettingsOpen(!assistantState.settingsOpen);

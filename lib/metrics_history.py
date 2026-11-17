@@ -43,6 +43,8 @@ def _avg_cpu(overview: dict[str, Any]) -> float | None:
     for node in nodes:
         if not isinstance(node, dict):
             continue
+        if node.get("counted") is False:
+            continue
         raw = node.get("cpu_percent")
         try:
             if raw is not None:
@@ -59,6 +61,8 @@ def _gpu_real_utils(overview: dict[str, Any]) -> tuple[float | None, float | Non
     mem: list[float] = []
     for node in nodes:
         if not isinstance(node, dict):
+            continue
+        if node.get("counted") is False:
             continue
         gpus = node.get("gpus") if isinstance(node.get("gpus"), list) else []
         for gpu in gpus:

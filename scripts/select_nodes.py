@@ -8,7 +8,8 @@ import json
 import sys
 
 import _bootstrap  # noqa: F401
-from paths import RESOURCES_FILE, STATE_DIR, nodes_file
+import liveness
+from paths import RESOURCES_FILE, STATE_DIR, cluster_file, nodes_file
 from state_util import read_json
 
 LEASES_FILE = STATE_DIR / "leases.json"
@@ -73,6 +74,38 @@ def is_candidate(name: str, node: dict, *, blocked: set[str]) -> bool:
     return len(gpus) == expected and all(gpu["status"] == "free" for gpu in gpus)
 
 
+def health_view(resources: dict) -> dict:
+    """合并存活 / 其它健康信号，供调度排除不可达或过期节点。"""
+    configured = sorted(set(resources) | set((_nodes_meta().get("nodes") or {})))
+    cluster = json.loads(cluster_file().read_text(encoding="utf-8")) if cluster_file().is_file() else {}
+    return liveness.cluster_view(
+        node_names=configured,
+        resources=resources,
+        ssh_quality=read_json(STATE_DIR / "ssh_quality.json", {}),
+        host_metrics=read_json(STATE_DIR / "host_metrics.json", {}),
+        probe=read_json(STATE_DIR / "probe.json", {}),
+        endpoint_health=read_json(STATE_DIR / "endpoint_health.json", {}),
+        persisted=liveness.read_snapshot(STATE_DIR / "liveness.json"),
+        cluster=cluster,
+    )
+
+
+def unavailable_reason(name: str, view: dict) -> str | None:
+    """返回不可调度原因；可调度返回 ``None``。"""
+    node = (view.get("nodes") or {}).get(name) or {}
+    state = str(node.get("state") or "unknown")
+    snapshot = node.get("snapshot") or {}
+    if state == "offline":
+        return "offline"
+    if state == "degraded":
+        return "degraded"
+    if state == "unknown":
+        return "unknown"
+    if snapshot.get("stale"):
+        return f"snapshot-stale({snapshot.get('age_text') or '-'})"
+    return None
+
+
 def rank_candidates(names: list[str], *, prefer: set[str], avoid: set[str]) -> list[str]:
     def score(name: str) -> tuple[int, int, str]:
         labels = node_labels(name)
@@ -107,6 +140,11 @@ def main() -> int:
         default="",
         help="Comma-separated labels to deprioritize (e.g. shared)",
     )
+    parser.add_argument(
+        "--include-unverified",
+        action="store_true",
+        help="同时考虑离线 / 未知 / 快照过期节点（默认排除）",
+    )
     args = parser.parse_args()
 
     if not RESOURCES_FILE.is_file():
@@ -121,11 +159,17 @@ def main() -> int:
     blocked |= cordoned
     prefer = {x.strip() for x in args.prefer_labels.split(",") if x.strip()}
     avoid = {x.strip() for x in args.avoid_labels.split(",") if x.strip()}
+    view = health_view(resources)
 
     candidates: list[str] = []
     capacity = 0
     for name, node in sorted(resources.items()):
         if not isinstance(node, dict) or "gpus" not in node:
+            continue
+        health_reason = None if args.include_unverified else unavailable_reason(name, view)
+        if health_reason:
+            if not args.json:
+                print(f"{name}: {health_reason}")
             continue
         if is_candidate(name, node, blocked=blocked):
             candidates.append(name)

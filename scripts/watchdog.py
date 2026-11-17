@@ -4,21 +4,25 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import signal
 import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 
 import _bootstrap  # noqa: F401
-from paths import CLI, INVENTORY_FILE, PROJECT_DIR, STATE_DIR, VENV_PYTHON
+import liveness
+from paths import CLI, INVENTORY_FILE, PROJECT_DIR, STATE_DIR, VENV_PYTHON, cluster_file, nodes_file
 from jobs_util import default_job_name
 from state_util import atomic_write_json
 
 LOG_FILE = STATE_DIR / "watchdog.log"
 STATE_FILE = STATE_DIR / "watchdog_state.json"
 NODE_STATE_FILE = STATE_DIR / "node_state.json"
+LOCK_FILE = STATE_DIR / "watchdog.lock"
 
 
 def cordoned_nodes() -> set[str]:
@@ -45,14 +49,61 @@ def inventory_workers() -> list[str]:
     return hosts
 
 
+def _read(path, default):
+    if not path.is_file():
+        return default
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return default
+
+
+def liveness_view() -> dict:
+    """读取存活视图：优先 liveness.json，缺失时回落既有健康文件。"""
+    nodes_doc = _read(nodes_file(), {"nodes": {}})
+    cluster = _read(cluster_file(), {})
+    names = list((nodes_doc.get("nodes") or {}).keys()) or inventory_workers()
+    return liveness.cluster_view(
+        node_names=names,
+        resources=_read(PROJECT_DIR / "resources.json", {}),
+        ssh_quality=_read(STATE_DIR / "ssh_quality.json", {}),
+        host_metrics=_read(STATE_DIR / "host_metrics.json", {}),
+        probe=_read(STATE_DIR / "probe.json", {}),
+        endpoint_health=_read(STATE_DIR / "endpoint_health.json", {}),
+        persisted=liveness.read_snapshot(STATE_DIR / "liveness.json"),
+        cluster=cluster,
+    )
+
+
+def unreachable_nodes() -> dict[str, str]:
+    """返回 state ∈ {offline, unknown} 的节点 → 原因。"""
+    view = liveness_view()
+    out: dict[str, str] = {}
+    for name, node in (view.get("nodes") or {}).items():
+        state = str((node or {}).get("state") or "unknown")
+        if state in {"offline", "unknown"}:
+            out[name] = state
+    return out
+
+
 def schedulable_limit(nodes: str | None) -> str | None:
     blocked = cordoned_nodes()
-    if nodes:
-        wanted = [n.strip() for n in nodes.split(",") if n.strip() and n.strip() not in blocked]
-    else:
-        wanted = [n for n in inventory_workers() if n not in blocked]
+    health = unreachable_nodes()
     if blocked:
         log(f"skip cordoned nodes={sorted(blocked)}")
+    if health:
+        log(
+            "skip unreachable nodes="
+            + ",".join(f"{name}({state})" for name, state in sorted(health.items()))
+        )
+    if nodes:
+        wanted = [
+            n.strip()
+            for n in nodes.split(",")
+            if n.strip() and n.strip() not in blocked and n.strip() not in health
+        ]
+    else:
+        wanted = [n for n in inventory_workers() if n not in blocked and n not in health]
     if not wanted:
         return ""
     if nodes is None and len(wanted) == len(inventory_workers()):
@@ -61,20 +112,23 @@ def schedulable_limit(nodes: str | None) -> str | None:
 
 
 def log(message: str) -> None:
+    """单一日志落点：文件；只有前台交互终端才同时打印，避免后台重复行。"""
     line = f"{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')} {message}"
-    print(line, flush=True)
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     with LOG_FILE.open("a", encoding="utf-8") as fh:
         fh.write(line + "\n")
+    if sys.stdout.isatty():
+        print(line, flush=True)
 
 
-def run_cli(args: list[str]) -> subprocess.CompletedProcess[str]:
+def run_cli(args: list[str], *, timeout: int = 900) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [str(VENV_PYTHON), str(CLI), *args],
         cwd=PROJECT_DIR,
         text=True,
         capture_output=True,
         check=False,
+        timeout=timeout,
     )
 
 
@@ -92,14 +146,24 @@ def save_state(data: dict) -> None:
 def check_and_fix(job: str, nodes: str | None, max_restarts: int, failure_threshold: int = 2) -> None:
     limit = schedulable_limit(nodes)
     if limit == "":
-        log(f"skip job={job}: no schedulable nodes (all cordoned?)")
+        health = unreachable_nodes()
+        reason = "unreachable=" + ",".join(sorted(health)) if health else "all cordoned"
+        log(f"skip job={job}: no schedulable nodes ({reason})")
         return
     args = ["status", job]
     if limit:
         args.extend(["--nodes", limit])
     result = run_cli(args)
     healthy = result.returncode == 0
+    output = f"{result.stdout or ''}\n{result.stderr or ''}"
     log(f"check job={job} nodes={limit or 'all'} healthy={healthy} rc={result.returncode}")
+    if not healthy and "UNREACHABLE" in output.upper():
+        # 节点不可达不是 Job 故障；不要反复调 restart 打不可达主机。
+        log(f"skip restart job={job}: ansible reported UNREACHABLE hosts")
+        state = load_state()
+        state.setdefault("failures", {})[f"{job}:{limit or 'all'}"] = 0
+        save_state(state)
+        return
     state = load_state()
     key = f"{job}:{limit or 'all'}"
     failures = state.setdefault("failures", {})
@@ -178,6 +242,14 @@ def main() -> int:
 
     pid_file = STATE_DIR / "watchdog.pid"
     STATE_DIR.mkdir(parents=True, exist_ok=True)
+    lock_handle = LOCK_FILE.open("w", encoding="utf-8")
+    try:
+        fcntl.flock(lock_handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print(f"watchdog already running (lock={LOCK_FILE})", file=sys.stderr)
+        return 0
+    lock_handle.write(str(os.getpid()))
+    lock_handle.flush()
     pid_file.write_text(str(os.getpid()), encoding="utf-8")
     stop = {"requested": False}
 
@@ -209,6 +281,11 @@ def main() -> int:
         try:
             if pid_file.is_file() and pid_file.read_text(encoding="utf-8").strip() == str(os.getpid()):
                 pid_file.unlink()
+        except OSError:
+            pass
+        try:
+            fcntl.flock(lock_handle, fcntl.LOCK_UN)
+            lock_handle.close()
         except OSError:
             pass
         log("watchdog stop")

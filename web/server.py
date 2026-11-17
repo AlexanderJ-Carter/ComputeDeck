@@ -22,7 +22,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 import urllib.error
-from urllib.parse import parse_qs, unquote, urlparse
+import urllib.request
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 from paths import (  # noqa: E402
@@ -49,6 +50,12 @@ from paths import (  # noqa: E402
 from node_paths import default_paths, node_paths  # noqa: E402
 from state_util import atomic_write_json as state_atomic_write_json, read_json as state_read_json  # noqa: E402
 from process_util import pid_alive  # noqa: E402
+import liveness  # noqa: E402
+import assistant_session  # noqa: E402
+import remote_access  # noqa: E402
+from assistant_tools import route_for as assistant_route_for  # noqa: E402
+from assistant_validate import args_hash as assistant_args_hash  # noqa: E402
+from assistant_validate import validate_call as assistant_validate_call  # noqa: E402
 from static_util import resolve_help_target  # noqa: E402
 from jobs_util import (  # noqa: E402
     default_job_name,
@@ -68,12 +75,14 @@ from assistant_chat import (  # noqa: E402
     save_assistant_config,
     compact_overview,
     handle_chat,
+    stream_chat,
 )
 from notices_util import (  # noqa: E402
     findings_to_notices,
     list_notices,
     mark_notices,
     overview_to_notices,
+    reconcile_notices,
     upsert_notices,
 )
 from metrics_history import list_history, record_overview_sample  # noqa: E402
@@ -231,6 +240,8 @@ QUEUE_FILE = STATE_DIR / "queue.json"
 PROBE_FILE = STATE_DIR / "probe.json"
 NODE_STATE_FILE = STATE_DIR / "node_state.json"
 EXEC_DIR = STATE_DIR / "exec"
+LIVENESS_FILE = STATE_DIR / "liveness.json"
+RESOURCES_HEALTH_FILE = STATE_DIR / "resources_health.json"
 INVENTORY = INVENTORY_FILE
 
 _action_lock = threading.Lock()
@@ -587,10 +598,11 @@ def _build_gateway_payload(upstreams: list[dict] | None = None) -> dict:
     return apply_gateway_upstreams(payload, cleaned)
 
 
-def state_fingerprint() -> str:
+def state_fingerprint(*, bucket_sec: int = 0) -> str:
     parts = []
     watched = [
         RESOURCES_FILE,
+        RESOURCES_HEALTH_FILE,
         LEASES_FILE,
         QUEUE_FILE,
         NODE_STATE_FILE,
@@ -598,6 +610,7 @@ def state_fingerprint() -> str:
         ENDPOINT_HEALTH_FILE,
         HOST_METRICS_FILE,
         PROBE_FILE,
+        LIVENESS_FILE,
         nodes_file(),
         cluster_file(),
         STATE_DIR / "toolkits.json",
@@ -616,6 +629,10 @@ def state_fingerprint() -> str:
                 parts.append(f"{path.name}:missing")
         except OSError:
             parts.append(f"{path.name}:error")
+    if bucket_sec > 0:
+        # 文件都不变时，年龄本身也会让“快照过期/节点离线”状态变化；
+        # 加时间桶让 ETag 至少每 bucket_sec 刷新一次。
+        parts.append(f"bucket:{int(time.time() // bucket_sec)}")
     return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:16]
 
 
@@ -660,7 +677,7 @@ def build_overview(*, light: bool = False, force: bool = False) -> dict:
     :returns: 总览 payload。
     """
     key = "light" if light else "full"
-    fingerprint = state_fingerprint()
+    fingerprint = state_fingerprint(bucket_sec=60)
     now = time.monotonic()
     with _OVERVIEW_LOCK:
         entry = _OVERVIEW_CACHE[key]
@@ -677,11 +694,13 @@ def build_overview(*, light: bool = False, force: bool = False) -> dict:
             return payload
 
     payload = _build_overview(light=light)
+    payload["etag"] = fingerprint
     payload["cached"] = False
     # 轻量规则告警 + 指标采样（节流）；diagnose 仍由 /api/notices?sync=1 触发
     rows = overview_to_notices(payload)
     if rows:
         upsert_notices(rows)
+    reconcile_notices(rows)
     record_overview_sample(payload)
     payload["notices"] = list_notices(limit=20)
     payload["metrics_tail"] = list_history(limit=36)
@@ -692,6 +711,189 @@ def build_overview(*, light: bool = False, force: bool = False) -> dict:
             "payload": payload,
         }
     return payload
+
+
+def build_liveness_view(*, refresh: bool = False) -> dict:
+    """节点存活视图：优先后台 TCP 探测，缺失时回落既有健康文件。"""
+    cluster = _read_json(cluster_file(), {})
+    if refresh:
+        run_liveness_check()
+    persisted = liveness.read_snapshot(LIVENESS_FILE)
+    return liveness.cluster_view(
+        node_names=inventory_nodes(),
+        resources=_read_json(RESOURCES_FILE, {}),
+        ssh_quality=_read_json(STATE_DIR / "ssh_quality.json", {}),
+        host_metrics=_read_json(HOST_METRICS_FILE, {}),
+        probe=_read_json(PROBE_FILE, {}),
+        endpoint_health=_read_json(ENDPOINT_HEALTH_FILE, {}),
+        persisted=persisted,
+        cluster=cluster,
+    )
+
+
+def run_liveness_check() -> dict:
+    """立即做一轮 TCP 存活探测，写 ``state/liveness.json``。"""
+    nodes_doc = _read_json(nodes_file(), {"defaults": {}, "nodes": {}})
+    cluster = _read_json(cluster_file(), {})
+    snapshot = liveness.run_check(
+        nodes_doc,
+        cluster=cluster,
+        snapshot_path=LIVENESS_FILE,
+    )
+    invalidate_overview_cache()
+    return snapshot
+
+
+def _cli_json_result(args: list[str], timeout: int = 60) -> Any:
+    result = run_cli(args, timeout=timeout, log=False)
+    try:
+        return json.loads(result.get("stdout") or "{}")
+    except json.JSONDecodeError:
+        return {
+            "ok": False,
+            "error": "stdout 非 JSON",
+            "rc": result.get("rc"),
+            "stdout": (result.get("stdout") or "")[-2000:],
+            "stderr": (result.get("stderr") or "")[-1000:],
+        }
+
+
+def assistant_runners(jobs_list: list[dict]) -> dict:
+    """只读工具执行器：写操作统一走 /api/assistant/execute。"""
+
+    def _config(args: dict) -> Any:
+        kind = str((args or {}).get("kind") or "").strip().lower()
+        if kind == "cluster":
+            return {"path": str(cluster_file()), "data": _read_json(cluster_file(), {})}
+        if kind == "nodes":
+            return {"path": str(nodes_file()), "data": _read_json(nodes_file(), {})}
+        if kind == "job":
+            name = str((args or {}).get("name") or "").strip()
+            path = job_file(name) if name else None
+            if path is None:
+                return {"ok": False, "error": f"未知 Job：{name}"}
+            return {"path": str(path), "data": _read_json(path, {})}
+        return {"ok": False, "error": "kind 须为 cluster|nodes|job"}
+
+    def _gateway(args: dict) -> Any:
+        action = str((args or {}).get("action") or "status")
+        if action == "get":
+            return build_gateway_payload()
+        return _gateway_status_fresh()
+
+    def _models(args: dict) -> Any:
+        node = str((args or {}).get("node") or "").strip() or None
+        return build_models_payload(node)
+
+    def _toolkits(_args: dict) -> Any:
+        return _toolkit_overview(load_toolkit_state())
+
+    def _procs(args: dict) -> Any:
+        node = str((args or {}).get("node") or "").strip()
+        cmd = ["procs", "list", "--refresh"]
+        if node:
+            cmd.extend(["--node", node])
+        return _cli_json_result(cmd, timeout=180)
+
+    def _logs(args: dict) -> Any:
+        name = str((args or {}).get("name") or "").strip()
+        lines = int((args or {}).get("lines") or 200)
+        return _cli_json_result(
+            ["jobs", "logs", name, "--lines", str(max(1, min(2000, lines)))],
+            timeout=120,
+        )
+
+    def _notices(_args: dict) -> Any:
+        return list_notices(limit=50)
+
+    def _liveness(args: dict) -> Any:
+        action = str((args or {}).get("action") or "status")
+        if action == "check":
+            run_liveness_check()
+        return build_liveness_view()
+
+    def _remote(args: dict) -> Any:
+        try:
+            from remote_access import plan, status
+
+            action = str((args or {}).get("action") or "status")
+            if action == "plan":
+                return plan(mode=str((args or {}).get("mode") or "tailscale-serve"))
+            return status()
+        except Exception as exc:  # noqa: BLE001 — 远程接入模块缺失时降级
+            return {"ok": False, "error": str(exc)}
+
+    def _queue(_args: dict) -> Any:
+        payload = _read_json(QUEUE_FILE, {"workloads": []})
+        return {"ok": True, **payload}
+
+    def _lease(_args: dict) -> Any:
+        payload = _read_json(LEASES_FILE, {"leases": []})
+        return {"ok": True, **payload}
+
+    return {
+        "gc_overview": lambda args: build_overview(
+            light=not bool((args or {}).get("refresh")),
+            force=bool((args or {}).get("refresh")),
+        ),
+        "gc_liveness": _liveness,
+        "gc_doctor": lambda _args: _cli_json_result(["doctor", "--json"], timeout=30),
+        "gc_diagnose": lambda _args: _cli_json_result(["diagnose", "check"], timeout=90),
+        "gc_get_jobs": lambda _args: {"jobs": jobs_list, "default_job": default_job_name()},
+        "gc_job_logs": _logs,
+        "gc_api_catalog": lambda _args: catalog_payload(),
+        "gc_get_config": _config,
+        "gc_queue": _queue,
+        "gc_lease": _lease,
+        "gc_gateway": _gateway,
+        "gc_models": _models,
+        "gc_toolkits": _toolkits,
+        "gc_procs": _procs,
+        "gc_notices": _notices,
+        "gc_remote": _remote,
+    }
+
+
+def compact_action_result(data: Any) -> Any:
+    """执行结果回传 UI / 模型前去掉大块冗余字段。"""
+    if not isinstance(data, dict):
+        return data
+    out = dict(data)
+    out.pop("overview", None)
+    out.pop("liveness", None)
+    return out
+
+
+def assistant_known_jobs(jobs_list: list[dict]) -> set[str]:
+    out = set()
+    for job in jobs_list or []:
+        if isinstance(job, dict) and job.get("name"):
+            out.add(str(job["name"]))
+    return out
+
+
+def _signals_fresh(health: dict, probe: dict, ttls: dict) -> dict:
+    """判断 ssh / api / mesh 信号是否在 TTL 内。"""
+    now = time.time()
+
+    def _age(value):
+        epoch = liveness.parse_ts(value)
+        return None if epoch is None else int(now - epoch)
+
+    ssh_age = _age(health.get("checked_at"))
+    api_age = _age(health.get("generated_at"))
+    mesh_age = _age(probe.get("generated_at")) if probe else None
+    host_age = _age(_read_json(HOST_METRICS_FILE, {}).get("generated_at"))
+    return {
+        "ssh_age_sec": ssh_age,
+        "ssh_fresh": ssh_age is not None and ssh_age <= int(ttls["ssh_ttl_sec"]),
+        "api_age_sec": api_age,
+        "api_fresh": api_age is not None and api_age <= int(ttls["api_ttl_sec"]),
+        "mesh_age_sec": mesh_age,
+        "mesh_fresh": mesh_age is not None and mesh_age <= int(ttls["mesh_ttl_sec"]),
+        "host_age_sec": host_age,
+        "host_fresh": host_age is not None and host_age <= int(ttls["host_ttl_sec"]),
+    }
 
 
 def _build_overview(*, light: bool = False) -> dict:
@@ -705,19 +907,64 @@ def _build_overview(*, light: bool = False) -> dict:
     endpoint_health = _read_json(ENDPOINT_HEALTH_FILE, {})
     host_metrics = _read_json(HOST_METRICS_FILE, {})
     host_by_node = host_metrics.get("nodes") or {}
+    probe = _read_json(PROBE_FILE, {})
+    cluster_doc = _read_json(cluster_file(), {})
+    nodes_doc = _read_json(nodes_file(), {})
+    live_view = build_liveness_view()
+    live_nodes = live_view.get("nodes") or {}
+    ttls = liveness.load_ttls(cluster_doc)
+    signals = _signals_fresh(_read_json(STATE_DIR / "ssh_quality.json", {}), probe, ttls)
     nodes = []
     free_total = 0
     used_total = 0
+    excluded_total = 0
+    counts = {"online": 0, "degraded": 0, "offline": 0, "unknown": 0}
+    offline_names: list[str] = []
+    stale_names: list[str] = []
     for name in inventory_nodes():
         node = resources.get(name, {"node": name, "gpus": [], "gpu_count": 0})
         meta = registry.get(name, {})
         gpus = node.get("gpus", [])
         free = node.get("free_count", sum(1 for g in gpus if g.get("status") == "free"))
         used = node.get("occupied_count", sum(1 for g in gpus if g.get("status") == "occupied"))
-        free_total += free
-        used_total += used
+        total = (
+            node.get("gpu_count")
+            or len(gpus)
+            or meta.get("gpus_per_node")
+            or 0
+        )
+        live = live_nodes.get(name) or {}
+        live_state = str(live.get("state") or "unknown")
+        snapshot = live.get("snapshot") or {}
+        snapshot_stale = bool(snapshot.get("stale"))
+        # 只有“可达且快照新鲜”的节点才计入 GPU 空闲/占用统计，
+        # 否则旧的 resources.json 会让离线节点永远显示为占用/空闲。
+        counted = live_state == "online" and not snapshot_stale
+        if counted:
+            free_total += free
+            used_total += used
+        else:
+            excluded_total += total
+        counts[live_state] = counts.get(live_state, 0) + 1
+        if live_state == "offline":
+            offline_names.append(name)
+        if snapshot_stale:
+            stale_names.append(name)
         lease = lease_by_node.get(name)
-        state = "cordoned" if name in cordoned else ("busy" if used else "free")
+        if live_state == "offline":
+            state = "offline"
+        elif live_state == "degraded":
+            state = "degraded"
+        elif live_state == "unknown":
+            state = "unknown"
+        elif snapshot_stale:
+            state = "stale"
+        elif name in cordoned:
+            state = "cordoned"
+        elif used:
+            state = "busy"
+        else:
+            state = "free"
         host = host_by_node.get(name) or {}
         nodes.append({
             "name": name,
@@ -727,17 +974,24 @@ def _build_overview(*, light: bool = False) -> dict:
             "note": meta.get("note"),
             "free": free,
             "used": used,
-            "total": (
-                node.get("gpu_count")
-                or len(gpus)
-                or meta.get("gpus_per_node")
-                or 0
-            ),
+            "total": total,
             "gpus": gpus,
             "lease": lease,
             "cordoned": name in cordoned,
             "cordon": cordoned.get(name),
             "state": state,
+            "liveness_state": live_state,
+            "counted": counted,
+            "reachable": live.get("reachable"),
+            "last_seen": live.get("last_seen"),
+            "last_checked": live.get("last_checked"),
+            "last_seen_age_sec": live.get("last_seen_age_sec"),
+            "consecutive_failures": live.get("consecutive_failures"),
+            "liveness_error": live.get("error"),
+            "snapshot_stale": snapshot_stale,
+            "snapshot_age_sec": snapshot.get("age_sec"),
+            "snapshot_age_text": snapshot.get("age_text"),
+            "liveness": live,
             "collected_at": node.get("collected_at"),
             "cpu_percent": host.get("cpu_percent"),
             "load1": host.get("load1"),
@@ -749,9 +1003,27 @@ def _build_overview(*, light: bool = False) -> dict:
         })
     queue = _read_json(QUEUE_FILE, {"workloads": []}).get("workloads", [])
     pending = sum(1 for wl in queue if wl.get("status") == "pending")
-    probe = _read_json(PROBE_FILE, {})
-    cluster_doc = _read_json(cluster_file(), {})
-    nodes_doc = _read_json(nodes_file(), {})
+    sm_vals: list[float] = []
+    mem_vals: list[float] = []
+    for node in nodes:
+        if not node.get("counted"):
+            continue
+        for gpu in node.get("gpus") or []:
+            util = gpu.get("utilization_percent")
+            if util is not None:
+                try:
+                    sm_vals.append(float(util))
+                except (TypeError, ValueError):
+                    pass
+            used_mem = gpu.get("memory_used_mib")
+            total_mem = gpu.get("memory_total_mib")
+            try:
+                if used_mem is not None and total_mem is not None and float(total_mem) > 0:
+                    mem_vals.append(100.0 * float(used_mem) / float(total_mem))
+            except (TypeError, ValueError):
+                pass
+    gpu_sm_util = round(sum(sm_vals) / len(sm_vals), 1) if sm_vals else None
+    gpu_mem_util = round(sum(mem_vals) / len(mem_vals), 1) if mem_vals else None
     control_meta = dict(cluster_doc.get("control") or {})
     nodes_control = nodes_doc.get("control")
     if isinstance(nodes_control, dict):
@@ -774,25 +1046,48 @@ def _build_overview(*, light: bool = False) -> dict:
         "control": control_meta,
         "summary": {
             "nodes": len(nodes),
+            "nodes_online": counts.get("online", 0),
+            "nodes_degraded": counts.get("degraded", 0),
+            "nodes_offline": counts.get("offline", 0),
+            "nodes_unknown": counts.get("unknown", 0),
+            "nodes_stale": len(stale_names),
+            "offline_nodes": offline_names,
+            "stale_nodes": stale_names,
             "gpus_free": free_total,
             "gpus_used": used_total,
             "gpus_total": free_total + used_total,
+            "gpus_last_known_total": free_total + used_total + excluded_total,
+            "gpus_excluded": excluded_total,
+            "gpu_sm_util_pct": gpu_sm_util,
+            "gpu_mem_util_pct": gpu_mem_util,
+            "data_fresh": not offline_names and not stale_names,
             "leases": len(leases),
             "jobs": len(jobs),
             "queue_pending": pending,
             "cordoned": len(cordoned),
             "probe_ok": probe.get("ok_count"),
             "probe_fail": probe.get("fail_count"),
+            "probe_stale": not signals["mesh_fresh"],
             "api_ok": endpoint_health.get("ok_count"),
             "api_fail": endpoint_health.get("fail_count"),
             "api_total": endpoint_health.get("total"),
+            "api_stale": not signals["api_fresh"],
+            "ssh_stale": not signals["ssh_fresh"],
             "host_metrics_at": host_metrics.get("generated_at"),
+            "host_stale": not signals["host_fresh"],
             "control": control_name,
             "toolkits_ready": _toolkit_ready_count(toolkit_state),
-            "busy_nodes": sum(1 for n in nodes if n.get("used")),
-            "free_nodes": sum(1 for n in nodes if not n.get("used") and not n.get("cordoned")),
+            "busy_nodes": sum(
+                1 for n in nodes if n.get("counted") and n.get("state") == "busy"
+            ),
+            "free_nodes": sum(
+                1 for n in nodes if n.get("counted") and n.get("state") == "free"
+            ),
         },
         "nodes": nodes,
+        "liveness": live_view,
+        "signals": signals,
+        "resources_health": _read_json(RESOURCES_HEALTH_FILE, {}),
         "leases": leases,
         "jobs": jobs,
         "toolkits": _toolkit_overview(toolkit_state),
@@ -1182,6 +1477,17 @@ def build_quality_report() -> dict:
     health = _read_json(ENDPOINT_HEALTH_FILE, {})
     probe = _read_json(PROBE_FILE, {})
     resources = _read_json(RESOURCES_FILE, {})
+    cluster = _read_json(cluster_file(), {})
+    ttls = liveness.load_ttls(cluster)
+    view = build_liveness_view()
+    view_nodes = view.get("nodes") or {}
+    total_nodes = len(view_nodes)
+    online = sum(1 for n in view_nodes.values() if n.get("state") == "online")
+    offline = [name for name, n in view_nodes.items() if n.get("state") == "offline"]
+    degraded = [name for name, n in view_nodes.items() if n.get("state") == "degraded"]
+    fresh_snapshots = sum(
+        1 for n in view_nodes.values() if not (n.get("snapshot") or {}).get("stale")
+    )
 
     ssh_ok = int(ssh.get("ok_count") or 0)
     ssh_total = int(ssh.get("total") or 0)
@@ -1190,34 +1496,103 @@ def build_quality_report() -> dict:
     probe_ok = int(probe.get("ok_count") or 0)
     probe_fail = int(probe.get("fail_count") or 0)
     probe_total = probe_ok + probe_fail
+    signals = _signals_fresh(ssh, probe, ttls)
 
     gpu_free = 0
     gpu_total = 0
-    for node in resources.values() if isinstance(resources, dict) else []:
+    gpu_excluded = 0
+    for name, node in (resources.items() if isinstance(resources, dict) else []):
         if not isinstance(node, dict) or "gpus" not in node:
             continue
-        gpu_total += int(node.get("gpu_count") or len(node.get("gpus") or []))
-        gpu_free += int(node.get("free_count") or 0)
+        live = view_nodes.get(name) or {}
+        counted = (
+            live.get("state") == "online"
+            and not (live.get("snapshot") or {}).get("stale")
+        )
+        count = int(node.get("gpu_count") or len(node.get("gpus") or []))
+        if counted:
+            gpu_total += count
+            gpu_free += int(node.get("free_count") or 0)
+        else:
+            gpu_excluded += count
 
-    scores = []
-    if ssh_total:
+    components: dict[str, dict] = {
+        "nodes": {
+            "ok": online,
+            "total": total_nodes,
+            "fresh": True,
+            "offline": offline,
+            "degraded": degraded,
+        },
+        "snapshots": {
+            "ok": fresh_snapshots,
+            "total": total_nodes,
+            "fresh": True,
+            "stale": [
+                name
+                for name, n in view_nodes.items()
+                if (n.get("snapshot") or {}).get("stale")
+            ],
+        },
+        "ssh": {
+            "ok": ssh_ok,
+            "total": ssh_total,
+            "fresh": signals["ssh_fresh"],
+            "age_sec": signals["ssh_age_sec"],
+        },
+        "api": {
+            "ok": api_ok,
+            "total": api_total,
+            "fresh": signals["api_fresh"],
+            "age_sec": signals["api_age_sec"],
+        },
+        "mesh": {
+            "ok": probe_ok,
+            "fail": probe_fail,
+            "total": probe_total,
+            "fresh": signals["mesh_fresh"],
+            "age_sec": signals["mesh_age_sec"],
+        },
+    }
+
+    scores: list[float] = []
+    if total_nodes:
+        scores.append(100.0 * online / total_nodes)
+        scores.append(100.0 * fresh_snapshots / total_nodes)
+    if signals["ssh_fresh"] and ssh_total:
         scores.append(100.0 * ssh_ok / ssh_total)
-    if api_total:
+    if signals["api_fresh"] and api_total:
         scores.append(100.0 * api_ok / api_total)
-    if probe_total:
+    if signals["mesh_fresh"] and probe_total:
         scores.append(100.0 * probe_ok / probe_total)
-    score = int(sum(scores) / len(scores)) if scores else 0
-
-    grade = "优秀" if score >= 90 else "良好" if score >= 75 else "一般" if score >= 50 else "较差"
+    score = int(sum(scores) / len(scores)) if scores else None
+    if score is None:
+        grade = "数据不足"
+    else:
+        grade = "优秀" if score >= 90 else "良好" if score >= 75 else "一般" if score >= 50 else "较差"
+    stale_components = [name for name, item in components.items() if not item.get("fresh")]
+    if offline:
+        hint = f"离线节点：{', '.join(offline)}；GPU 统计已排除这些节点的旧快照。"
+    elif stale_components:
+        hint = f"健康数据已过期：{', '.join(stale_components)}。可点「刷新 GPU / 探测 API / 深度同步」。"
+    else:
+        hint = "各健康信号均在有效期内。"
     return {
         "score": score,
         "grade": grade,
+        "known": score is not None,
+        "summary": hint,
+        "hint": hint,
+        "components": components,
+        "stale": stale_components,
         "ssh": ssh,
         "api": {
             "ok": api_ok,
             "total": api_total,
             "mode": health.get("mode"),
             "generated_at": health.get("generated_at"),
+            "fresh": signals["api_fresh"],
+            "age_sec": signals["api_age_sec"],
             "latency_avg_ms": (
                 int(
                     sum(r.get("latency_ms") or 0 for r in (health.get("results") or []) if r.get("ok"))
@@ -1227,8 +1602,26 @@ def build_quality_report() -> dict:
                 else None
             ),
         },
-        "mesh": {"ok": probe_ok, "fail": probe_fail, "total": probe_total},
-        "gpus": {"free": gpu_free, "total": gpu_total, "used": max(0, gpu_total - gpu_free)},
+        "mesh": {
+            "ok": probe_ok,
+            "fail": probe_fail,
+            "total": probe_total,
+            "fresh": signals["mesh_fresh"],
+            "age_sec": signals["mesh_age_sec"],
+        },
+        "nodes": {
+            "online": online,
+            "offline": offline,
+            "degraded": degraded,
+            "total": total_nodes,
+            "snapshot_stale": components["snapshots"]["stale"],
+        },
+        "gpus": {
+            "free": gpu_free,
+            "total": gpu_total,
+            "used": max(0, gpu_total - gpu_free),
+            "excluded": gpu_excluded,
+        },
         "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
@@ -1470,6 +1863,23 @@ class Handler(BaseHTTPRequestHandler):
         if code != 304:
             self.wfile.write(body)
 
+    def _sse_start(self) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        # 没有 Content-Length 的流：用 close 作为结束信号，避免客户端一直等 keep-alive。
+        self.send_header("Connection", "close")
+        self.send_header("X-Accel-Buffering", "no")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.close_connection = True
+
+    def _sse_send(self, event: str, payload: dict) -> None:
+        data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        chunk = f"event: {event}\ndata: {data}\n\n".encode("utf-8")
+        self.wfile.write(chunk)
+        self.wfile.flush()
+
     def _json(
         self,
         code: int,
@@ -1533,6 +1943,43 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(data, dict):
             raise BadRequestError("JSON body must be an object")
         return data
+
+    def _call_local_api(self, method: str, path: str, body: dict | None = None, *, timeout: int = 1900) -> dict:
+        """从助手执行端点回调本机已有 API，复用同一套校验与锁。"""
+        try:
+            port = int(self.server.server_address[1])
+        except (AttributeError, IndexError, TypeError, ValueError):
+            port = int(os.environ.get("GPU_CONTROL_UI_PORT", "8787"))
+        data = None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8")
+        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        # 转发调用者身份，让内部请求重新通过 auth gate。
+        for name in ("Authorization", "Cookie"):
+            value = self.headers.get(name)
+            if value:
+                headers[name] = value
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}{path}",
+            data=data,
+            method=method,
+            headers=headers,
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=max(5, timeout)) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+                try:
+                    payload = json.loads(raw) if raw else {}
+                except json.JSONDecodeError:
+                    payload = {"raw": raw[:2000]}
+                return {"ok": True, "status": resp.status, "data": payload}
+        except urllib.error.HTTPError as exc:
+            raw = exc.read().decode("utf-8", errors="replace")
+            try:
+                payload = json.loads(raw) if raw else {}
+            except json.JSONDecodeError:
+                payload = {"error": raw[:1000]}
+            return {"ok": False, "status": exc.code, "data": payload}
+        except Exception as exc:  # noqa: BLE001 — 内部调用失败要可解释
+            return {"ok": False, "status": 0, "error": str(exc), "data": {"error": str(exc)}}
 
     def _handle_terminal_ws(self, parsed) -> None:
         if not self._auth_gate("/ws/terminal", parsed.query):
@@ -1990,6 +2437,36 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, build_quality_report())
             return
 
+        if path == "/api/remote":
+            query = parse_qs(parsed.query)
+            mode = (query.get("mode") or [""])[0] or None
+            want_plan = str((query.get("plan") or ["0"])[0]).lower() in {"1", "true", "yes"}
+            if want_plan or mode:
+                payload = remote_access.plan(mode=mode or "auto")
+            else:
+                st = remote_access.status()
+                payload = {
+                    **st,
+                    "summary": remote_access.summary_line(st),
+                    "recommended": remote_access.plan(mode="auto"),
+                }
+            self._json(200, payload)
+            return
+
+        if path == "/api/liveness":
+            query = parse_qs(parsed.query)
+            refresh = str((query.get("check") or ["0"])[0]).lower() in {"1", "true", "yes"}
+            view = build_liveness_view(refresh=refresh)
+            self._json(
+                200,
+                {
+                    "ok": True,
+                    **view,
+                    "resources_health": _read_json(RESOURCES_HEALTH_FILE, {}),
+                },
+            )
+            return
+
         if path == "/api/metrics":
             self._json(200, _read_json(HOST_METRICS_FILE, {"results": [], "nodes": {}}))
             return
@@ -2239,7 +2716,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/assistant/chat":
             messages = body.get("messages")
-            if not isinstance(messages, list):
+            if messages is not None and not isinstance(messages, list):
                 self._json(400, {"ok": False, "error": "messages 须为数组"})
                 return
             cluster = _read_json(cluster_file(), {})
@@ -2251,44 +2728,311 @@ class Handler(BaseHTTPRequestHandler):
                 jobs_list = list(jobs_payload.get("jobs") or [])
             else:
                 jobs_list = []
+            live_view = build_liveness_view()
+            nodes_meta = _read_json(nodes_file(), {}).get("nodes") or {}
 
-            def _cli_json(args: list[str], timeout: int = 60) -> Any:
-                result = run_cli(args, timeout=timeout, log=False)
-                try:
-                    return json.loads(result.get("stdout") or "{}")
-                except json.JSONDecodeError:
-                    return {
-                        "rc": result.get("rc"),
-                        "stdout": result.get("stdout"),
-                        "stderr": result.get("stderr"),
-                    }
+            cid = assistant_session.valid_id(body.get("conversation_id"))
+            if cid:
+                session = assistant_session.load(cid)
+                history = list(session.get("messages") or [])
+                # 只追加本轮最后一条用户消息，避免客户端把整段历史重复塞入
+                new_text = body.get("message")
+                if not isinstance(new_text, str) or not new_text.strip():
+                    new_text = ""
+                    for row in reversed(messages or []):
+                        if (
+                            isinstance(row, dict)
+                            and row.get("role") == "user"
+                            and str(row.get("content") or "").strip()
+                        ):
+                            new_text = str(row["content"]).strip()
+                            break
+                if new_text and not (
+                    history
+                    and history[-1].get("role") == "user"
+                    and history[-1].get("content") == new_text
+                ):
+                    history.append({"role": "user", "content": new_text})
+            else:
+                cid = assistant_session.new_id()
+                session = assistant_session.load(cid)
+                new_text = body.get("message")
+                if not isinstance(new_text, str) or not new_text.strip():
+                    new_text = ""
+                    for row in reversed(messages or []):
+                        if (
+                            isinstance(row, dict)
+                            and row.get("role") == "user"
+                            and str(row.get("content") or "").strip()
+                        ):
+                            new_text = str(row["content"]).strip()
+                            break
+                history = (
+                    [{"role": "user", "content": new_text}]
+                    if new_text
+                    else (messages if isinstance(messages, list) else None)
+                )
 
-            runners = {
-                "gc_overview": lambda args: build_overview(
-                    light=not bool((args or {}).get("refresh")),
-                    force=bool((args or {}).get("refresh")),
-                ),
-                "gc_doctor": lambda _args: _cli_json(["doctor", "--json"], timeout=30),
-                "gc_get_jobs": lambda _args: {"jobs": jobs_list},
-                "gc_api_catalog": lambda _args: catalog_payload(),
-                "gc_lease": lambda _args: _cli_json(["lease", "list", "--json"], timeout=30),
-                "gc_queue": lambda _args: _cli_json(["queue", "list", "--json"], timeout=30),
-                "gc_gateway": lambda _args: _cli_json(["gateway", "status", "--json"], timeout=30),
-            }
             context = {
                 "cluster": cluster,
                 "overview": overview,
                 "overview_light": compact_overview(overview),
                 "jobs": jobs_list,
+                "generated_at": overview.get("generated_at"),
             }
+            runners = assistant_runners(jobs_list)
+            known_jobs = assistant_known_jobs(jobs_list)
+
+            def _active_pending() -> list[dict]:
+                pending = session.get("pending") or {}
+                return [
+                    assistant_session.public_pending(row)
+                    for row in pending.values()
+                    if isinstance(row, dict)
+                    and str(row.get("status") or "pending") in {"pending", "armed"}
+                ]
+
+            if bool(body.get("stream")):
+                self._sse_start()
+                self._sse_send("meta", {"conversation_id": cid})
+                stream_state: dict = {}
+                try:
+                    for event, payload in stream_chat(
+                        history=history,
+                        context=context,
+                        runners=runners,
+                        known_nodes=nodes_meta,
+                        known_jobs=known_jobs,
+                        liveness_view=live_view,
+                        state=stream_state,
+                    ):
+                        if event == "done":
+                            session["messages"] = stream_state.get("history") or session.get("messages") or []
+                            for action in stream_state.get("pending_full") or []:
+                                assistant_session.put_pending(session, action)
+                            assistant_session.clean_expired_pending(session)
+                            assistant_session.save(session)
+                            payload["conversation_id"] = cid
+                            active = _active_pending()
+                            if active:
+                                payload["pending_actions"] = active
+                            self._sse_send("done", payload)
+                        elif event == "error":
+                            self._sse_send("error", payload)
+                        else:
+                            self._sse_send(event, payload)
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+                except Exception as exc:  # noqa: BLE001 — SSE 已开始，只能回错误事件
+                    try:
+                        self._sse_send("error", {"error": "internal_error", "reply": str(exc)})
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass
+                return
+
             result = handle_chat(
-                messages=messages,
+                history=history,
+                messages=messages if history is None else None,
                 context=context,
                 runners=runners,
-                confirm=bool(body.get("confirm")),
+                known_nodes=nodes_meta,
+                known_jobs=known_jobs,
+                liveness_view=live_view,
             )
+            if result.get("history") is not None:
+                session["messages"] = result["history"]
+            for action in result.pop("pending_actions_full", None) or []:
+                assistant_session.put_pending(session, action)
+            assistant_session.clean_expired_pending(session)
+            assistant_session.save(session)
+            active = _active_pending()
+            if active:
+                result["pending_actions"] = active
+            result["conversation_id"] = cid
             code = 200 if result.get("ok", True) else 400
             self._json(code, result)
+            return
+
+        if path == "/api/assistant/execute":
+            cid = assistant_session.valid_id(body.get("conversation_id"))
+            action_id = str(body.get("action_id") or "").strip()
+            if not cid or not action_id:
+                self._json(
+                    400,
+                    {"ok": False, "error": "conversation_id and action_id required"},
+                )
+                return
+            session = assistant_session.load(cid)
+            action = assistant_session.get_pending(session, action_id)
+            if action is None:
+                self._json(
+                    409,
+                    {"ok": False, "error": "action_not_found", "detail": "确认卡不存在或会话已过期"},
+                )
+                return
+            stage = str(body.get("stage") or "execute").lower()
+            if stage == "reject":
+                assistant_session.update_pending(session, action_id, status="rejected")
+                assistant_session.save(session)
+                self._json(200, {"ok": True, "status": "rejected", "conversation_id": cid})
+                return
+            status = str(action.get("status") or "pending")
+            if status not in {"pending", "armed"}:
+                self._json(
+                    409,
+                    {"ok": False, "error": "action_not_pending", "detail": f"当前状态：{status}"},
+                )
+                return
+            if assistant_session.action_expired(action):
+                assistant_session.update_pending(session, action_id, status="expired")
+                assistant_session.save(session)
+                self._json(409, {"ok": False, "error": "action_expired", "detail": "确认卡已过期，请重新提问"})
+                return
+            provided_hash = str(body.get("args_hash") or "").strip()
+            if provided_hash and provided_hash != action.get("args_hash"):
+                self._json(
+                    409,
+                    {"ok": False, "error": "args_mismatch", "detail": "参数与提案不一致，请重新提问"},
+                )
+                return
+            confirm = body.get("confirm")
+            if action.get("confirm_level") == "confirm_twice":
+                if str(confirm).upper() != "EXECUTE":
+                    self._json(
+                        409,
+                        {
+                            "ok": False,
+                            "error": "needs_second_confirm",
+                            "detail": "破坏性操作需要二次确认（confirm=\"EXECUTE\"）",
+                            "action": assistant_session.public_pending(action),
+                        },
+                    )
+                    return
+            elif confirm is not True:
+                self._json(
+                    409,
+                    {
+                        "ok": False,
+                        "error": "needs_confirm",
+                        "detail": "写操作需要用户确认",
+                        "action": assistant_session.public_pending(action),
+                    },
+                )
+                return
+
+            jobs_list = load_job_summaries()
+            if isinstance(jobs_list, dict):
+                jobs_list = list(jobs_list.get("jobs") or [])
+            nodes_meta = _read_json(nodes_file(), {}).get("nodes") or {}
+            live_view = build_liveness_view()
+            validation = assistant_validate_call(
+                str(action.get("tool") or ""),
+                action.get("args") or {},
+                nodes=nodes_meta,
+                jobs=assistant_known_jobs(jobs_list),
+                liveness_view=live_view,
+            )
+            if not validation.get("ok"):
+                self._json(
+                    409,
+                    {
+                        "ok": False,
+                        "error": validation.get("error") or "validation_failed",
+                        "detail": validation.get("detail"),
+                        "action": assistant_session.public_pending(action),
+                    },
+                )
+                return
+            route = assistant_route_for(str(action.get("tool") or ""), action.get("args") or {})
+            if not route:
+                self._json(
+                    400,
+                    {"ok": False, "error": "no_route", "detail": "该工具没有可执行的路由"},
+                )
+                return
+            result = self._call_local_api(
+                str(route.get("method") or "POST"),
+                str(route.get("path") or ""),
+                route.get("body"),
+                timeout=1900,
+            )
+            data = compact_action_result(result.get("data"))
+            executed_ok = bool(result.get("ok")) and not (
+                isinstance(data, dict) and data.get("ok") is False
+            )
+            assistant_session.record_tool_result(
+                session,
+                call_id=str(action.get("call_id") or ""),
+                result=data,
+            )
+            assistant_session.update_pending(
+                session,
+                action_id,
+                status="executed" if executed_ok else "failed",
+                executed_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                result_summary=(data.get("message") if isinstance(data, dict) else None)
+                or ("执行成功" if executed_ok else "执行失败"),
+            )
+            assistant_session.save(session)
+
+            reply = None
+            follow_pending: list[dict] = []
+            if executed_ok and body.get("continue", True):
+                cluster = _read_json(cluster_file(), {})
+                context = {
+                    "cluster": cluster,
+                    "overview": None,
+                    "overview_light": compact_overview(build_overview(light=True)),
+                    "jobs": jobs_list,
+                }
+                cont = handle_chat(
+                    history=session.get("messages") or [],
+                    context=context,
+                    runners=assistant_runners(jobs_list),
+                    known_nodes=nodes_meta,
+                    known_jobs=assistant_known_jobs(jobs_list),
+                    liveness_view=build_liveness_view(),
+                )
+                if cont.get("history") is not None:
+                    session["messages"] = cont["history"]
+                for row in cont.pop("pending_actions_full", None) or []:
+                    assistant_session.put_pending(session, row)
+                assistant_session.clean_expired_pending(session)
+                assistant_session.save(session)
+                if cont.get("ok") is False:
+                    reply = (
+                        "操作已执行，但模型总结暂不可用："
+                        f"{cont.get('reply') or cont.get('error') or '上游异常'}"
+                    )
+                else:
+                    reply = cont.get("reply")
+                follow_pending = cont.get("pending_actions") or []
+            pending_map = session.get("pending") or {}
+            active = [
+                assistant_session.public_pending(row)
+                for row in pending_map.values()
+                if isinstance(row, dict)
+                and str(row.get("status") or "pending") in {"pending", "armed"}
+            ]
+            self._json(
+                200,
+                {
+                    "ok": executed_ok,
+                    "status": "executed" if executed_ok else "failed",
+                    "conversation_id": cid,
+                    "action_id": action_id,
+                    "tool": action.get("tool"),
+                    "http_status": result.get("status"),
+                    "result": data,
+                    "reply": reply
+                    or (
+                        "操作已执行。"
+                        if executed_ok
+                        else f"操作失败：{(data or {}).get('error') if isinstance(data, dict) else result.get('error')}"
+                    ),
+                    "pending_actions": active or follow_pending,
+                },
+            )
             return
 
         if path == "/api/resources/refresh":
@@ -2505,6 +3249,25 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        if path == "/api/leases/release":
+            nodes = body.get("nodes")
+            lease_id = str(body.get("id") or "").strip()
+            if not lease_id and not nodes:
+                self._json(400, {"error": "id or nodes required"})
+                return
+            args = ["lease", "release"]
+            if lease_id:
+                args.extend(["--id", lease_id])
+            else:
+                args.extend(["--nodes", str(nodes)])
+            with _action_lock:
+                result = run_cli(args)
+            self._json(
+                200 if result["rc"] == 0 else 500,
+                {"result": result, "leases": _read_json(LEASES_FILE, {"leases": []})},
+            )
+            return
+
         if path.startswith("/api/leases/") and path.endswith("/release"):
             lease_id = path.strip("/").split("/")[2]
             with _action_lock:
@@ -2560,6 +3323,31 @@ class Handler(BaseHTTPRequestHandler):
             self._json(
                 200 if result["rc"] == 0 else 500,
                 {"result": result, "overview": build_overview()},
+            )
+            return
+
+        if path == "/api/liveness/check":
+            only = body.get("nodes") or body.get("node")
+            if isinstance(only, str):
+                only = [x.strip() for x in only.split(",") if x.strip()]
+            snapshot = run_liveness_check() if not only else None
+            if snapshot is None:
+                nodes_doc = _read_json(nodes_file(), {"defaults": {}, "nodes": {}})
+                cluster = _read_json(cluster_file(), {})
+                snapshot = liveness.run_check(
+                    nodes_doc,
+                    cluster=cluster,
+                    snapshot_path=LIVENESS_FILE,
+                    only=list(only),
+                )
+                invalidate_overview_cache()
+            self._json(
+                200,
+                {
+                    "ok": True,
+                    **snapshot,
+                    "liveness": build_liveness_view(),
+                },
             )
             return
 
@@ -2676,6 +3464,40 @@ class Handler(BaseHTTPRequestHandler):
                 payload["master_key"] = revealed
                 payload["note"] = "请立即复制 Master Key；之后接口不再回显明文"
             self._json(200, payload)
+            return
+
+        if path == "/api/remote/action":
+            action = str(body.get("action") or "status").strip().lower()
+            mode = str(body.get("mode") or "auto").strip()
+            port = body.get("port")
+            try:
+                port = int(port) if port not in (None, "") else None
+            except (TypeError, ValueError):
+                self._json(400, {"ok": False, "error": "port 必须是整数"})
+                return
+            if action == "status":
+                self._json(200, remote_access.status())
+                return
+            if action == "plan":
+                self._json(200, remote_access.plan(mode=mode, port=port))
+                return
+            if action == "up":
+                payload = remote_access.up(
+                    mode=mode,
+                    port=port,
+                    confirm=bool(body.get("confirm")),
+                    force=bool(body.get("force")),
+                )
+                self._json(200 if payload.get("ok") else 409, payload)
+                return
+            if action == "down":
+                payload = remote_access.down(
+                    mode=mode,
+                    confirm=bool(body.get("confirm")),
+                )
+                self._json(200 if payload.get("ok") else 409, payload)
+                return
+            self._json(400, {"ok": False, "error": "action 须为 status|plan|up|down"})
             return
 
         if path == "/api/procs":
@@ -2849,10 +3671,13 @@ class Handler(BaseHTTPRequestHandler):
             with _action_lock:
                 result = run_cli(args, timeout=300)
                 results = collect_exec_results()
-            # even if some hosts fail, still return structured results
+            # 部分 / 全部主机失败仍返回结构化结果；HTTP 200 表示“请求已处理”，
+            # 失败细节交给 ok / results / result 字段，避免离线节点把整页打成 500。
+            successes = [row for row in results if row.get("ok")]
             self._json(
-                200 if results else (200 if result["rc"] == 0 else 500),
+                200,
                 {
+                    "ok": bool(successes),
                     "command": command,
                     "results": results,
                     "result": result,
@@ -2877,9 +3702,11 @@ class Handler(BaseHTTPRequestHandler):
             with _action_lock:
                 result = run_cli(args, timeout=600)
                 results = collect_exec_results()
+            successes = [row for row in results if row.get("ok")]
             self._json(
-                200 if results else (200 if result["rc"] == 0 else 500),
+                200,
                 {
+                    "ok": bool(successes),
                     "command": command,
                     "results": results,
                     "result": result,
@@ -3048,9 +3875,11 @@ class Handler(BaseHTTPRequestHandler):
                     "stdout": completed.stdout,
                     "stderr": completed.stderr,
                 }
+            ok_count = int((report or {}).get("ok_count") or 0)
             self._json(
-                200 if completed.returncode == 0 else 500,
+                200,
                 {
+                    "ok": ok_count > 0,
                     "result": {"rc": completed.returncode, "stderr": completed.stderr},
                     "metrics": report,
                     "overview": build_overview(),
@@ -3101,6 +3930,43 @@ class Handler(BaseHTTPRequestHandler):
         self._json(404, {"error": f"unknown path: {path}"})
 
 
+def start_liveness_monitor(stop_event: threading.Event) -> threading.Thread | None:
+    """后台节点探活：默认每 ``cluster.health.check_interval_sec`` 秒一轮。"""
+    if str(os.environ.get("GPU_CONTROL_LIVENESS_MONITOR", "1")).lower() in {
+        "0",
+        "false",
+        "off",
+        "no",
+    }:
+        return None
+    cluster = _read_json(cluster_file(), {})
+    cfg = (cluster.get("health") or {}) if isinstance(cluster, dict) else {}
+    if cfg.get("monitor") is False:
+        return None
+    interval = max(10, int(cfg.get("check_interval_sec") or liveness.DEFAULT_TTLS["check_interval_sec"]))
+
+    def loop() -> None:
+        while not stop_event.is_set():
+            try:
+                snapshot = run_liveness_check()
+                summary = snapshot.get("summary") or {}
+                print(
+                    "liveness: "
+                    f"online={summary.get('online', 0)} "
+                    f"degraded={summary.get('degraded', 0)} "
+                    f"offline={summary.get('offline', 0)} "
+                    f"unknown={summary.get('unknown', 0)}",
+                    flush=True,
+                )
+            except Exception as exc:  # noqa: BLE001 — 后台线程不能拖垮 UI
+                print(f"liveness monitor error: {exc}", file=sys.stderr, flush=True)
+            stop_event.wait(interval)
+
+    thread = threading.Thread(target=loop, daemon=True, name="liveness-monitor")
+    thread.start()
+    return thread
+
+
 def main() -> None:
     # 默认仅回环；cmd_ui 在运维明确要暴露局域网时传入 cluster.control.ui_host。
     host = os.environ.get("GPU_CONTROL_UI_HOST", "127.0.0.1")
@@ -3128,6 +3994,7 @@ def main() -> None:
 
     print(f"gpu-control UI listening on http://{host}:{port}")
     print(f"project: {PROJECT_DIR}")
+    start_liveness_monitor(stopping)
     try:
         httpd.serve_forever()
     finally:

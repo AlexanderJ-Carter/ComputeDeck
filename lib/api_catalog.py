@@ -94,10 +94,16 @@ _BODY: dict[str, dict[str, Any]] = {
     },
     "assistant_chat": {
         "type": "object",
-        "required": ["messages"],
         "properties": {
+            "conversation_id": {"type": "string", "description": "服务端会话 id；省略则新建"},
+            "message": {"type": "string", "description": "本轮用户消息"},
+            "stream": {
+                "type": "boolean",
+                "description": "true 时返回 SSE：event=meta|delta|tool|done|error",
+            },
             "messages": {
                 "type": "array",
+                "description": "兼容旧客户端的历史消息",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -107,7 +113,55 @@ _BODY: dict[str, dict[str, Any]] = {
                     "required": ["role", "content"],
                 },
             },
-            "confirm": {"type": "boolean"},
+        },
+    },
+    "liveness_check": {
+        "type": "object",
+        "properties": {
+            "node": {"type": "string", "description": "只探测一个节点"},
+            "nodes": {
+                "description": "节点名数组或逗号分隔字符串；省略则全部",
+                "oneOf": [
+                    {"type": "string"},
+                    {"type": "array", "items": {"type": "string"}},
+                ],
+            },
+        },
+    },
+    "assistant_execute": {
+        "type": "object",
+        "required": ["conversation_id", "action_id"],
+        "properties": {
+            "conversation_id": {"type": "string"},
+            "action_id": {"type": "string"},
+            "stage": {"type": "string", "enum": ["execute", "reject"], "default": "execute"},
+            "confirm": {
+                "description": "写操作为 true；破坏性操作为字符串 EXECUTE（二次确认）",
+                "oneOf": [{"type": "boolean"}, {"type": "string", "enum": ["EXECUTE"]}],
+            },
+            "args_hash": {"type": "string", "description": "可选：校验参数未被篡改"},
+            "continue": {"type": "boolean", "description": "执行后是否让模型总结，默认 true"},
+        },
+    },
+    "remote_action": {
+        "type": "object",
+        "required": ["action"],
+        "properties": {
+            "action": {"type": "string", "enum": ["status", "plan", "up", "down"]},
+            "mode": {
+                "type": "string",
+                "enum": [
+                    "auto",
+                    "tailscale-serve",
+                    "tailscale-funnel",
+                    "cloudflared-quick",
+                    "cloudflared-tunnel",
+                    "all",
+                ],
+            },
+            "port": {"type": "integer"},
+            "confirm": {"type": "boolean", "description": "up/down 必须为 true"},
+            "force": {"type": "boolean", "description": "鉴权未开启时允许公网暴露"},
         },
     },
     "assistant_config": {
@@ -354,6 +408,20 @@ def http_endpoints() -> list[dict[str, Any]]:
         {"method": "GET", "path": "/api/queue", "summary": "工作负载队列", "group": "read"},
         {"method": "GET", "path": "/api/probe", "summary": "节点互通矩阵缓存", "group": "read"},
         {"method": "GET", "path": "/api/quality", "summary": "SSH/质量评分", "group": "read"},
+        {
+            "method": "GET",
+            "path": "/api/liveness",
+            "summary": "节点存活与快照新鲜度（?check=1 立即探活）",
+            "group": "read",
+            "query": {"check": "1=立即执行 TCP 探活"},
+        },
+        {
+            "method": "POST",
+            "path": "/api/liveness/check",
+            "summary": "立即探测节点存活（body.node/nodes 可限定）",
+            "group": "ops",
+            "body": "liveness_check",
+        },
         {"method": "GET", "path": "/api/metrics", "summary": "主机 CPU/内存指标", "group": "read"},
         {
             "method": "GET",
@@ -509,9 +577,35 @@ def http_endpoints() -> list[dict[str, Any]]:
         {
             "method": "POST",
             "path": "/api/assistant/chat",
-            "summary": "控制面小助手对话（OpenAI 兼容；未配置则引导设置）",
+            "summary": "控制面小助手对话（只读工具自动执行，写操作返回确认卡）",
             "group": "meta",
             "body": "assistant_chat",
+        },
+        {
+            "method": "POST",
+            "path": "/api/assistant/execute",
+            "summary": "确认并执行助手动作；结果回喂模型",
+            "group": "ops",
+            "body": "assistant_execute",
+        },
+        {
+            "method": "GET",
+            "path": "/api/remote",
+            "summary": "远程接入状态 / 计划（?plan=1&mode=）",
+            "group": "read",
+        },
+        {
+            "method": "POST",
+            "path": "/api/remote/action",
+            "summary": "远程接入 status|plan|up|down",
+            "group": "ops",
+            "body": "remote_action",
+        },
+        {
+            "method": "POST",
+            "path": "/api/leases/release",
+            "summary": "按 id 或 nodes 释放租约",
+            "group": "ops",
         },
         {
             "method": "GET",
@@ -643,6 +737,8 @@ def cli_commands() -> list[dict[str, str]]:
         {"cmd": "gpu-control auth status|set-password|issue-token|set-mode", "summary": "控制面鉴权"},
         {"cmd": "gpu-control gateway start|stop|status|render [--kind edge]", "summary": "统一入口"},
         {"cmd": "gpu-control probe|endpoints|metrics|watchdog …", "summary": "探测 / 健康 / 指标 / 巡检"},
+        {"cmd": "gpu-control liveness status|check [--json]", "summary": "节点存活与快照新鲜度"},
+        {"cmd": "gpu-control remote status|plan|up|down", "summary": "Tailscale / Cloudflare 远程接入"},
         {"cmd": "gpu-control ui --background", "summary": "启动 Web :8787"},
     ]
 
@@ -668,6 +764,8 @@ def mcp_tools_summary() -> list[dict[str, str]]:
         {"name": "gc_diagnose", "summary": "诊断 check / 安全修复 repair"},
         {"name": "gc_gateway", "summary": "入口 status/get/render/start/stop"},
         {"name": "gc_node", "summary": "节点 render/cordon/uncordon/add/remove"},
+        {"name": "gc_liveness", "summary": "节点存活与快照新鲜度 status/check"},
+        {"name": "gc_remote", "summary": "远程接入 Tailscale / Cloudflare status/plan/up/down"},
         {"name": "gc_exec", "summary": "远程执行命令"},
         {"name": "gc_cli", "summary": "任意子命令逃生舱"},
     ]
@@ -729,6 +827,12 @@ def catalog_payload() -> dict[str, Any]:
             "analyze": "/api/assistant/analyze",
             "probe": "/api/assistant/probe",
             "chat": "/api/assistant/chat",
+            "execute": "/api/assistant/execute",
+        },
+        "liveness": "/api/liveness",
+        "remote": {
+            "status": "/api/remote",
+            "action": "/api/remote/action",
         },
         "notices": {
             "list": "/api/notices",

@@ -7,28 +7,28 @@ from __future__ import annotations
 
 from typing import Any
 
+from assistant_tools import risk_for_call, tool_risks
+
 # risk: read | write | destructive
+# 以助手工具注册表为单一来源；MCP 专有工具在此补齐。
 TOOL_RISKS: dict[str, str] = {
-    "gc_api_catalog": "read",
+    **tool_risks(),
     "gc_auth_status": "read",
-    "gc_doctor": "read",
-    "gc_overview": "read",
-    "gc_get_jobs": "read",
+    "gc_cli": "destructive",
+    "gc_toolkits": "write",
     "gc_job_action": "write",
     "gc_get_config": "read",
-    "gc_put_config": "write",
-    "gc_models": "write",  # pull 等会写磁盘；list/show 亦走同一工具
-    "gc_toolkits": "write",
+    "gc_put_config": "destructive",
+    "gc_models": "write",
     "gc_procs": "destructive",
     "gc_free_node": "destructive",
     "gc_deploy": "write",
     "gc_queue": "write",
     "gc_lease": "write",
-    "gc_diagnose": "write",  # repair 可改状态
+    "gc_diagnose": "write",
     "gc_gateway": "write",
     "gc_node": "write",
     "gc_exec": "destructive",
-    "gc_cli": "destructive",
 }
 
 TEACHING_SUMMARY = (

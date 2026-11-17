@@ -2,6 +2,8 @@
 - name: Probe cross-node TCP connectivity
   hosts: gpu_workers
   gather_facts: false
+  # 不可达节点跳过；其余节点仍写入 probe 行，merge_probe 会合并部分结果。
+  ignore_unreachable: true
 
   vars:
     peer_map: {}

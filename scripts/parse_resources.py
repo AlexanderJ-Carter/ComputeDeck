@@ -5,11 +5,15 @@ from __future__ import annotations
 
 import csv
 import json
+import time
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 import _bootstrap  # noqa: F401
-from paths import RESOURCES_FILE, SNAPSHOT_DIR
+from liveness import DEFAULT_TTLS, format_age, parse_ts
+from paths import RESOURCES_FILE, SNAPSHOT_DIR, STATE_DIR, nodes_file
+from state_util import atomic_write_json
 
 
 def _rows(raw_rows: list[str]) -> list[list[str]]:
@@ -60,22 +64,63 @@ def parse_snapshot(path: Path) -> dict:
     }
 
 
+def _configured_nodes() -> list[str]:
+    if not nodes_file().is_file():
+        return []
+    try:
+        data = json.loads(nodes_file().read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    return sorted((data.get("nodes") or {}).keys())
+
+
 def main() -> None:
+    ttl = float(DEFAULT_TTLS["snapshot_ttl_sec"])
+    now = time.time()
     resources = {}
     for path in sorted(SNAPSHOT_DIR.glob("*.json")):
         node = parse_snapshot(path)
+        collected = parse_ts(node.get("collected_at"))
+        age = int(now - collected) if collected is not None else None
+        stale = collected is None or age > ttl
+        node["snapshot_age_sec"] = age
+        node["snapshot_age_text"] = format_age(age)
+        node["stale"] = stale
+        node["stale_reason"] = None if not stale else ("missing_timestamp" if collected is None else "snapshot_ttl")
         resources[node["node"]] = node
         print(
             f"{node['node']}: "
             f"{node['occupied_count']}/{node['gpu_count']} occupied, "
             f"{node['free_count']} free"
+            + (f" [stale {node['snapshot_age_text']}]" if stale else "")
         )
+
+    configured = _configured_nodes()
+    missing = [name for name in configured if name not in resources]
+    stale = [
+        {"node": name, "last_ok_at": node.get("collected_at"), "age_sec": node.get("snapshot_age_sec"), "age_text": node.get("snapshot_age_text")}
+        for name, node in sorted(resources.items())
+        if node.get("stale")
+    ]
+    health = {
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "attempted": configured,
+        "ok": [name for name in configured if name in resources and not resources[name].get("stale")],
+        "failed": missing,
+        "stale": stale,
+        "parsed": sorted(resources.keys()),
+    }
 
     RESOURCES_FILE.write_text(
         json.dumps(resources, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
+    atomic_write_json(STATE_DIR / "resources_health.json", health)
     print(f"Saved: {RESOURCES_FILE}")
+    if missing:
+        print(f"Unreachable (no fresh snapshot): {', '.join(missing)}")
+    if stale:
+        print(f"Stale snapshots: {', '.join(x['node'] for x in stale)}")
 
 
 if __name__ == "__main__":

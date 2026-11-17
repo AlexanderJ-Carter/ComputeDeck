@@ -717,6 +717,52 @@ def gc_node(
 
 
 @mcp.tool()
+def gc_liveness(action: str = "status", node: str | None = None) -> dict:
+    """节点存活与快照新鲜度。action=status（读缓存）|check（立即 TCP 探活）。"""
+    action = action.strip().lower()
+    if action not in {"status", "check"}:
+        return {"ok": False, "error": "action 须为 status|check"}
+    if _prefer_http():
+        if action == "check":
+            body: dict[str, Any] = {}
+            if node:
+                body["node"] = node
+            return _http_json_safe("POST", "/api/liveness/check", body, timeout=180)
+        return _http_json_safe("GET", "/api/liveness")
+    args = ["liveness", action, "--json"]
+    if node:
+        args.extend(["--node", node])
+    return _cli_json(args, timeout=180)
+
+
+@mcp.tool()
+def gc_remote(
+    action: str = "status",
+    mode: str | None = None,
+    port: int | None = None,
+    confirm: bool = False,
+) -> dict:
+    """远程接入（Tailscale / Cloudflare）。action=status|plan|up|down。"""
+    action = action.strip().lower()
+    if action not in {"status", "plan", "up", "down"}:
+        return {"ok": False, "error": "action 须为 status|plan|up|down"}
+    if _prefer_http():
+        if action in {"status", "plan"}:
+            q = f"?plan=1&mode={mode}" if action == "plan" else f"?mode={mode}" if mode else ""
+            return _http_json_safe("GET", f"/api/remote{q}")
+        body: dict[str, Any] = {"action": action, "mode": mode or "auto", "confirm": bool(confirm)}
+        if port is not None:
+            body["port"] = port
+        return _http_json_safe("POST", "/api/remote/action", body, timeout=60)
+    args = ["remote", action, "--mode", mode or "auto"]
+    if port is not None:
+        args.extend(["--port", str(port)])
+    if confirm:
+        args.append("--confirm")
+    return _cli_json(args, timeout=60)
+
+
+@mcp.tool()
 def gc_exec(command: str, node: str | None = None, nodes: str = "all") -> dict:
     """在工作节点执行 shell 命令。"""
     if _prefer_http():

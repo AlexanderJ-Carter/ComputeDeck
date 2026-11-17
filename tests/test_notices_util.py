@@ -55,6 +55,30 @@ class TestNoticesUtil(unittest.TestCase):
         self.assertIn("quality:low-score", ids)
         self.assertIn("endpoints:api-fail", ids)
 
+    def test_reconcile_removes_resolved_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "notices.json"
+            with patch.object(notices_util, "NOTICES_FILE", path):
+                notices_util.upsert_notices(
+                    [
+                        {"id": "node:offline:a", "severity": "error", "title": "a", "detail": ""},
+                        {"id": "snapshot:stale:b", "severity": "warn", "title": "b", "detail": ""},
+                        {"id": "manual:keep", "severity": "warn", "title": "keep", "detail": ""},
+                    ]
+                )
+                # 只剩 a 仍成立；b 应被清除；manual 不受影响
+                notices_util.reconcile_notices(
+                    [{"id": "node:offline:a"}],
+                )
+                ids = {row["id"] for row in notices_util.list_notices()["items"]}
+                self.assertIn("node:offline:a", ids)
+                self.assertNotIn("snapshot:stale:b", ids)
+                self.assertIn("manual:keep", ids)
+                # 没有可清除项时不改写文件
+                before = path.read_text(encoding="utf-8")
+                notices_util.reconcile_notices([{"id": "node:offline:a"}])
+                self.assertEqual(path.read_text(encoding="utf-8"), before)
+
 
 if __name__ == "__main__":
     unittest.main()

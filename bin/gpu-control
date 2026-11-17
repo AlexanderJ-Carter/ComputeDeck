@@ -360,10 +360,22 @@ def inventory_nodes() -> list[str]:
 
 
 def refresh_resources(*, quiet: bool = False) -> int:
+    """采集 GPU 快照并解析。
+
+    单台节点不可达时 Ansible 会返回非零，但其他节点的快照仍然有效：
+    此时继续解析，让 ``resources.json`` 更新可达节点，并把未采集到的节点
+    交给 ``state/resources_health.json`` 标记。
+    """
     code = ansible_playbook("collect-resources.yml", quiet=quiet)
-    if code != 0:
-        return code
-    return run_python("parse_resources.py").returncode
+    parsed = run_python("parse_resources.py")
+    if parsed.returncode != 0:
+        return parsed.returncode
+    if code != 0 and not quiet:
+        print(
+            "warn: 部分节点采集失败；已解析可用快照，详见 state/resources_health.json",
+            file=sys.stderr,
+        )
+    return 0
 
 
 def acquire_lease(
@@ -689,11 +701,33 @@ def cmd_overview(args: argparse.Namespace) -> int:
         for node in lease.get("nodes", [])
     }
 
+    import liveness
+
+    cluster = load_cluster()
+    live = liveness.cluster_view(
+        node_names=inventory_nodes(),
+        resources=resources,
+        ssh_quality=_read_json_state(STATE_DIR / "ssh_quality.json", {}),
+        host_metrics=_read_json_state(STATE_DIR / "host_metrics.json", {}),
+        probe=_read_json_state(PROBE_FILE, {}),
+        endpoint_health=_read_json_state(STATE_DIR / "endpoint_health.json", {}),
+        persisted=liveness.read_snapshot(STATE_DIR / "liveness.json"),
+        cluster=cluster,
+    )
+    live_nodes = live.get("nodes") or {}
+    summary = live.get("summary") or {}
+
     cordoned = load_node_state().get("cordoned", {})
     print("=== Cluster Overview ===")
     print(
+        "nodes: "
+        f"online={summary.get('online', 0)} degraded={summary.get('degraded', 0)} "
+        f"offline={summary.get('offline', 0)} unknown={summary.get('unknown', 0)} "
+        f"snapshot_stale={summary.get('snapshot_stale_count', 0)}"
+    )
+    print(
         f"{'NODE':<12} {'FREE':>4} {'USED':>4} {'TOTAL':>5}  "
-        f"{'STATE':<10} {'LEASE':<24} GPU MEM/UTIL"
+        f"{'STATE':<10} {'LAST SEEN':<10} {'LEASE':<24} GPU MEM/UTIL"
     )
     for name in inventory_nodes():
         node = resources.get(name, {})
@@ -703,12 +737,31 @@ def cmd_overview(args: argparse.Namespace) -> int:
         total = node.get("gpu_count", len(gpus))
         lease = lease_by_node.get(name)
         lease_text = f"{lease['job']}({lease['id']})" if lease else "-"
-        state = "cordoned" if name in cordoned else "ready"
+        live_node = live_nodes.get(name) or {}
+        live_state = str(live_node.get("state") or "unknown")
+        snapshot = live_node.get("snapshot") or {}
+        if live_state == "offline":
+            state = "offline"
+        elif live_state == "degraded":
+            state = "degraded"
+        elif live_state == "unknown":
+            state = "unknown"
+        elif snapshot.get("stale"):
+            state = "stale"
+        elif name in cordoned:
+            state = "cordoned"
+        else:
+            state = "ready"
+        last_seen = live_node.get("last_seen_age_sec")
+        last_seen_text = liveness.format_age(last_seen) if last_seen is not None else "-"
         mem = ",".join(str(g.get("memory_used_mib", "?")) for g in gpus) or "-"
         util = ",".join(str(g.get("utilization_percent", "?")) for g in gpus) or "-"
+        suffix = ""
+        if snapshot.get("stale"):
+            suffix = f" [snapshot {snapshot.get('age_text') or '-'} old]"
         print(
             f"{name:<12} {free:>4} {used:>4} {total:>5}  "
-            f"{state:<10} {lease_text:<24} mem={mem} util={util}"
+            f"{state:<10} {last_seen_text:<10} {lease_text:<24} mem={mem} util={util}{suffix}"
         )
 
     if leases:
@@ -971,9 +1024,11 @@ def cmd_probe(args: argparse.Namespace) -> int:
         },
         quiet=bool(args.quiet),
     )
-    if code != 0:
-        return code
-    return run_python("merge_probe.py").returncode
+    # 部分节点不可达时仍合并其他节点写出的 probe 文件，避免整张矩阵冻结。
+    merged = run_python("merge_probe.py").returncode
+    if merged != 0:
+        return merged
+    return 0
 
 
 def cordoned_names() -> set[str]:
@@ -1366,6 +1421,82 @@ def cmd_endpoints(args: argparse.Namespace) -> int:
     for ep in data.get("endpoints") or []:
         print(f"{ep['node']:<12} {ep['gpu']:>3} {ep['url']}")
     return 0
+
+
+def cmd_liveness(args: argparse.Namespace) -> int:
+    """节点存活与快照新鲜度：status（读缓存）/ check（立即探测）。"""
+    import liveness
+
+    action = getattr(args, "liveness_action", None) or "status"
+    snapshot_path = STATE_DIR / "liveness.json"
+    if action == "check":
+        cmd = ["liveness_probe.py", "--json"]
+        for node in getattr(args, "node", None) or []:
+            cmd.extend(["--node", node])
+        if getattr(args, "timeout", None):
+            cmd.extend(["--timeout", str(args.timeout)])
+        if not getattr(args, "json", False):
+            cmd = [x for x in cmd if x != "--json"]
+        return run_python(*cmd).returncode
+
+    persisted = liveness.read_snapshot(snapshot_path)
+    cluster = load_cluster()
+    nodes_doc = json.loads(nodes_file().read_text(encoding="utf-8")) if nodes_file().is_file() else {"nodes": {}}
+    resources = load_resources()
+    view = liveness.cluster_view(
+        node_names=inventory_nodes(),
+        resources=resources,
+        ssh_quality=_read_json_state(STATE_DIR / "ssh_quality.json", {}),
+        host_metrics=_read_json_state(STATE_DIR / "host_metrics.json", {}),
+        probe=_read_json_state(PROBE_FILE, {}),
+        endpoint_health=_read_json_state(STATE_DIR / "endpoint_health.json", {}),
+        persisted=persisted,
+        cluster=cluster,
+    )
+    if getattr(args, "json", False):
+        print(json.dumps(view, ensure_ascii=False, indent=2))
+        return 0
+    summary = view.get("summary") or {}
+    print(
+        f"Liveness: online={summary.get('online', 0)} degraded={summary.get('degraded', 0)} "
+        f"offline={summary.get('offline', 0)} unknown={summary.get('unknown', 0)} "
+        f"snapshot_stale={summary.get('snapshot_stale_count', 0)} source={view.get('source')}"
+    )
+    for name, node in sorted((view.get("nodes") or {}).items()):
+        snapshot = node.get("snapshot") or {}
+        last_seen = node.get("last_seen_age_sec")
+        age = liveness.format_age(last_seen) if last_seen is not None else "-"
+        stale = " stale" if snapshot.get("stale") else ""
+        print(
+            f"{name:<14} {str(node.get('state') or 'unknown'):<9}"
+            f"last_seen={age:<6} snapshot={snapshot.get('age_text') or '-':<6}{stale}"
+            f"{(' — ' + str(node.get('error'))[:100]) if node.get('error') else ''}"
+        )
+    return 0
+
+
+def cmd_remote(args: argparse.Namespace) -> int:
+    """远程接入：Tailscale serve/funnel、Cloudflare quick/named tunnel。"""
+    import remote_access
+
+    action = getattr(args, "remote_action", None) or "status"
+    if action == "status":
+        payload = remote_access.status()
+        payload["summary"] = remote_access.summary_line(payload)
+        payload["recommended"] = remote_access.plan(mode="auto")
+    elif action == "plan":
+        payload = remote_access.plan(mode=args.mode or "auto", port=args.port)
+    elif action == "up":
+        payload = remote_access.up(
+            mode=args.mode or "auto",
+            port=args.port,
+            confirm=bool(args.confirm),
+            force=bool(args.force),
+        )
+    else:
+        payload = remote_access.down(mode=args.mode or "all", confirm=bool(args.confirm))
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0 if payload.get("ok", True) else 1
 
 
 def cmd_gateway(args: argparse.Namespace) -> int:
@@ -2068,6 +2199,25 @@ def build_parser() -> argparse.ArgumentParser:
     p_endpoints = sub.add_parser("endpoints", help="列出 API 端点目录（render_endpoints）")
     p_endpoints.add_argument("--json", action="store_true")
     p_endpoints.set_defaults(func=cmd_endpoints)
+
+    p_remote = sub.add_parser("remote", help="远程接入：Tailscale / Cloudflare（status|plan|up|down）")
+    p_remote.add_argument("remote_action", nargs="?", default="status", choices=["status", "plan", "up", "down"])
+    p_remote.add_argument(
+        "--mode",
+        default="auto",
+        choices=["auto", "tailscale-serve", "tailscale-funnel", "cloudflared-quick", "cloudflared-tunnel", "all"],
+    )
+    p_remote.add_argument("--port", type=int, default=None, help="控制面端口（默认 cluster.control.ui_port）")
+    p_remote.add_argument("--confirm", action="store_true", help="确认启动/关闭")
+    p_remote.add_argument("--force", action="store_true", help="即使鉴权未开启也允许公网暴露")
+    p_remote.set_defaults(func=cmd_remote)
+
+    p_liveness = sub.add_parser("liveness", help="节点存活 / 快照新鲜度（status 读缓存，check 立即探测）")
+    p_liveness.add_argument("liveness_action", nargs="?", default="status", choices=["status", "check"])
+    p_liveness.add_argument("--node", action="append", default=[], help="只检查指定节点，可重复")
+    p_liveness.add_argument("--timeout", type=float, default=None, help="单节点 TCP 超时秒数")
+    p_liveness.add_argument("--json", action="store_true")
+    p_liveness.set_defaults(func=cmd_liveness)
 
     p_gateway = sub.add_parser(
         "gateway",

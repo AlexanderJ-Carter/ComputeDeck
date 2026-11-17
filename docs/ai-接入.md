@@ -85,17 +85,36 @@ open http://127.0.0.1:8787/api/docs
 
 调度（MCP：`gc_queue` / `gc_lease`；HTTP 同路径）：
 
-- `GET /api/leases` · `POST /api/leases` · `POST /api/leases/{id}/release`
+- `GET /api/leases` · `POST /api/leases` · `POST /api/leases/{id}/release` · `POST /api/leases/release`（按 nodes）
 - `GET /api/queue` · `POST /api/queue/submit` · `POST /api/queue/schedule` · `POST /api/queue/{id}/cancel`
+
+存活与远程接入：
+
+- `GET /api/liveness` · `POST /api/liveness/check` — 节点存活与快照新鲜度；`summary.offline_nodes` / `stale_nodes` / `gpus_excluded`
+- `GET /api/remote` · `POST /api/remote/action` — Tailscale / Cloudflare 状态、计划与启停（详见 [远程接入](远程接入.md)）
 
 助手：
 
-- `GET /api/assistant/policy` · `GET /api/assistant/status` · `POST /api/assistant/chat`
+- `GET /api/assistant/policy` · `GET /api/assistant/status` · `POST /api/assistant/chat`（`stream=true` 走 SSE：`meta` / `delta` / `tool` / `done` / `error`）
+- `POST /api/assistant/execute` — 确认并执行助手动作；结果回喂模型
 - `POST /api/assistant/config` · `GET|POST /api/assistant/models` — UI 设置上游与拉取模型列表
 - `POST /api/assistant/analyze` — 只读解读 overview + notices + diagnose
 - `GET /api/notices` · `POST /api/notices/mark` — 监管公告（规则告警；可 `?sync=1`）
 - `GET /api/metrics/history` — 看板趋势采样（API/GPU/CPU/健康分）
 - `GET /api/exec/suggest` — 远程命令补全
+
+**助手确认协议**：对话返回 `conversation_id` 与 `pending_actions[]`（确认卡）。确认后调用：
+
+```json
+POST /api/assistant/execute
+{
+  "conversation_id": "conv_…",
+  "action_id": "act_…",
+  "confirm": true          // destructive 操作改为 "EXECUTE"（二次确认）
+}
+```
+
+服务端会重新校验节点 / Job 是否仍存在、目标是否离线、参数哈希是否被篡改，然后回调已有 `/api/*` 执行；执行结果以 `role:"tool"` 写回会话，再让模型总结并给出下一步。`stage:"reject"` 可取消。坏参数、未知目标、离线目标都会被拒绝并返回结构化错误，不会产生任何写操作。
 
 完整列表以 `GET /api` 或 `/api/docs` 为准。
 
@@ -153,7 +172,7 @@ Cursor 片段示例：
 教学与风险：MCP `instructions` 与 `GET /api/assistant/policy` 同源（`lib/assistant_policy.py`）。  
 UI 小助手：设置面板填 Base URL / 模型 / Key（`POST /api/assistant/config`，可 `POST /api/assistant/models` 下拉）；`POST /api/assistant/chat` 调 OpenAI 兼容上游；未配则引导去设置。
 
-一等工具（20）：`gc_api_catalog` · `gc_auth_status` · `gc_doctor` · `gc_overview` · `gc_get_jobs` · `gc_job_action` · `gc_get_config` · `gc_put_config` · `gc_models` · `gc_toolkits` · `gc_procs` · `gc_free_node` · `gc_deploy` · `gc_queue` · `gc_lease` · `gc_diagnose` · `gc_gateway` · `gc_node` · `gc_exec` · `gc_cli`。
+一等工具（22）：`gc_api_catalog` · `gc_auth_status` · `gc_doctor` · `gc_overview` · `gc_get_jobs` · `gc_job_action` · `gc_get_config` · `gc_put_config` · `gc_models` · `gc_toolkits` · `gc_procs` · `gc_free_node` · `gc_deploy` · `gc_queue` · `gc_lease` · `gc_diagnose` · `gc_gateway` · `gc_node` · `gc_liveness` · `gc_remote` · `gc_exec` · `gc_cli`。
 
 说明：
 

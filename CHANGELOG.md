@@ -11,8 +11,24 @@
 
 ## [Unreleased]
 
+---
+
+## [1.0.0-beta.2] - 2026-11-17
+
 ### Added
 
+- 节点存活与数据新鲜度：`lib/liveness.py` + `gpu-control liveness status|check` + `GET /api/liveness`；离线节点、快照过期、GPU 统计排除旧快照；后台每 60 秒 TCP 探活（`cluster.health.check_interval_sec` 可调，`GPU_CONTROL_LIVENESS_MONITOR=0` 关闭）
+- 看板离线 / 探活异常 / 快照过期徽标与顶部新鲜度横幅；「立即探活」按钮
+- AI 助手流式回复（SSE：`meta` / `delta` / `tool` / `done` / `error`），自动回落普通请求；回复支持 Markdown（标题、列表、表格、代码块）与代码块一键复制
+- GPU 实际负载：总览新增 `gpu_sm_util_pct` / `gpu_mem_util_pct`，看板把「槽位占用」与「实际算力/显存负载」分开展示
+- AI 助手真正可执行：工具注册表覆盖部署、腾空、Job 启停、队列/租约、入口、节点、模型、工具栈、诊断、远程接入等；写操作生成确认卡，破坏性操作二次确认；执行结果回喂模型
+- `POST /api/assistant/execute`：服务端会话 + 动作校验（节点/Job 存在、目标不离线、参数哈希）+ 复用现有 `/api/*` 执行
+- 远程接入：`gpu-control remote status|plan|up|down`、`GET /api/remote`、`POST /api/remote/action`、入口页「远程接入」卡片；支持 Tailscale serve/funnel 与 Cloudflare quick/named tunnel，公网模式默认要求已开鉴权
+- UI 信息架构梳理：看板精简为「状态横幅 / 集群状态 / 趋势 / 常用操作 / 需要关注」；队列与租约移到任务页，远程接入移到入口页；导航拆成 看板 / 节点 / 任务 / 入口与网关 / 模型 / 工具栈 / 批量命令 / 交互终端 / 配置
+- 每页新增一句话目的说明；任务页把部署方式 / GPU 数 / 指定节点从高级折叠移到独立「部署 / 换机」区
+- 统一字号、行高、控件高度、面板内边距；补 1280 / 768 / 1600 断点：平板顶栏导航、手机横向滚动导航、看板单列、助手底部抽屉、表格横向滚动
+- 节点详情对离线 / 旧快照做明确标注：状态显示「离线」、进程表降级为旧快照、结束进程 / 腾空按钮禁用，避免把过期数据当实时状态
+- MCP 新增 `gc_liveness` · `gc_remote`
 - Edge `:18080` 根路径兜底页：浏览器打开不再反代出上游 401 JSON；说明这是内置 Edge（不是 nginx）
 - 控制面可生成/保存 LiteLLM Master Key（`config/local/secrets/litellm_master_key`），保存后重启代理供 Admin UI 登录
 - LiteLLM 状态字段 `phase` / `listen_ok` / `log_tail` / `binary`；入口与网关卡支持启动 / 停止 / 重启与诊断折叠
@@ -31,6 +47,12 @@
 
 ### Fixed
 
+- **离线节点不再伪装成占用/空闲**：`/api/overview` 的 GPU 统计只计入“可达且快照新鲜”的节点；离线 / 快照过期节点单独标记，质量分不再把过期探测当健康
+- `gpu refresh` / `probe` 在部分节点不可达时仍解析可用结果，并写 `state/resources_health.json`、为探针文件加时间戳，避免一个死节点冻结全集群快照
+- watchdog 跳过离线 / 未知节点，不再对不可达主机反复 restart；日志改为单一落点并加 flock 单实例，消除重复行
+- 调度（`select_nodes`）排除离线 / 探活异常 / 快照过期节点，避免把任务部署到已掉线的机器
+- 助手把 `gc_queue list` / `gc_lease list` / `gc_gateway status` 误判为写操作、生成不可执行的确认卡；现按调用级风险自动执行
+- 助手工具历史被截断导致多轮确认失败；现保留 `assistant.tool_calls` 与 `role:"tool"` 配对
 - 端口监听者身份校验：SSH 隧道 / 陌生进程不再被当成 Edge / LiteLLM；返回 `port_conflict` / `unmanaged` 并提示占用者
 - Edge 运行判定改为 pidfile 或 `/_gpu_control/health` 身份校验，`gateway ensure` 不会因端口被占用而误判已启动
 - PID 复用误杀：stop / restart 前校验命令行身份，不匹配时只清理 pidfile，不 kill 陌生进程/进程组
@@ -41,7 +63,6 @@
 - 宣传展板终页「快速开始」代码框被 grid 拉伸，顶部出现大块黑色空白；改为按内容高度垂直居中
 
 ---
-
 ## [1.0.0-beta.1] - 2026-11-15
 
 ComputeDeck **1.0 先导测试版**：控制面 / CLI / MCP / 展板已可日常试用；预发布镜像不覆盖 `latest`。
@@ -393,6 +414,7 @@ ComputeDeck **1.0 先导测试版**：控制面 / CLI / MCP / 展板已可日常
 4. 版本锚点见下方；具备远程后可改为 compare URL。
 
 [Unreleased]: #unreleased
+[1.0.0-beta.2]: #100-beta2---2026-11-17
 [1.0.0-beta.1]: #100-beta1---2026-11-15
 [0.23.1]: #0231---2026-11-15
 [0.23.0]: #0230---2026-11-15

@@ -7,6 +7,7 @@ import argparse
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -214,6 +215,60 @@ def collect_findings() -> list[dict[str, Any]]:
                 auto=False,
             )
 
+    # ---- 节点存活 / 快照新鲜度 -------------------------------------------
+    try:
+        import liveness
+
+        persisted = liveness.read_snapshot(STATE_DIR / "liveness.json")
+        live = liveness.cluster_view(
+            node_names=list(node_map),
+            resources=read_json(RESOURCES_FILE, {}),
+            ssh_quality=read_json(STATE_DIR / "ssh_quality.json", {}),
+            host_metrics=read_json(STATE_DIR / "host_metrics.json", {}),
+            probe=read_json(STATE_DIR / "probe.json", {}),
+            endpoint_health=read_json(STATE_DIR / "endpoint_health.json", {}),
+            persisted=persisted,
+            cluster=cluster,
+        )
+        for row in liveness.offline_notices(live):
+            add(
+                row["id"],
+                severity="error",
+                title=row["title"],
+                detail=row["detail"],
+                fix=row.get("fix"),
+                auto=False,
+            )
+        for row in liveness.stale_notices(live):
+            add(
+                row["id"],
+                severity="warn",
+                title=row["title"],
+                detail=row["detail"],
+                fix=row.get("fix"),
+                auto=False,
+            )
+        generated = liveness.parse_ts(persisted.get("generated_at"))
+        ttls = liveness.load_ttls(cluster)
+        if generated is None or time.time() - generated > float(ttls["probe_ttl_sec"]):
+            add(
+                "liveness-stale",
+                severity="warn",
+                title="节点存活探测已过期",
+                detail="后台探活未运行或 liveness.json 过期；总览会回落到旧健康文件。",
+                fix="gpu-control liveness check",
+                auto=True,
+            )
+    except Exception as exc:  # noqa: BLE001 — 诊断不能因存活模块失败而中断
+        add(
+            "liveness-error",
+            severity="warn",
+            title="节点存活检测失败",
+            detail=str(exc),
+            fix="gpu-control liveness check",
+            auto=False,
+        )
+
     leases = read_json(STATE_DIR / "leases.json", {"leases": []}).get("leases") or []
     resources = read_json(RESOURCES_FILE, {})
     if leases and isinstance(resources, dict) and resources:
@@ -291,6 +346,21 @@ def apply_fix(finding_id: str) -> dict[str, Any]:
         if path.is_file():
             path.unlink()
         return {"id": finding_id, "ok": True, "removed": str(path)}
+    if finding_id == "liveness-stale":
+        completed = subprocess.run(
+            [str(VENV_PYTHON), str(ROOT / "scripts" / "liveness_probe.py"), "--json"],
+            cwd=PROJECT_DIR,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=120,
+        )
+        return {
+            "id": finding_id,
+            "ok": completed.returncode == 0,
+            "stdout": completed.stdout[-500:],
+            "stderr": completed.stderr[-300:],
+        }
     if finding_id == "edge-down":
         completed = subprocess.run(
             [str(VENV_PYTHON), str(CLI), "gateway", "ensure"],
