@@ -825,6 +825,7 @@ function fillTargetSelects(nodes) {
   }
   fillSelectPreserve($("deploy-node"), optsNode || `<option value="">暂无节点</option>`, state.selectedNode);
   fillSelectPreserve($("term-node"), optsNode || `<option value="">暂无节点</option>`, state.selectedNode);
+  syncTerminalTargetState();
   const modelNode = $("model-node");
   if (modelNode) {
     const prev = modelNode.value;
@@ -1305,9 +1306,37 @@ function disconnectTerminal() {
   document.getElementById("term-status").textContent = "已断开";
 }
 
+function overviewNode(name) {
+  return (state.overview?.nodes || []).find((n) => n.name === name) || null;
+}
+
+function syncTerminalTargetState() {
+  const sel = document.getElementById("term-node");
+  if (!sel) return;
+  const btn = document.getElementById("btn-term-connect");
+  const status = document.getElementById("term-status");
+  const node = overviewNode(sel.value);
+  const offline = node && (node.liveness_state === "offline" || node.state === "offline");
+  if (btn) {
+    btn.disabled = Boolean(offline);
+    btn.title = offline ? "节点离线，无法建立 SSH 连接" : "";
+  }
+  if (termState.ws) return;
+  if (status) {
+    status.textContent = offline
+      ? `${sel.value} 离线，无法连接（最后成功 ${node.last_seen || "从未"}）`
+      : "未连接 · 选择节点后点击「连接」";
+  }
+}
+
 function connectTerminal() {
   const node = document.getElementById("term-node").value;
   if (!node) return toast("请选择节点");
+  const target = overviewNode(node);
+  if (target && (target.liveness_state === "offline" || target.state === "offline")) {
+    document.getElementById("term-status").textContent = `${node} 离线，无法连接`;
+    return toastBad("节点离线，无法建立 SSH 连接");
+  }
   const term = ensureTerminal();
   if (!term) return;
   disconnectTerminal();
@@ -2467,6 +2496,7 @@ function applyOverview(data) {
     : `${strategyLabel} · 主控统一调度`;
   renderSummary(data.summary || {});
   renderFreshnessBanner(data);
+  syncTerminalTargetState();
   fillTargetSelects(data.nodes || []);
   renderPresets(data.exec_presets || []);
   renderJobs(data.jobs || []);
@@ -4304,6 +4334,12 @@ async function boot() {
   }
   setupAutoRefresh();
   document.getElementById("auto-refresh").addEventListener("change", setupAutoRefresh);
+  $("term-node")?.addEventListener("change", syncTerminalTargetState);
+  document.querySelectorAll("[data-config-jump]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.getElementById(btn.dataset.configJump)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
 
   document.getElementById("btn-refresh").addEventListener("click", async () => {
     setBusy(true);

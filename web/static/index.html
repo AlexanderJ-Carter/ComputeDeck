@@ -171,6 +171,10 @@
               <span class="meta" id="dash-board-at">实时总览</span>
             </header>
             <div class="status-list" id="dash-board"></div>
+            <div class="status-foot">
+              <button type="button" class="ghost tiny" data-view-jump="endpoints" data-keep-enabled="1">管理入口与网关</button>
+              <button type="button" class="ghost tiny" data-view-jump="cluster" data-keep-enabled="1">查看节点</button>
+            </div>
           </section>
         </div>
 
@@ -654,8 +658,27 @@ gpu-control jobs install vllm-serve --name vllm</pre>
         </div>
 
         <div class="tab-panel active" data-tab-panel="wizard">
-          <div class="setup-grid">
-            <div class="panel">
+          <div class="config-hero">
+            <div>
+              <h2>配置向导</h2>
+              <p class="meta">按块编辑、分别保存；节点清单保存后会自动生成 inventory。改动前可先去「检查清单」跑一次自检。</p>
+            </div>
+            <div class="config-jumps" role="group" aria-label="配置区块">
+              <button type="button" data-config-jump="cfg-ssh">SSH</button>
+              <button type="button" data-config-jump="cfg-cluster">集群</button>
+              <button type="button" data-config-jump="cfg-nodes">节点</button>
+              <button type="button" data-config-jump="cfg-job">Job</button>
+              <button type="button" data-config-jump="cfg-watchdog">Watchdog</button>
+              <button type="button" data-config-jump="cfg-auth">鉴权</button>
+            </div>
+          </div>
+          <section class="config-section" id="cfg-conn">
+            <header class="config-section-h">
+              <h2>连接与集群</h2>
+              <span class="meta">SSH 私钥、节点统一用户与端口、默认 Job 和入口端口。</span>
+            </header>
+            <div class="setup-grid">
+            <div class="panel" id="cfg-ssh">
               <div class="panel-h">
                 <h2>SSH 连接</h2>
                 <button id="btn-test-ssh" class="ghost tiny" data-keep-enabled="1">测试连通</button>
@@ -672,7 +695,7 @@ gpu-control jobs install vllm-serve --name vllm</pre>
               <div id="ssh-test-result" class="ssh-result"></div>
             </div>
 
-            <div class="panel">
+            <div class="panel" id="cfg-cluster">
               <div class="panel-h">
                 <h2>集群策略</h2>
                 <button id="btn-save-cluster" class="primary tiny" data-keep-enabled="1">保存</button>
@@ -682,9 +705,12 @@ gpu-control jobs install vllm-serve --name vllm</pre>
               <label class="field"><span>默认任务</span><input id="cluster-job" /></label>
               <label class="field"><span>API 起始端口</span><input id="cluster-base-port" type="number" /></label>
               <label class="field"><span>每节点端口数</span><input id="cluster-ports" type="number" /></label>
-              <label class="field"><span>API 密钥文件</span><input id="cluster-api-key" /></label>
-              <label class="field"><span>优先标签</span><input id="cluster-prefer" placeholder="serving" /></label>
-              <label class="field"><span>避开标签</span><input id="cluster-avoid" placeholder="shared" /></label>
+              <details class="fold">
+                <summary>高级：API 密钥 / 调度标签</summary>
+                <label class="field"><span>API 密钥文件</span><input id="cluster-api-key" /></label>
+                <label class="field"><span>优先标签</span><input id="cluster-prefer" placeholder="serving" /></label>
+                <label class="field"><span>避开标签</span><input id="cluster-avoid" placeholder="shared" /></label>
+              </details>
               <details class="fold">
                 <summary>入口与网关 · 域名 / HTTPS（可选）</summary>
                 <label class="field"><span>域名</span><input id="cluster-domain" placeholder="api.example.com" /></label>
@@ -703,9 +729,15 @@ gpu-control jobs install vllm-serve --name vllm</pre>
               </details>
             </div>
           </div>
+          </section>
 
-          <div class="setup-grid">
-            <div class="panel">
+          <section class="config-section" id="cfg-resources">
+            <header class="config-section-h">
+              <h2>节点与任务</h2>
+              <span class="meta">节点清单决定 inventory；Job 表单只覆盖常用契约字段，未列出的键保存时保留。</span>
+            </header>
+            <div class="setup-grid">
+            <div class="panel" id="cfg-nodes">
               <div class="panel-h">
                 <h2>节点清单</h2>
                 <div class="btn-row">
@@ -732,7 +764,7 @@ gpu-control jobs install vllm-serve --name vllm</pre>
               </details>
             </div>
 
-            <div class="panel">
+            <div class="panel" id="cfg-job">
               <div class="panel-h">
                 <h2>Job 编辑</h2>
                 <button id="btn-save-job" class="primary tiny" data-keep-enabled="1">保存</button>
@@ -770,14 +802,23 @@ gpu-control jobs install vllm-serve --name vllm</pre>
                 <label class="field"><span>Docker 镜像</span><input id="job-docker-image"
                     placeholder="registry/image:tag" /></label>
               </div>
-              <label class="field"><span>额外参数（空格分隔）</span><input id="job-extra" placeholder="--flag value" /></label>
-              <label class="field"><span>环境变量（KEY=VAL 每行）</span><textarea id="job-env" rows="3" spellcheck="false"
-                  placeholder="CUDA_VISIBLE_DEVICES=0"></textarea></label>
+              <details class="fold">
+                <summary>高级：额外参数 / 环境变量</summary>
+                <label class="field"><span>额外参数（空格分隔）</span><input id="job-extra" placeholder="--flag value" /></label>
+                <label class="field"><span>环境变量（KEY=VAL 每行）</span><textarea id="job-env" rows="3" spellcheck="false"
+                    placeholder="CUDA_VISIBLE_DEVICES=0"></textarea></label>
+              </details>
             </div>
           </div>
+          </section>
 
-          <div class="setup-grid">
-            <div class="panel">
+          <section class="config-section" id="cfg-ops">
+            <header class="config-section-h">
+              <h2>巡检与安全</h2>
+              <span class="meta">Watchdog 负责异常自愈；鉴权影响浏览器、脚本与 MCP 的访问方式。</span>
+            </header>
+            <div class="setup-grid">
+            <div class="panel" id="cfg-watchdog">
               <div class="panel-h">
                 <h2>Watchdog</h2>
                 <button id="btn-save-watchdog" class="primary tiny" data-keep-enabled="1">保存</button>
@@ -788,14 +829,17 @@ gpu-control jobs install vllm-serve --name vllm</pre>
               </label>
               <label class="field"><span>监控 Job（逗号分隔，空=默认 Job）</span><input id="wd-jobs"
                   placeholder="shell-job" /></label>
-              <div class="field-row">
-                <label class="field"><span>间隔秒</span><input id="wd-interval" type="number" /></label>
-                <label class="field"><span>最大重启</span><input id="wd-max-restarts" type="number" /></label>
-                <label class="field"><span>失败阈值</span><input id="wd-failure-threshold" type="number" /></label>
-              </div>
-              <label class="field"><span>节点范围</span><input id="wd-nodes" placeholder="all" /></label>
+              <details class="fold">
+                <summary>高级：间隔 / 重启次数 / 节点范围</summary>
+                <div class="field-row">
+                  <label class="field"><span>间隔秒</span><input id="wd-interval" type="number" /></label>
+                  <label class="field"><span>最大重启</span><input id="wd-max-restarts" type="number" /></label>
+                  <label class="field"><span>失败阈值</span><input id="wd-failure-threshold" type="number" /></label>
+                </div>
+                <label class="field"><span>节点范围</span><input id="wd-nodes" placeholder="all" /></label>
+              </details>
             </div>
-            <div class="panel">
+            <div class="panel" id="cfg-auth">
               <div class="panel-h">
                 <h2>鉴权</h2>
                 <button id="btn-save-auth" class="primary tiny" data-keep-enabled="1">保存</button>
@@ -823,6 +867,7 @@ gpu-control jobs install vllm-serve --name vllm</pre>
               </details>
             </div>
           </div>
+          </section>
         </div>
 
         <div class="tab-panel" data-tab-panel="checklist">
