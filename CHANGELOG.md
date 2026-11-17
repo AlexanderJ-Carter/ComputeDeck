@@ -11,6 +11,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- 自动巡检：健康数据过期时后台自动采集 API / GPU 快照（`cluster.health.auto_refresh`），看板显示自动巡检状态与最近一次采集年龄
+- AI 自动巡检：出现离线、探活异常或快照过期时，自动把 overview / notices / diagnose 交给 AI 生成只读建议（`cluster.assistant.auto_insight`，默认 30 分钟节流）
+- 任务下拉显示模型与「本地」来源，并带完整说明 tooltip
+
 ---
 
 ## [1.0.3] - 2026-11-17

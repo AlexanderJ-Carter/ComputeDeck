@@ -892,6 +892,41 @@ function renderSummary(summary) {
   );
 }
 
+function renderAutoOps(info) {
+  const line = $("auto-ops-line");
+  const fold = $("auto-ai-fold");
+  const box = $("auto-ai-box");
+  const at = $("auto-ai-at");
+  if (line) {
+    if (!info || info.enabled === false) {
+      line.textContent = "自动巡检：已关闭（cluster.health.auto_refresh）";
+    } else {
+      const now = Date.now() / 1000;
+      const rel = (t) => (t ? `${formatAgeSec(Math.max(0, now - Number(t)))}前` : "");
+      const bits = [];
+      if (info.last_api?.at_epoch) bits.push(`API ${rel(info.last_api.at_epoch)}`);
+      if (info.last_gpu?.at_epoch) bits.push(`GPU ${rel(info.last_gpu.at_epoch)}`);
+      if (info.ai?.at_epoch) bits.push(`AI ${rel(info.ai.at_epoch)}`);
+      let text = `自动巡检：开启${bits.length ? " · " + bits.join(" · ") : " · 等待首次检查"}`;
+      if (Array.isArray(info.actions) && info.actions.length) {
+        text += ` · 本轮 ${info.actions.join(" / ")}`;
+      }
+      line.textContent = text;
+    }
+  }
+  if (!fold || !box) return;
+  const ai = info.ai || {};
+  if (ai.text) {
+    fold.hidden = false;
+    setMarkdown(box, ai.text);
+    if (at) {
+      at.textContent = ai.at ? `自动 · ${ai.at.replace("T", " ").replace("Z", "")}` : "自动";
+    }
+  } else {
+    fold.hidden = true;
+  }
+}
+
 function renderFreshnessBanner(data) {
   const root = $("freshness-banner");
   if (!root) return;
@@ -935,7 +970,7 @@ function renderFreshnessBanner(data) {
     root.hidden = false;
     root.dataset.tone = "warn";
     if (titleEl) titleEl.textContent = `${stale.length} 个节点快照过期`;
-    if (detailEl) detailEl.textContent = `${stale.join("、")}；请刷新 GPU 后再判断占用。`;
+    if (detailEl) detailEl.textContent = `${stale.join("、")}；自动巡检会拉取 GPU 快照，也可点「刷新 GPU」。`;
     return;
   }
   if (summary.nodes_unknown) {
@@ -2566,6 +2601,7 @@ function applyOverview(data) {
     : `${strategyLabel} · 主控统一调度`;
   renderSummary(data.summary || {});
   renderFreshnessBanner(data);
+  renderAutoOps(data.auto_ops || {});
   syncTerminalTargetState();
   fillTargetSelects(data.nodes || []);
   renderPresets(data.exec_presets || []);

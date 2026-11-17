@@ -236,6 +236,7 @@ from ws import (  # noqa: E402
 STATIC_DIR = WEB_DIR / "static"
 ENDPOINTS_FILE = STATE_DIR / "endpoints.json"
 ENDPOINT_HEALTH_FILE = STATE_DIR / "endpoint_health.json"
+AUTO_OPS_FILE = STATE_DIR / "auto_ops.json"
 HOST_METRICS_FILE = STATE_DIR / "host_metrics.json"
 LEASES_FILE = STATE_DIR / "leases.json"
 QUEUE_FILE = STATE_DIR / "queue.json"
@@ -1114,12 +1115,14 @@ def _build_overview(*, light: bool = False) -> dict:
             "generated_at": host_metrics.get("generated_at"),
             "nodes": host_by_node,
         }
+        payload["auto_ops"] = _read_json(AUTO_OPS_FILE, {})
         return payload
 
     payload["probe"] = probe
     payload["cluster"] = cluster_doc
     payload["endpoints"] = endpoints
     payload["host_metrics"] = host_metrics
+    payload["auto_ops"] = _read_json(AUTO_OPS_FILE, {})
     payload["lb"] = build_lb_plan("least_latency")
     return payload
 
@@ -4153,6 +4156,151 @@ def start_liveness_monitor(stop_event: threading.Event) -> threading.Thread | No
     return thread
 
 
+def _auto_ops_cfg(cluster: dict) -> dict:
+    """自动巡检配置：cluster.health.auto_refresh + cluster.assistant.auto_insight。"""
+    health = (cluster.get("health") or {}) if isinstance(cluster, dict) else {}
+    raw = health.get("auto_refresh", True)
+    if raw is False:
+        return {"enabled": False}
+    cfg = raw if isinstance(raw, dict) else {}
+    assistant = (cluster.get("assistant") or {}) if isinstance(cluster, dict) else {}
+    return {
+        "enabled": bool(cfg.get("enabled", True)),
+        "interval_sec": max(20, int(cfg.get("interval_sec") or 60)),
+        "api_stale_sec": max(30, int(cfg.get("api_stale_sec") or 300)),
+        "gpu_stale_sec": max(60, int(cfg.get("gpu_stale_sec") or 1800)),
+        "gpu_min_interval_sec": max(60, int(cfg.get("gpu_min_interval_sec") or 1800)),
+        "ai_enabled": bool(assistant.get("auto_insight", True)),
+        "ai_interval_sec": max(300, int(assistant.get("auto_insight_interval_sec") or 1800)),
+    }
+
+
+def _age_sec(path) -> float | None:
+    try:
+        return max(0.0, time.time() - path.stat().st_mtime)
+    except OSError:
+        return None
+
+
+def _auto_ops_tick(cluster: dict, cfg: dict, state: dict) -> dict:
+    """一轮自动巡检：数据过期才采集；有异常才让 AI 做只读解读。"""
+    now_epoch = time.time()
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_epoch))
+    actions: list[str] = []
+    state.update(
+        {
+            "enabled": bool(cfg.get("enabled")),
+            "checked_at": stamp,
+            "interval_sec": cfg.get("interval_sec"),
+        }
+    )
+    if not cfg.get("enabled"):
+        return state
+
+    api_age = _age_sec(ENDPOINT_HEALTH_FILE)
+    if api_age is None or api_age > cfg["api_stale_sec"]:
+        result = run_cli(["health", "--json"], timeout=120)
+        state["last_api"] = {
+            "at": stamp,
+            "at_epoch": now_epoch,
+            "ok": result.get("rc") == 0,
+            "age_sec": round(api_age, 1) if api_age is not None else None,
+        }
+        actions.append("api")
+
+    gpu_age = _age_sec(RESOURCES_FILE)
+    last_gpu = (state.get("last_gpu") or {}).get("at_epoch") or 0
+    if (gpu_age is None or gpu_age > cfg["gpu_stale_sec"]) and now_epoch - last_gpu > cfg["gpu_min_interval_sec"]:
+        result = run_cli(["gpu", "refresh", "--quiet"], timeout=180)
+        state["last_gpu"] = {
+            "at": stamp,
+            "at_epoch": now_epoch,
+            "ok": result.get("rc") == 0,
+            "age_sec": round(gpu_age, 1) if gpu_age is not None else None,
+        }
+        invalidate_overview_cache()
+        actions.append("gpu")
+
+    overview = build_overview(light=True)
+    summary = overview.get("summary") or {}
+    anomalies = bool(
+        actions
+        or summary.get("nodes_offline")
+        or summary.get("offline_nodes")
+        or summary.get("nodes_degraded")
+        or summary.get("stale_nodes")
+        or summary.get("nodes_unknown")
+    )
+    last_ai = (state.get("ai") or {}).get("at_epoch") or 0
+    if (
+        cfg.get("ai_enabled")
+        and anomalies
+        and now_epoch - last_ai > cfg["ai_interval_sec"]
+        and assistant_status(cluster).get("ready")
+    ):
+        notices = list_notices(limit=20).get("items") or []
+        findings = []
+        try:
+            diag = run_cli(["diagnose", "check"], timeout=60)
+            parsed = json.loads(diag.get("stdout") or "{}")
+            findings = parsed.get("findings") if isinstance(parsed, dict) else []
+        except (json.JSONDecodeError, TypeError):
+            findings = []
+        out = analyze_dashboard(
+            overview=overview,
+            notices=notices,
+            findings=findings if isinstance(findings, list) else [],
+            cluster=cluster,
+        )
+        state["ai"] = {
+            "at": stamp,
+            "at_epoch": now_epoch,
+            "ok": bool(out.get("ok")),
+            "text": out.get("reply") or out.get("error") or "",
+            "model": out.get("model"),
+        }
+        actions.append("ai")
+    state["actions"] = actions
+    return state
+
+
+def start_auto_ops_monitor(stop_event: threading.Event) -> threading.Thread | None:
+    """后台自动巡检：健康数据过期自动采集，异常时触发 AI 只读解读。"""
+    if str(os.environ.get("GPU_CONTROL_AUTO_REFRESH", "1")).lower() in {"0", "false", "off", "no"}:
+        return None
+
+    def loop() -> None:
+        while not stop_event.is_set():
+            cluster = _read_json(cluster_file(), {})
+            cfg = _auto_ops_cfg(cluster)
+            interval = cfg.get("interval_sec") or 60
+            if cfg.get("enabled") and not stop_event.is_set():
+                acquired = _action_lock.acquire(blocking=False)
+                if acquired:
+                    try:
+                        state = _read_json(AUTO_OPS_FILE, {})
+                        if not isinstance(state, dict):
+                            state = {}
+                        state = _auto_ops_tick(cluster, cfg, state)
+                        state_atomic_write_json(AUTO_OPS_FILE, state)
+                    except Exception as exc:  # noqa: BLE001 — 后台线程不能拖垮 UI
+                        print(f"auto-ops error: {exc}", file=sys.stderr, flush=True)
+                    finally:
+                        _action_lock.release()
+                else:
+                    print("auto-ops: skip (another action is running)", file=sys.stderr, flush=True)
+            else:
+                state = _read_json(AUTO_OPS_FILE, {})
+                if isinstance(state, dict):
+                    state["enabled"] = bool(cfg.get("enabled"))
+                    state_atomic_write_json(AUTO_OPS_FILE, state)
+            stop_event.wait(interval)
+
+    thread = threading.Thread(target=loop, daemon=True, name="auto-ops")
+    thread.start()
+    return thread
+
+
 def main() -> None:
     # 默认仅回环；cmd_ui 在运维明确要暴露局域网时传入 cluster.control.ui_host。
     host = os.environ.get("GPU_CONTROL_UI_HOST", "127.0.0.1")
@@ -4194,6 +4342,7 @@ def main() -> None:
     print(f"gpu-control UI listening on http://{host}:{port}")
     print(f"project: {PROJECT_DIR}")
     start_liveness_monitor(stopping)
+    start_auto_ops_monitor(stopping)
     try:
         httpd.serve_forever()
     finally:

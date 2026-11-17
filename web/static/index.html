@@ -135,6 +135,7 @@
                 <div><span>GPU</span><strong id="q-gpu">-</strong></div>
               </div>
               <p class="meta quality-note">数值 = 正常 / 总数 · 最近一次采集年龄</p>
+              <p class="meta auto-ops-line" id="auto-ops-line" role="status" aria-live="polite">自动巡检：读取中…</p>
             </div>
           </section>
 
@@ -244,6 +245,13 @@
               <span class="meta" id="ai-analyze-at"></span>
             </summary>
             <div id="ai-analyze-box" class="snippet notices-ai markdown">点「AI 解读」结合公告与 diagnose 给出只读建议。未配置上游时会引导去助手设置。</div>
+          </details>
+          <details class="fold notices-ai-wrap" id="auto-ai-fold" hidden>
+            <summary class="notices-ai-h">
+              <strong>AI 自动巡检</strong>
+              <span class="meta" id="auto-ai-at"></span>
+            </summary>
+            <div id="auto-ai-box" class="snippet notices-ai markdown"></div>
           </details>
         </section>
       </section>
