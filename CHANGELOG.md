@@ -11,6 +11,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- 容器镜像 `org.opencontainers.image.version` 被 metadata-action 的默认标签覆盖成 `1.0`；现在显式写入完整版本与 revision
+
 ---
 
 ## [1.0.1] - 2026-11-17
