@@ -5172,3 +5172,26 @@ a[aria-disabled="true"]:hover {
   word-break: keep-all;
   overflow-wrap: anywhere;
 }
+
+/* 平板 / 手机导航换行而不是横向截断 */
+@media (max-width: 1279px) {
+  .rail-nav {
+    flex-wrap: wrap;
+    overflow: visible;
+    mask-image: none;
+  }
+
+  .nav-group {
+    flex-wrap: wrap;
+  }
+}
+
+/* 小徽标不换行：8 GPU / 4 GPU 保持一行 */
+.chip {
+  white-space: nowrap;
+}
+
+.list .item > .chip,
+.list .item > strong.chip {
+  flex: 0 0 auto;
+}
