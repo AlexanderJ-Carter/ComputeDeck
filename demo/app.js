@@ -15,6 +15,7 @@
   let counted = false;
   let gpuTimer = 0;
   let lbTimer = 0;
+  let cfgTimer = 0;
   const particleCtl = new Map();
 
   dotsRoot.innerHTML = slides
@@ -49,6 +50,8 @@
       startGpuShuffle();
       animateRing();
     } else stopGpuShuffle();
+    if (id === "s6") startCfgDemo();
+    else stopCfgDemo();
     if (id === "s7") startLbDemo();
     else stopLbDemo();
     if (id === "s9") {
@@ -207,6 +210,36 @@
   function stopGpuShuffle() {
     window.clearInterval(gpuTimer);
     gpuTimer = 0;
+  }
+
+  function stopCfgDemo() {
+    window.clearInterval(cfgTimer);
+    cfgTimer = 0;
+  }
+
+  function startCfgDemo() {
+    const rail = [...document.querySelectorAll("#cfg-rail button")];
+    const scenes = [...document.querySelectorAll("#cfg-pane .cfg-scene")];
+    const status = document.getElementById("cfg-status");
+    if (!rail.length || !scenes.length) return;
+    stopCfgDemo();
+    const labels = ["已写入 · 节点在线", "已写入 · SSH 可用", "已写入 · 鉴权就绪", "检查通过 · 3/4"];
+    let idx = 0;
+    const paint = () => {
+      rail.forEach((btn, i) => btn.classList.toggle("on", i === idx));
+      scenes.forEach((scene, i) => scene.classList.toggle("is-on", i === idx));
+      if (status) status.textContent = labels[idx] || labels[0];
+      // 重触发打字/勾选动画：卸掉再挂回 is-on 后由 CSS 重播
+      const on = scenes[idx];
+      if (on && !reduce) {
+        on.classList.remove("is-on");
+        void on.offsetWidth;
+        on.classList.add("is-on");
+      }
+      idx = (idx + 1) % scenes.length;
+    };
+    paint();
+    if (!reduce) cfgTimer = window.setInterval(paint, 2200);
   }
 
   function stopLbDemo() {

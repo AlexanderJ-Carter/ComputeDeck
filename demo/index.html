@@ -122,13 +122,13 @@ GPU 3  76%  PID  9921  ???</pre>
           <li><strong>看板</strong><span>总览 · 入口 · 运维 · 趋势 · 监管</span></li>
           <li><strong>工作台</strong><span>主内容 + 底部终端</span></li>
           <li><strong>Job</strong><span>推理 / 训练 / Ray / Docker</span></li>
-          <li><strong>配置</strong><span>左侧菜单，一页一个主题</span></li>
+          <li><strong>配置</strong><span>一项一页 · 保存即检</span></li>
           <li><strong>入口</strong><span>统一推理入口 · 远程接入</span></li>
           <li><strong>模型栈</strong><span>拉取 · 校验 · 装训练/推理栈</span></li>
           <li><strong>助手</strong><span>对话操作 · 写前确认 · 监管建议</span></li>
           <li><strong>Agent</strong><span>MCP / OpenAPI 同一套</span></li>
         </ol>
-        <p class="rail-foot reveal d4">日常在界面里配完即可；复杂场景再改本地配置文件。</p>
+        <p class="rail-foot reveal d4">界面配完就能用；进阶再改本地文件。</p>
       </div>
     </section>
 
@@ -195,28 +195,55 @@ GPU 3  76%  PID  9921  ???</pre>
       <div class="slide-inner split">
         <div>
           <p class="eyebrow reveal">怎么配</p>
-          <h2 class="reveal d1">左边点一页，配完就够用</h2>
-          <p class="body reveal d2">SSH、节点、任务、登录、远程接入分开设，不会挤在一张长表里。保存后会自动跑就绪检查；进阶再改本地配置文件。</p>
+          <h2 class="reveal d1">界面里配完就能跑</h2>
+          <p class="body reveal d2">节点、连接、登录各管一页。保存后自动检查；进阶再改本地文件。</p>
         </div>
-        <div class="cfg-mock reveal d3" aria-hidden="true">
-          <div class="cfg-mock-head"><strong>配置中心</strong><span>左侧菜单</span></div>
-          <ul>
-            <li class="cfg-group">日常配置</li>
-            <li class="on">基础连接 <em>主控 SSH</em></li>
-            <li>节点清单 <em>主机与 GPU</em></li>
-            <li>Job 模板 <em>启停命令</em></li>
-            <li>巡检守护 <em>自动重启</em></li>
-            <li>登录鉴权 <em>密码 / 企业登录</em></li>
-            <li>远程接入 <em>外网进来</em></li>
-            <li class="cfg-group">检查</li>
-            <li>就绪检查 <em>缺什么一眼看见</em></li>
-            <li>日志诊断 <em>出问题好查</em></li>
-            <li>AI / MCP <em>助手与 Agent</em></li>
-            <li class="cfg-group">参考</li>
-            <li>文档与 API <em>手册</em></li>
-            <li>高级配置 <em>本地文件</em></li>
-          </ul>
-          <p class="cfg-mock-foot">日常在 UI 配完即可；复杂项再动 <code>config/local</code></p>
+        <div class="cfg-stage reveal d3" id="cfg-stage" aria-hidden="true">
+          <div class="cfg-chrome"><i></i><i></i><i></i><span>配置</span></div>
+          <div class="cfg-body">
+            <nav class="cfg-rail" id="cfg-rail">
+              <button type="button" class="on" data-cfg="0"><i></i><span>节点</span></button>
+              <button type="button" data-cfg="1"><i></i><span>连接</span></button>
+              <button type="button" data-cfg="2"><i></i><span>登录</span></button>
+              <button type="button" data-cfg="3"><i></i><span>就绪</span></button>
+            </nav>
+            <div class="cfg-pane" id="cfg-pane">
+              <article class="cfg-scene is-on" data-scene="0">
+                <header><strong>节点</strong><em>3 台在线</em></header>
+                <div class="cfg-hosts">
+                  <div class="cfg-host on"><b>gpu-1</b><span>8×H100</span><i></i></div>
+                  <div class="cfg-host on"><b>gpu-2</b><span>8×H100</span><i></i></div>
+                  <div class="cfg-host"><b>gpu-3</b><span>4×A100</span><i></i></div>
+                </div>
+              </article>
+              <article class="cfg-scene" data-scene="1">
+                <header><strong>连接</strong><em>SSH</em></header>
+                <div class="cfg-form">
+                  <label><span>Host</span><b class="cfg-type">10.0.0.12</b></label>
+                  <label><span>User</span><b class="cfg-type delay">deploy</b></label>
+                  <label><span>Key</span><b class="cfg-type delay2">••••••••</b></label>
+                </div>
+              </article>
+              <article class="cfg-scene" data-scene="2">
+                <header><strong>登录</strong><em>鉴权</em></header>
+                <div class="cfg-auth">
+                  <div class="cfg-toggle on"><i></i><span>密码</span></div>
+                  <div class="cfg-toggle"><i></i><span>企业登录</span></div>
+                  <div class="cfg-token"><span>API Token</span><code>cd_••••8f2a</code></div>
+                </div>
+              </article>
+              <article class="cfg-scene" data-scene="3">
+                <header><strong>就绪</strong><em>自动检查</em></header>
+                <ul class="cfg-checks">
+                  <li class="ok"><i></i><span>主控</span></li>
+                  <li class="ok"><i></i><span>SSH</span></li>
+                  <li class="ok"><i></i><span>入口</span></li>
+                  <li class="wait"><i></i><span>AI</span></li>
+                </ul>
+              </article>
+            </div>
+          </div>
+          <div class="cfg-foot"><span class="cfg-save">保存</span><span class="cfg-status" id="cfg-status">已写入 · 检查通过</span></div>
         </div>
       </div>
     </section>
