@@ -2816,7 +2816,13 @@ h3 {
   transition: opacity 0.35s ease, transform 0.35s ease;
 }
 
+.cfg-scene[hidden] {
+  display: none !important;
+}
+
 .cfg-scene.is-on {
+  position: relative;
+  inset: auto;
   opacity: 1;
   transform: none;
   pointer-events: auto;

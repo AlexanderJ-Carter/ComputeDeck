@@ -14,10 +14,10 @@
   <link rel="canonical" href="https://compute.alexander.xin/" />
   <meta name="theme-color" content="#eef3f0" />
   <link rel="icon" href="assets/logo.svg" type="image/svg+xml" />
-  <link rel="preload" href="styles.css" as="style" />
+  <link rel="preload" href="styles.css?v=20261118c" as="style" />
   <link rel="preload" href="assets/logo.svg" as="image" type="image/svg+xml" />
   <!-- 主样式先加载，不依赖外网字体；字体作为可选增强 -->
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=20261118c" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet"
@@ -216,7 +216,7 @@ GPU 3  76%  PID  9921  ???</pre>
                   <div class="cfg-host"><b>gpu-3</b><span>4×A100</span><i></i></div>
                 </div>
               </article>
-              <article class="cfg-scene" data-scene="1">
+              <article class="cfg-scene" data-scene="1" hidden>
                 <header><strong>连接</strong><em>SSH</em></header>
                 <div class="cfg-form">
                   <label><span>Host</span><b class="cfg-type">10.0.0.12</b></label>
@@ -224,7 +224,7 @@ GPU 3  76%  PID  9921  ???</pre>
                   <label><span>Key</span><b class="cfg-type delay2">••••••••</b></label>
                 </div>
               </article>
-              <article class="cfg-scene" data-scene="2">
+              <article class="cfg-scene" data-scene="2" hidden>
                 <header><strong>登录</strong><em>鉴权</em></header>
                 <div class="cfg-auth">
                   <div class="cfg-toggle on"><i></i><span>密码</span></div>
@@ -232,7 +232,7 @@ GPU 3  76%  PID  9921  ???</pre>
                   <div class="cfg-token"><span>API Token</span><code>cd_••••8f2a</code></div>
                 </div>
               </article>
-              <article class="cfg-scene" data-scene="3">
+              <article class="cfg-scene" data-scene="3" hidden>
                 <header><strong>就绪</strong><em>自动检查</em></header>
                 <ul class="cfg-checks">
                   <li class="ok"><i></i><span>主控</span></li>
@@ -470,7 +470,7 @@ gpu-control doctor && gpu-control ui --background
     </section>
   </main>
 
-  <script src="app.js" defer></script>
+  <script src="app.js?v=20261118c" defer></script>
 </body>
 
 </html>

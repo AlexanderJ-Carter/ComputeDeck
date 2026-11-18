@@ -45,6 +45,9 @@
       progressBar.style.width = `${((index + 1) / slides.length) * 100}%`;
     }
     const id = slides[index]?.id;
+    if (id && location.hash !== `#${id}`) {
+      history.replaceState(null, "", `#${id}`);
+    }
     if (id === "s1") runCounters();
     if (id === "s4") {
       startGpuShuffle();
@@ -92,7 +95,21 @@
     );
     slides.forEach((s) => io.observe(s));
   }
-  setActive(0);
+
+  // 刷新 / 带 hash 进入时，禁止浏览器恢复错位滚动；对齐目标页再激活动效。
+  try {
+    history.scrollRestoration = "manual";
+  } catch (_) {
+    /* ignore */
+  }
+  const bootId = (location.hash || "#s1").replace(/^#/, "") || "s1";
+  const bootIdx = Math.max(
+    0,
+    slides.findIndex((s) => s.id === bootId)
+  );
+  const startIdx = bootIdx >= 0 ? bootIdx : 0;
+  setActive(startIdx);
+  slides[startIdx].scrollIntoView({ behavior: "auto", block: "start" });
 
   window.addEventListener("keydown", (ev) => {
     const tag = (ev.target && ev.target.tagName) || "";
@@ -227,14 +244,17 @@
     let idx = 0;
     const paint = () => {
       rail.forEach((btn, i) => btn.classList.toggle("on", i === idx));
-      scenes.forEach((scene, i) => scene.classList.toggle("is-on", i === idx));
+      scenes.forEach((scene, i) => {
+        const on = i === idx;
+        scene.classList.toggle("is-on", on);
+        scene.hidden = !on;
+      });
       if (status) status.textContent = labels[idx] || labels[0];
-      // 重触发打字/勾选动画：卸掉再挂回 is-on 后由 CSS 重播
-      const on = scenes[idx];
-      if (on && !reduce) {
-        on.classList.remove("is-on");
-        void on.offsetWidth;
-        on.classList.add("is-on");
+      const active = scenes[idx];
+      if (active && !reduce) {
+        active.classList.remove("is-on");
+        void active.offsetWidth;
+        active.classList.add("is-on");
       }
       idx = (idx + 1) % scenes.length;
     };
