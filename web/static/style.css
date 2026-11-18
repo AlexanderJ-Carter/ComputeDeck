@@ -614,8 +614,10 @@ button.wide {
 
 .mosaic {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  align-items: start;
+  grid-auto-rows: auto;
 }
 
 .cluster-kpis {
@@ -625,7 +627,7 @@ button.wide {
   margin: 2px 0 12px;
 }
 
-.cluster-kpis > div {
+.cluster-kpis>div {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1892,8 +1894,9 @@ code {
 
 .metrics-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  align-items: start;
 }
 
 .metric-card {
@@ -2309,12 +2312,12 @@ summary:focus-visible,
 
 .trend-kpis {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 8px;
-  margin-bottom: 10px;
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
-.trend-kpis > div {
+.trend-kpis>div {
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 8px 10px;
@@ -2353,7 +2356,7 @@ summary:focus-visible,
 
 .trend-chart svg {
   width: 100%;
-  height: 72px;
+  height: 140px;
   display: block;
 }
 
@@ -2384,8 +2387,9 @@ summary:focus-visible,
 
 @media (max-width: 960px) {
   .trend-kpis {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
   .trend-charts {
     grid-template-columns: 1fr;
   }
@@ -2940,20 +2944,57 @@ summary:focus-visible,
   color: var(--bad);
 }
 
-/* ——— single-screen dashboard ——— */
-.dash-top {
-  display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(0, 1.15fr) minmax(240px, 1fr);
-  gap: 12px;
-  margin-bottom: 12px;
-  align-items: stretch;
+/* ——— dashboard pages ——— */
+.dash-pages {
+  display: block;
+  min-height: 0;
 }
 
-.dash-top>.panel {
+.dash-page[hidden] {
+  display: none !important;
+}
+
+.dash-page[data-dash-pane="status"] {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.dash-page[data-dash-pane="status"] > .panel {
   margin-bottom: 0;
   min-width: 0;
-  padding: 14px 16px;
-  min-height: 220px;
+  padding: 18px 20px;
+}
+
+.dash-page {
+  height: auto;
+  min-height: auto;
+  overflow: visible;
+}
+
+.dash-page.dash-access,
+.dash-page.dash-actions,
+.dash-page.dash-trends,
+.dash-page.dash-notices {
+  margin: 0;
+  padding: 18px 20px 22px;
+  height: auto;
+  max-height: none;
+  overflow: visible;
+}
+
+.dash-action-grid {
+  display: grid;
+  gap: 24px;
+  margin-top: 10px;
+}
+
+.dash-action-group h3 {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 650;
 }
 
 .dash-health {
@@ -3301,10 +3342,15 @@ summary:focus-visible,
   flex: 1 1 auto;
   min-width: 0;
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: 11px;
   overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  line-height: 1.35;
 }
 
 .status-row .chip {
@@ -3328,10 +3374,7 @@ summary:focus-visible,
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
-  padding-top: 10px;
-  border-top: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
 }
 
 .quick-deploy {
@@ -3454,33 +3497,15 @@ summary:focus-visible,
 }
 
 /* ——— responsive dashboard ——— */
-@media (max-width: 1240px) {
-  .dash-top {
-    grid-template-columns: minmax(240px, 1fr) minmax(0, 1.2fr);
-  }
-
-  .dash-top>.panel {
-    min-height: 0;
-  }
-
-  .dash-access {
-    grid-column: 1 / -1;
+@media (max-width: 1100px) {
+  .dash-page[data-dash-pane="status"] {
+    grid-template-columns: 1fr;
   }
 
   .status-list {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     max-height: none;
-  }
-}
-
-@media (max-width: 1100px) {
-  .dash-top {
-    grid-template-columns: 1fr;
-  }
-
-  .dash-access {
-    grid-column: auto;
   }
 
   .status-list {
@@ -3600,6 +3625,7 @@ summary:focus-visible,
     flex: 1 1 100px;
   }
 }
+
 /* 远程接入卡片 */
 .dash-remote {
   margin-bottom: 12px;
@@ -3629,8 +3655,8 @@ summary:focus-visible,
   word-break: break-word;
 }
 
-.assistant-msg.markdown > *:first-child,
-.markdown > *:first-child {
+.assistant-msg.markdown>*:first-child,
+.markdown>*:first-child {
   margin-top: 0;
 }
 
@@ -3810,8 +3836,8 @@ summary:focus-visible,
 }
 
 .dash-trends .trend-charts {
-  max-height: 300px;
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
 }
 
 .remote-body {
@@ -3819,7 +3845,7 @@ summary:focus-visible,
   overflow: auto;
 }
 
-.dash-more-grid > .panel {
+.dash-more-grid>.panel {
   max-height: 440px;
   overflow: auto;
 }
@@ -3993,7 +4019,7 @@ button.tiny {
   border-radius: 8px;
 }
 
-.topbar-actions > button {
+.topbar-actions>button {
   height: var(--control-h);
   font-size: var(--fs-sm);
 }
@@ -4013,7 +4039,7 @@ textarea {
   font-size: var(--fs-sm);
 }
 
-.field > span {
+.field>span {
   font-size: var(--fs-xs);
 }
 
@@ -4093,7 +4119,8 @@ textarea {
 .main,
 .view,
 .panel,
-.dash-top,
+.dash-pages,
+.dash-page,
 .dash-grid,
 .setup-grid,
 .split,
@@ -4105,7 +4132,7 @@ textarea {
 
 .meta,
 .kv,
-.list .item > div,
+.list .item>div,
 .remote-body p,
 .freshness-copy {
   overflow-wrap: anywhere;
@@ -4202,16 +4229,16 @@ body {
     padding: 14px 16px 24px;
   }
 
-  .dash-top {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  .dash-page[data-dash-pane="status"] {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .dash-access {
-    grid-column: 1 / -1;
+    grid-column: auto;
   }
 
   .trend-kpis {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   }
 
   .trend-charts {
@@ -4267,7 +4294,7 @@ body {
     padding: 12px;
   }
 
-  .dash-top,
+  .dash-page[data-dash-pane="status"],
   .dash-grid,
   .dash-grid-2,
   .dash-grid-3,
@@ -4373,13 +4400,14 @@ body {
     max-width: 1560px;
   }
 
-  .trend-charts {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+  .dash-page.dash-trends .trend-charts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 /* 触摸设备不保留 hover 位移 */
 @media (hover: none) {
+
   .node-tile:hover,
   .gpu-node-row:hover {
     transform: none;
@@ -4397,6 +4425,7 @@ body {
   .rail {
     position: sticky;
   }
+
   .rail-nav {
     mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 18px), transparent 100%);
   }
@@ -4408,8 +4437,8 @@ body {
     overflow-x: auto;
   }
 
-  .topbar-actions > button,
-  .topbar-actions > .switch {
+  .topbar-actions>button,
+  .topbar-actions>.switch {
     flex: 0 0 auto;
   }
 
@@ -4435,8 +4464,8 @@ body {
     flex: 1 1 100%;
   }
 
-  .panel-h > .btn-row,
-  .panel-h > div {
+  .panel-h>.btn-row,
+  .panel-h>div {
     max-width: 100%;
   }
 
@@ -4490,10 +4519,14 @@ body {
 }
 
 .status-hint {
-  white-space: nowrap;
+  white-space: normal;
   overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   text-overflow: ellipsis;
-  line-height: 1.3;
+  line-height: 1.35;
 }
 
 .dash-access .status-row .chip {
@@ -4579,6 +4612,18 @@ body {
   flex-direction: column;
 }
 
+.dash-page.dash-access .status-list {
+  gap: 8px;
+}
+
+.dash-page.dash-access .status-row {
+  padding: 10px 12px;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+
 .status-foot {
   display: flex;
   flex-wrap: wrap;
@@ -4587,7 +4632,7 @@ body {
   padding-top: 8px;
 }
 
-.config-hero > div:first-child {
+.config-hero>div:first-child {
   min-width: 0;
   flex: 1 1 320px;
 }
@@ -4712,7 +4757,7 @@ body {
   line-height: 1.6;
 }
 
-.topo-line + .topo-line {
+.topo-line+.topo-line {
   margin-top: 2px;
 }
 
@@ -4779,7 +4824,7 @@ body {
   row-gap: 8px;
 }
 
-.panel-h > * {
+.panel-h>* {
   min-width: 0;
 }
 
@@ -5170,6 +5215,7 @@ a[aria-disabled="true"]:hover {
 
 /* 移动端触摸目标：覆盖上面统一到 36/28 的桌面高度 */
 @media (max-width: 767px) {
+
   .btn,
   a.btn {
     min-height: 40px;
@@ -5218,8 +5264,8 @@ a[aria-disabled="true"]:hover {
   white-space: nowrap;
 }
 
-.list .item > .chip,
-.list .item > strong.chip {
+.list .item>.chip,
+.list .item>strong.chip {
   flex: 0 0 auto;
 }
 
@@ -5354,7 +5400,7 @@ a[aria-disabled="true"]:hover {
   pointer-events: none;
 }
 
-.btn-row > .cd-select,
+.btn-row>.cd-select,
 .panel-h .cd-select,
 .snippet-controls .cd-select,
 .nodes-toolbar .cd-select {
@@ -5449,28 +5495,63 @@ a[aria-disabled="true"]:hover {
 
 /* 小动画：提示、弹层、菜单与异常状态点 */
 @keyframes toast-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @keyframes banner-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @keyframes menu-in {
-  from { opacity: 0; transform: translateY(-3px) scale(0.99); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.99);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @keyframes assistant-in {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @keyframes dot-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.45; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.45;
+  }
 }
 
 .toast:not([hidden]) {
@@ -5692,12 +5773,14 @@ a[aria-disabled="true"]:hover {
 }
 
 @keyframes assistant-dot {
+
   0%,
   80%,
   100% {
     opacity: 0.28;
     transform: translateY(0);
   }
+
   40% {
     opacity: 1;
     transform: translateY(-2px);
@@ -6365,6 +6448,7 @@ a[aria-disabled="true"]:hover {
     opacity: 0;
     transform: translateY(4px);
   }
+
   to {
     opacity: 1;
     transform: none;
@@ -6406,9 +6490,9 @@ a[aria-disabled="true"]:hover {
   align-items: start;
 }
 
-.config-page[data-config-panel="jobs"] > .panel,
-.config-page[data-config-panel="ops"] > .panel,
-.config-page[data-config-panel="auth"] > .panel {
+.config-page[data-config-panel="jobs"]>.panel,
+.config-page[data-config-panel="ops"]>.panel,
+.config-page[data-config-panel="auth"]>.panel {
   max-width: 860px;
 }
 
@@ -6541,13 +6625,14 @@ a[aria-disabled="true"]:hover {
     opacity: 0;
     transform: translateY(4px);
   }
+
   to {
     opacity: 1;
     transform: none;
   }
 }
 
-.section-page > .panel {
+.section-page>.panel {
   margin: 0;
 }
 
@@ -6604,271 +6689,658 @@ a[aria-disabled="true"]:hover {
 }
 
 /* ==========================================================================
-   单屏应用外壳 — 页面刚好占满一屏
+   单屏应用外壳 — 一屏一页，分区切换，可读密度
+   仅在宽屏侧栏布局（≥1280）启用硬锁；更窄交给下方自然滚动，避免与平板顶栏冲突。
    ========================================================================== */
 
-html,
-body {
-  height: 100%;
+/* 分区导航（所有宽度共用） */
+.page-toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
 }
 
-body {
+.page-toc-btn,
+.page-toc button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel-2) 80%, transparent);
+  color: var(--muted);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.page-toc-btn:hover,
+.page-toc button:hover {
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--line));
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.page-toc-btn.active,
+.page-toc button.active {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+
+.dash-actions--pulse {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+
+.dash-page[hidden] {
+  display: none !important;
+}
+
+.status-hint {
+  white-space: normal;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  text-overflow: ellipsis;
+  line-height: 1.35;
+}
+
+.terminal-metrics {
+  padding: 0;
   overflow: hidden;
 }
 
-.layout {
-  height: 100vh;
-  min-height: 0;
-}
-
-.rail {
-  height: 100vh;
-}
-
-.main {
-  height: 100vh;
-  min-height: 0;
+.terminal-metrics-h {
+  list-style: none;
+  cursor: pointer;
+  margin: 0;
+  padding: 12px 14px;
   display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding: 12px 18px 12px;
-}
-
-.topbar,
-.subnav {
-  flex: 0 0 auto;
-}
-
-.view.active {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: auto;
-  overflow-x: hidden;
-  scrollbar-width: thin;
-}
-
-.console-wrap {
-  flex: 0 0 auto;
-  margin-top: 6px;
-}
-
-/* —— 看板：顶部状态 / 操作 / 底部趋势 + 公告 —— */
-.view.active.dash {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1.15fr) auto minmax(0, 0.95fr);
+  align-items: center;
+  justify-content: space-between;
   gap: 10px;
-  overflow: hidden;
 }
 
-.dash > #freshness-banner {
-  grid-row: 1;
+.terminal-metrics-h::-webkit-details-marker {
+  display: none;
 }
 
-.dash > .page-toc {
-  grid-row: 2;
+.terminal-metrics-h::before {
+  content: "▸";
+  color: var(--muted);
+  font-size: 12px;
+  margin-right: 2px;
+}
+
+.terminal-metrics[open] .terminal-metrics-h::before {
+  content: "▾";
+}
+
+.terminal-metrics-h h2 {
   margin: 0;
+  font-size: 15px;
 }
 
-.dash > .dash-top {
-  grid-row: 3;
-  min-height: 0;
-  margin: 0;
+.terminal-metrics .metrics-grid {
+  padding: 0 14px 14px;
 }
 
-.dash > .dash-actions {
-  grid-row: 4;
-  margin: 0;
-}
-
-.dash > .dash-bottom {
-  grid-row: 5;
-  min-height: 0;
+/* 趋势默认可读尺寸 */
+.trend-kpis {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.9fr);
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
   gap: 12px;
-  overflow: hidden;
+  margin-bottom: 16px;
 }
 
-.dash-bottom > .panel {
+.trend-kpis>div {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--panel-2);
+  min-width: 0;
+}
+
+.trend-kpis span {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.trend-kpis strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 17px;
+  font-family: var(--mono);
+  line-height: 1.2;
+}
+
+.trend-charts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.trend-chart {
   margin: 0;
-  min-height: 0;
-  max-height: 100%;
-  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px 8px;
+  background: var(--panel-2);
+  min-width: 0;
 }
 
-.dash-top > .panel {
-  min-height: 0;
-  max-height: 100%;
-  overflow: auto;
+.trend-chart figcaption {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
 }
 
-/* —— 二级分页页面 —— */
-.view.active > .section-shell,
-.view.active > .config-shell {
-  flex: 1 1 auto;
-  min-height: 0;
+.trend-chart svg {
+  width: 100%;
+  height: 72px;
+  display: block;
 }
 
-.section-main,
-.config-main {
-  min-height: 0;
-  grid-template-rows: minmax(0, 1fr);
-}
-
-.section-page,
-.config-page {
-  min-height: 0;
-  align-content: start;
-}
-
-.section-page > .panel,
-.config-page > .panel {
-  min-height: 0;
-  max-height: 100%;
-  overflow: auto;
-}
-
-.section-page > .setup-grid,
-.config-page > .setup-grid {
-  min-height: 0;
-  max-height: 100%;
-  overflow: auto;
-}
-
-/* —— 节点：KPI 固定，卡片区内部滚动 —— */
-.view[data-view-panel="cluster"] > .panel {
-  flex: 1 1 auto;
-  min-height: 0;
+.trend-chart-axis {
   display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  margin: 0;
+  justify-content: space-between;
+  margin-top: 4px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  opacity: 0.8;
 }
 
-.view[data-view-panel="cluster"] .mosaic {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
+/* —— 宽屏侧栏：真正的单屏外壳 —— */
+@media (min-width: 1280px) {
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    overflow: hidden;
+  }
+
+  .layout {
+    height: 100vh;
+    min-height: 0;
+  }
+
+  .rail {
+    height: 100vh;
+  }
+
+  .main {
+    height: 100vh;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 14px 20px 12px;
+    max-width: none;
+  }
+
+  .topbar,
+  .subnav {
+    flex: 0 0 auto;
+  }
+
+  .view.active {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+  }
+
+  .console-wrap {
+    flex: 0 0 auto;
+    margin-top: 8px;
+  }
+
+  /* 看板：子页互斥；内容按自然高度，区域内滚动，不硬塞一屏 */
+  .view.active.dash {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow: hidden;
+  }
+
+  .dash > #freshness-banner,
+  .dash > .page-toc {
+    flex: 0 0 auto;
+    margin: 0;
+  }
+
+  .dash-pages {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    scrollbar-width: thin;
+    padding-bottom: 8px;
+  }
+
+  .dash-page[hidden] {
+    display: none !important;
+  }
+
+  .dash-page[data-dash-pane="status"] {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(280px, 1fr));
+    gap: 18px;
+    align-items: start;
+  }
+
+  .dash-page[data-dash-pane="status"] > .panel {
+    margin: 0;
+    padding: 20px 22px;
+    overflow: visible;
+  }
+
+  .dash-page[data-dash-pane="status"] .health-ring {
+    width: 120px;
+    height: 120px;
+  }
+
+  .dash-page[data-dash-pane="status"] .dash-node-strip {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .dash-page.dash-access {
+    max-width: 960px;
+  }
+
+  .dash-page.dash-access .status-list {
+    display: grid;
+    gap: 10px;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .dash-page.dash-actions {
+    max-width: 880px;
+  }
+
+  .dash-actions .dash-ops,
+  .dash-actions .dash-deploy {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    border: 0;
+    padding: 0;
+  }
+
+  .dash-actions .dash-ops button,
+  .dash-actions .dash-deploy button {
+    height: 40px;
+    padding: 0 16px;
+    font-size: 13px;
+  }
+
+  .dash-page.dash-trends,
+  .dash-page.dash-notices {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-width: 1100px;
+    min-height: auto;
+    height: auto;
+    overflow: visible;
+  }
+
+  .dash-trends .trend-charts {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .dash-trends .panel-h,
+  .dash-notices .panel-h {
+    margin-bottom: 0;
+  }
+
+  .trend-kpis {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(160px, 1fr));
+    gap: 12px;
+    margin: 0;
+  }
+
+  .trend-kpis > div {
+    padding: 14px 16px;
+    min-width: 0;
+  }
+
+  .trend-kpis span {
+    font-size: 12px;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+  }
+
+  .trend-kpis strong {
+    font-size: 22px;
+    margin-top: 8px;
+  }
+
+  .trend-charts {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .trend-chart {
+    padding: 14px 16px 12px;
+  }
+
+  .trend-chart figcaption {
+    font-size: 13px;
+    margin-bottom: 10px;
+  }
+
+  .trend-chart svg {
+    height: 140px;
+    min-height: 140px;
+    max-height: none;
+  }
+
+  .trend-chart-axis {
+    margin-top: 8px;
+    font-size: 11px;
+  }
+
+  .notices-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .notices-ai {
+    max-height: none;
+  }
+
+  /* 非看板页：内容按自然高度排布，只允许整页滚动，禁止小版块内嵌滚动 */
+  .view.active:not(.dash) {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow: auto;
+    align-content: start;
+  }
+
+  .view.active:not(.dash)>.panel,
+  .view.active:not(.dash)>.terminal-metrics {
+    flex: 0 0 auto;
+    margin: 0;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .view.active>.section-shell,
+  .view.active>.config-shell {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .section-main,
+  .config-main {
+    min-height: 0;
+    height: auto;
+    overflow: visible;
+  }
+
+  .section-page,
+  .config-page {
+    min-height: 0;
+    align-content: start;
+    overflow: visible;
+  }
+
+  .section-page>.panel,
+  .config-page>.panel,
+  .section-page>.setup-grid,
+  .config-page>.setup-grid {
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .view.active[data-view-panel="cluster"]>.panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow: visible;
+  }
+
+  .view.active[data-view-panel="cluster"] .mosaic {
+    flex: 0 0 auto;
+    overflow: visible;
+    align-items: start;
+    grid-auto-rows: auto;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  }
+
+  .view.active[data-view-panel="cluster"] .node-tile {
+    height: auto;
+    min-height: 0;
+    align-self: start;
+  }
+
+  .view.active[data-view-panel="toolkits"] {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+    gap: 12px;
+    align-items: start;
+    overflow: auto;
+  }
+
+  .view.active[data-view-panel="toolkits"]>.panel {
+    margin: 0;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .view.active[data-view-panel="terminal"] {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow: auto;
+  }
+
+  .view.active[data-view-panel="terminal"]>.terminal-panel {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+
+  .view.active[data-view-panel="terminal"] .term-host {
+    flex: 0 0 auto;
+    height: min(38vh, 400px);
+    min-height: 240px;
+  }
+
+  .view.active[data-view-panel="terminal"]>.terminal-metrics {
+    flex: 0 0 auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .terminal-metrics .metrics-grid {
+    max-height: none;
+    overflow: visible;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+
+  .terminal-metrics[open] {
+    max-height: none;
+  }
+
+  .section-page--two {
+    grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
+    align-items: start;
+  }
+
+  .section-page--two>.panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .section-page--two #jobs {
+    flex: 0 0 auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .section-shell,
+  .config-shell {
+    align-items: start;
+  }
+
+  .section-nav,
+  .config-side {
+    align-self: start;
+    position: sticky;
+    top: 0;
+  }
+
+  .config-page--two {
+    grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+    grid-template-rows: auto;
+    align-items: start;
+  }
+
+  .config-page--two>.config-page-h {
+    grid-column: 1 / -1;
+  }
+
+  .config-page--two>.panel {
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
+  }
 }
 
-/* —— 工具栈：左右分栏，各自滚动 —— */
-.view.active[data-view-panel="toolkits"] {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
-  gap: 12px;
-  overflow: hidden;
+/* 宽屏偏矮：子页区域滚动即可，不再压矮图表 */
+@media (min-width: 1280px) and (max-height: 899px) {
+  .dash-pages {
+    overflow: auto;
+  }
 }
 
-.view.active[data-view-panel="toolkits"] > .panel {
-  margin: 0;
-  min-height: 0;
-  overflow: auto;
-}
-
-/* —— 交互终端：终端占满，指标区限高 —— */
-.view.active[data-view-panel="terminal"] {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 12px;
-  overflow: hidden;
-}
-
-.view.active[data-view-panel="terminal"] > .panel {
-  margin: 0;
-  min-height: 0;
-}
-
-.view.active[data-view-panel="terminal"] > .panel:first-child {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.view.active[data-view-panel="terminal"] .term-host {
-  flex: 1 1 auto;
-  height: auto;
-  min-height: 200px;
-}
-
-.view.active[data-view-panel="terminal"] > .panel:last-child {
-  max-height: 24vh;
-  overflow: auto;
-}
-
-@media (max-width: 1100px) {
+/* 平板 / 窄屏 / 很矮：自然滚动，侧栏规则交给既有 1279 断点 */
+@media (max-width: 1279px),
+(max-height: 719px) {
   body {
     overflow: auto;
   }
 
+  .layout,
+  .rail,
   .main {
     height: auto;
-    min-height: 100vh;
+    min-height: 0;
+  }
+
+  .main {
     overflow: visible;
+    padding: 12px 16px 16px;
   }
 
   .view.active,
-  .view.active.dash {
+  .view.active.dash,
+  .view.active[data-view-panel="toolkits"],
+  .view.active[data-view-panel="terminal"] {
     display: flex;
     flex-direction: column;
     overflow: visible;
+    height: auto;
+    min-height: 0;
+    gap: 12px;
   }
 
-  .dash > .dash-bottom,
+  .dash-page[data-dash-pane="status"] {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .dash-pages,
   .view.active[data-view-panel="toolkits"] {
     display: block;
   }
 
-  .dash-bottom > .panel,
+  .dash-page[data-dash-pane="status"] > .panel,
   .view.active[data-view-panel="toolkits"] > .panel {
     margin-bottom: 12px;
+    max-height: none;
+    overflow: visible;
   }
-}
 
-/* 任务页：控制与列表左右分栏，各自内部滚动 */
-.section-page--two {
-  grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
-  align-items: stretch;
-}
+  .dash-page.dash-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
+    max-width: none;
+  }
 
-.section-page--two > .panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  max-height: 100%;
-  overflow: auto;
-}
+  .view.active[data-view-panel="terminal"] .term-host {
+    min-height: 240px;
+    height: min(52vh, 480px);
+  }
 
-.section-page--two #jobs {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
-}
+  .terminal-metrics .metrics-grid,
+  .terminal-metrics[open] {
+    max-height: none;
+  }
 
-@media (max-width: 1100px) {
-  .section-page--two {
+  .trend-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .trend-charts {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .dash-page.dash-access,
+  .dash-page.dash-trends,
+  .dash-page.dash-notices {
+    max-width: none;
+  }
+
+  .section-page--two,
+  .config-page--two {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+  }
+
+  .config-page--two>.config-page-h {
+    grid-column: auto;
+  }
 }
 
-/* 分页外壳：主体占满剩余高度，侧栏保持顶部对齐 */
-.section-shell,
-.config-shell {
-  align-items: stretch;
+@media (max-width: 960px) {
+  .trend-kpis {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
+
+  .dash-page[data-dash-pane="status"] {
+    grid-template-columns: 1fr;
+  }
 }
 
-.section-nav,
-.config-side {
-  align-self: start;
-}
-
-.section-main,
-.config-main {
-  height: 100%;
-}
-
-/* 登录密码 / 日志 / 远程接入 */
+/* 登录密码 / 日志 / 远程接入 / 助手（与布局无关，保留） */
 .auth-password-box {
   display: grid;
   gap: 8px;
@@ -6891,22 +7363,6 @@ body {
   margin: 12px 0;
   border: 0;
   border-top: 1px dashed var(--line);
-}
-
-.config-page--two {
-  grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
-  grid-template-rows: auto minmax(0, 1fr);
-  align-items: stretch;
-}
-
-.config-page--two > .config-page-h {
-  grid-column: 1 / -1;
-}
-
-.config-page--two > .panel {
-  min-height: 0;
-  max-height: 100%;
-  overflow: auto;
 }
 
 .log-view {
@@ -6936,130 +7392,6 @@ body {
   color: var(--bad);
 }
 
-@media (max-width: 1100px) {
-  .config-page--two {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto;
-  }
-
-  .config-page--two > .config-page-h {
-    grid-column: auto;
-  }
-}
-
-/* 趋势曲线：两列 + 时间轴 */
-.trend-charts {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.trend-chart-axis {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 2px;
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 9px;
-  opacity: 0.75;
-}
-
-@media (max-width: 1200px) {
-  .trend-charts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-/* 看板：压缩顶部与操作区，给趋势曲线留出整屏高度 */
-.view.active.dash {
-  grid-template-rows: auto auto minmax(0, 0.9fr) auto minmax(0, 1.1fr);
-}
-
-.dash > .dash-actions {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 12px;
-}
-
-.dash-actions .dash-ops,
-.dash-actions .dash-deploy {
-  flex-direction: row;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.dash-actions .dash-ops button,
-.dash-actions .dash-deploy button {
-  height: 32px;
-  padding: 0 11px;
-  font-size: 12px;
-}
-
-.trend-chart {
-  padding: 6px 8px 4px;
-}
-
-.trend-chart svg {
-  height: 58px;
-}
-
-.trend-chart figcaption {
-  margin-bottom: 2px;
-}
-
-/* 看板趋势：再紧凑一档，四条曲线在首屏完整可见 */
-.trend-chart {
-  padding: 4px 8px 3px;
-}
-
-.trend-chart svg {
-  height: 48px;
-}
-
-.trend-chart figcaption {
-  font-size: 11px;
-  margin-bottom: 1px;
-}
-
-.trend-chart-axis {
-  margin-top: 0;
-  font-size: 8.5px;
-}
-
-.view.active.dash {
-  grid-template-rows: auto auto minmax(0, 0.75fr) auto minmax(0, 1.25fr);
-}
-
-.dash-bottom > .panel {
-  padding: 10px 12px;
-}
-
-.trend-kpis {
-  gap: 6px;
-  margin-bottom: 6px;
-}
-
-.trend-kpis > div {
-  padding: 6px 8px;
-}
-
-.trend-kpis strong {
-  font-size: 15px;
-}
-
-.dash-trends .panel-h,
-.dash-notices .panel-h {
-  align-items: flex-start;
-  margin-bottom: 6px;
-}
-
-.dash-trends .panel-h .meta {
-  font-size: 10px;
-  line-height: 1.25;
-}
-
-/* 助手：启用 / 超时 / 内置工具 */
 .assistant-field-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 110px;
@@ -7095,7 +7427,7 @@ body {
   border-radius: 7px;
   padding: 3px 6px;
   background: color-mix(in srgb, var(--panel-2) 70%, transparent);
-  color: var(--ink-soft);
+  color: var(--ink-soft, var(--muted));
   font-size: 10.5px;
 }
 
@@ -7117,31 +7449,4 @@ body {
 
 #auth-oidc-state[data-state="warn"] {
   color: var(--warn);
-}
-
-/* 短屏保护：优先保证卡片可读，不把关键行压到看不见；正常桌面仍是一屏 */
-@media (max-height: 820px) and (min-width: 1101px) {
-  .view.active.dash {
-    display: flex;
-    flex-direction: column;
-    overflow: auto;
-    gap: 10px;
-  }
-
-  .dash > .dash-top,
-  .dash > .dash-actions,
-  .dash > .dash-bottom {
-    flex: 0 0 auto;
-    min-height: auto;
-  }
-
-  .dash-top > .panel,
-  .dash-bottom > .panel {
-    max-height: none;
-    overflow: visible;
-  }
-
-  .dash > .dash-bottom {
-    min-height: 420px;
-  }
 }

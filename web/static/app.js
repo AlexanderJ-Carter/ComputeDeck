@@ -4721,18 +4721,61 @@ function bindSectionNav(viewName, navAttr, panelAttr, defaultName) {
   return set;
 }
 
+function bindDashPanes() {
+  const dash = document.querySelector(".view.dash");
+  const pages = $("dash-pages");
+  const navs = Array.from(document.querySelectorAll("[data-dash-nav]"));
+  const panes = Array.from(document.querySelectorAll("[data-dash-pane]"));
+  if (!dash || !pages || !navs.length || !panes.length) return null;
+
+  const set = (name, { focus = false, updateHash = false } = {}) => {
+    const known = navs.some((btn) => btn.getAttribute("data-dash-nav") === name);
+    const target = known ? name : "status";
+    state.sectionPages.actions = target;
+    dash.dataset.dashFocus = target;
+    pages.dataset.dashFocus = target;
+
+    navs.forEach((btn) => {
+      const active = btn.getAttribute("data-dash-nav") === target;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-selected", active ? "true" : "false");
+      if (active && focus) btn.focus();
+    });
+
+    panes.forEach((panel) => {
+      const active = panel.getAttribute("data-dash-pane") === target;
+      panel.classList.toggle("active", active);
+      panel.hidden = !active;
+    });
+
+    if (updateHash && state.view === "actions") {
+      history.replaceState(null, "", `#/actions/${target}`);
+    }
+  };
+
+  navs.forEach((btn, idx) => {
+    btn.addEventListener("click", () => set(btn.getAttribute("data-dash-nav"), { updateHash: true }));
+    btn.addEventListener("keydown", (ev) => {
+      const delta = ev.key === "ArrowRight" || ev.key === "ArrowDown" ? 1
+        : ev.key === "ArrowLeft" || ev.key === "ArrowUp" ? -1 : 0;
+      if (!delta) return;
+      ev.preventDefault();
+      const next = navs[(idx + delta + navs.length) % navs.length];
+      set(next.getAttribute("data-dash-nav"), { focus: true, updateHash: true });
+    });
+  });
+
+  set(state.sectionPages.actions || "status");
+  SECTION_NAV_SETTERS.actions = { set, default: "status" };
+  return set;
+}
+
 function bindSectionNavs() {
   bindSectionNav("endpoints", "data-endpoint-nav", "data-endpoint-panel", "overview");
   bindSectionNav("workloads", "data-workload-nav", "data-workload-panel", "jobs");
   bindSectionNav("models", "data-model-nav", "data-model-panel", "download");
   bindSectionNav("ops", "data-ops-nav", "data-ops-panel", "exec");
-  document.querySelectorAll("[data-scroll-target]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      document
-        .getElementById(btn.dataset.scrollTarget)
-        ?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
-    });
-  });
+  bindDashPanes();
 }
 
 function bindConfigPages() {
