@@ -36,11 +36,20 @@ class ComputeDeckClient {
 
   async authHeaders() {
     const headers = { 'Content-Type': 'application/json', Accept: 'application/json' };
-    const token = await this.context.secrets.get(TOKEN_KEY);
+    const token = await this.resolveToken();
     if (token) headers.Authorization = `Bearer ${token}`;
     const cookie = await this.context.secrets.get(COOKIE_KEY);
     if (cookie) headers.Cookie = cookie;
     return headers;
+  }
+
+  async resolveToken() {
+    const stored = await this.context.secrets.get(TOKEN_KEY);
+    if (stored) return stored;
+    const fromEnv = String(process.env.GPU_CONTROL_API_TOKEN || '').trim();
+    if (!fromEnv) return '';
+    await this.context.secrets.store(TOKEN_KEY, fromEnv);
+    return fromEnv;
   }
 
   async request(pathname, { method = 'GET', body, timeoutMs = 30000 } = {}) {
@@ -722,7 +731,7 @@ function registerMcp(context) {
         if (!mcpPath || !fs.existsSync(mcpPath)) return [];
         if (typeof vscode.McpStdioServerDefinition !== 'function') return [];
         const env = { GPU_CONTROL_API_BASE: client.base() };
-        const token = await context.secrets.get(TOKEN_KEY);
+        const token = await client.resolveToken();
         if (token) env.GPU_CONTROL_API_TOKEN = token;
         return [new vscode.McpStdioServerDefinition('ComputeDeck', mcpPath, [], env)];
       },
@@ -870,7 +879,7 @@ function registerCommands(context) {
       );
       return;
     }
-    const token = await context.secrets.get(TOKEN_KEY);
+    const token = await client.resolveToken();
     if (!token) {
       vscode.window.showWarningMessage(
         'MCP 走 HTTP 需要 API Token；请先执行「ComputeDeck: 设置 API Token」'
