@@ -310,11 +310,11 @@ function enhanceSelect(sel) {
     const options = Array.from(sel.options || []).filter((o) => !o.hidden);
     menu.innerHTML = options.length
       ? options
-          .map(
-            (o) =>
-              `<button type="button" class="job-option" role="option" data-cd-value="${escapeHtml(o.value)}" aria-selected="${o.value === sel.value}" ${o.disabled ? "disabled" : ""}><strong>${escapeHtml(o.textContent.trim() || "—")}</strong></button>`
-          )
-          .join("")
+        .map(
+          (o) =>
+            `<button type="button" class="job-option" role="option" data-cd-value="${escapeHtml(o.value)}" aria-selected="${o.value === sel.value}" ${o.disabled ? "disabled" : ""}><strong>${escapeHtml(o.textContent.trim() || "—")}</strong></button>`
+        )
+        .join("")
       : '<div class="job-option" aria-disabled="true"><span class="meta">无选项</span></div>';
     btn.disabled = sel.disabled;
   };
@@ -452,8 +452,8 @@ function renderTableBlock(lines) {
   const thead = `<thead><tr>${head.map((c) => `<th>${renderInlineMarkdown(c)}</th>`).join("")}</tr></thead>`;
   const tbody = bodyRows.length
     ? `<tbody>${bodyRows
-        .map((row) => `<tr>${row.map((c) => `<td>${renderInlineMarkdown(c)}</td>`).join("")}</tr>`)
-        .join("")}</tbody>`
+      .map((row) => `<tr>${row.map((c) => `<td>${renderInlineMarkdown(c)}</td>`).join("")}</tr>`)
+      .join("")}</tbody>`
     : "";
   return `<div class="md-table-wrap"><table>${thead}${tbody}</table></div>`;
 }
@@ -1033,9 +1033,8 @@ function renderSummary(summary) {
   set(
     "dash-occ-gpu",
     total
-      ? `${used}/${total}（${Math.round((used / total) * 100)}%）${
-          smUtil == null ? "" : ` · 算力 ${Math.round(Number(smUtil))}%`
-        }`
+      ? `${used}/${total}（${Math.round((used / total) * 100)}%）${smUtil == null ? "" : ` · 算力 ${Math.round(Number(smUtil))}%`
+      }`
       : "-"
   );
   const offline = Number(summary.nodes_offline || 0);
@@ -2103,18 +2102,16 @@ function renderNodes(nodes) {
         ? `${Math.round(gpuUtils.reduce((a, b) => a + b, 0) / gpuUtils.length)}%`
         : "-";
       const hostPart = hasHost
-        ? `CPU ${node.cpu_percent ?? "-"}% · 负载 ${node.load1 ?? "-"} · 内存 ${
-            node.mem_used_mb != null ? Math.round(node.mem_used_mb / 1024) + "G" : "-"
-          }`
+        ? `CPU ${node.cpu_percent ?? "-"}% · 负载 ${node.load1 ?? "-"} · 内存 ${node.mem_used_mb != null ? Math.round(node.mem_used_mb / 1024) + "G" : "-"
+        }`
         : "主机指标未采集";
-      const usage = `${hostPart} · GPU 算力 ${gpuAvg}${
-        node.snapshot_stale ? " · 数据过期" : ""
-      }`;
+      const usage = `${hostPart} · GPU 算力 ${gpuAvg}${node.snapshot_stale ? " · 数据过期" : ""
+        }`;
       return `<button type="button" class="node-tile ${selected ? "selected" : ""} state-${st}"
           data-select="${name}" aria-pressed="${selected ? "true" : "false"}"
           title="${escapeHtml(
-            node.liveness_error ? `探活错误：${node.liveness_error}` : `最后成功：${node.last_seen || "未知"}`
-          )}">
+        node.liveness_error ? `探活错误：${node.liveness_error}` : `最后成功：${node.last_seen || "未知"}`
+      )}">
         <span class="name">${name}</span>
         <span class="host">${escapeHtml(node.host || "-")}</span>
         <span class="stats"><span class="meta">空闲 ${freeText}/${node.total ?? "—"}</span>${badge}</span>
@@ -2186,18 +2183,18 @@ function renderDrawer({ open = false } = {}) {
     ? `<div class="${staleData ? "stale-block" : ""}">
         <table class="table"><thead><tr><th>GPU</th><th>PID</th><th>MEM</th><th>NAME</th><th></th></tr></thead><tbody>
         ${procs
-          .map(
-            (p) => `<tr>
+      .map(
+        (p) => `<tr>
               <td>${escapeHtml(String(p.gpu))}</td>
               <td>${escapeHtml(String(p.pid))}</td>
               <td>${escapeHtml(String(p.memory_mib))}MiB</td>
               <td class="meta">${escapeHtml(p.name || "-")}</td>
               <td><button class="danger tiny" data-kill-pid="${p.pid}" data-kill-node="${escapeHtml(
-              node.name
-            )}" ${killDisabled} title="${offline ? "节点离线，无法结束进程" : ""}">结束</button></td>
+          node.name
+        )}" ${killDisabled} title="${offline ? "节点离线，无法结束进程" : ""}">结束</button></td>
             </tr>`
-          )
-          .join("")}
+      )
+      .join("")}
         </tbody></table></div>`
     : `<p class="muted tiny">${offline ? "节点离线，无法读取当前 GPU 进程。" : stale ? "快照已过期，暂无可信的 GPU 进程数据。" : "当前快照无 GPU compute 进程"}</p>`;
   const safeName = escapeHtml(node.name);
@@ -3536,7 +3533,7 @@ function renderQuality(q) {
   set(
     "quality-updated",
     q.summary ||
-      (q.updated_at ? `更新于 ${q.updated_at}` : "完成「全量同步」或「一键连通」后更新评分")
+    (q.updated_at ? `更新于 ${q.updated_at}` : "完成「全量同步」或「一键连通」后更新评分")
   );
 
 
@@ -3565,7 +3562,7 @@ async function runAllHealthChecks() {
       }
     }
     await loadQuality();
-    await refresh(false, { light: true }).catch(() => {});
+    await refresh(false, { light: true }).catch(() => { });
     const failed = results.filter((x) => x.endsWith("✗"));
     if (failed.length) toastBad(`部分复检失败：${results.join(" ")}`);
     else toastOk(`复检完成：${results.join(" ")}`);
@@ -4000,14 +3997,14 @@ function setConfigTab(name, { updateHash = false, focus = false, scroll = false 
     history.replaceState(null, "", `#/config/${page}`);
   }
   if (page === "logs") {
-    loadLog().catch(() => {});
-    loadRunlog().catch(() => {});
+    loadLog().catch(() => { });
+    loadRunlog().catch(() => { });
   }
   if (page === "remote") {
-    refreshRemoteStatus().catch(() => {});
+    refreshRemoteStatus().catch(() => { });
   }
   if (page === "integration") {
-    loadAssistantTools().catch(() => {});
+    loadAssistantTools().catch(() => { });
   }
   if (scroll) {
     $("config-main")?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
@@ -4919,17 +4916,17 @@ async function copyMcpConfig() {
       client === "codex"
         ? `[mcp_servers.gpu-control]\ncommand = ${JSON.stringify(mcpPath)}\nenv = { GPU_CONTROL_API_BASE = ${JSON.stringify(base)}, GPU_CONTROL_API_TOKEN = ${JSON.stringify(token)} }\n`
         : JSON.stringify(
-            {
-              mcpServers: {
-                "gpu-control": {
-                  command: mcpPath,
-                  env: { GPU_CONTROL_API_BASE: base, GPU_CONTROL_API_TOKEN: token },
-                },
+          {
+            mcpServers: {
+              "gpu-control": {
+                command: mcpPath,
+                env: { GPU_CONTROL_API_BASE: base, GPU_CONTROL_API_TOKEN: token },
               },
             },
-            null,
-            2
-          );
+          },
+          null,
+          2
+        );
     const copied = await copyText(snippet);
     const pre = $("integration-mcp-snippet");
     if (pre) {
@@ -5145,7 +5142,7 @@ async function issueAuthToken() {
       meta.innerHTML = `新 Token（只显示一次）：<code>${escapeHtml(data.token || "")}</code>`;
     }
     if (data.auth && state.auth) state.auth = { ...state.auth, ...data.auth };
-    loadSetup().catch(() => {});
+    loadSetup().catch(() => { });
     const copied = await copyText(data.token || "");
     toast(copied ? "新 Token 已生成并复制" : "新 Token 已生成，请立即保存", {
       tone: "ok",
@@ -5174,7 +5171,7 @@ async function clearAuthToken() {
     });
     const meta = $("auth-token-meta");
     if (meta) meta.textContent = "Token 已清除；脚本 / MCP 需重新生成。";
-    loadSetup().catch(() => {});
+    loadSetup().catch(() => { });
     toastOk("Token 已清除");
   } catch (err) {
     toastBad(`清除 Token 失败：${err.message || err}`);
@@ -5640,7 +5637,7 @@ async function boot() {
   document.getElementById("btn-integration-api-test")?.addEventListener("click", testIntegrationApi);
   document.getElementById("btn-integration-token-issue")?.addEventListener("click", issueAuthToken);
   document.getElementById("btn-integration-token-clear")?.addEventListener("click", clearAuthToken);
-  document.getElementById("btn-integration-mcp-refresh")?.addEventListener("click", () => loadSetup().catch(() => {}));
+  document.getElementById("btn-integration-mcp-refresh")?.addEventListener("click", () => loadSetup().catch(() => { }));
   document.getElementById("btn-integration-mcp-copy")?.addEventListener("click", copyMcpConfig);
   document.getElementById("btn-integration-ai-open")?.addEventListener("click", () => {
     setAssistantOpen(true);
@@ -6093,7 +6090,7 @@ async function boot() {
     await seedConsole();
     hideConsoleUnread();
     await loadAssistantStatus();
-    refreshRemoteStatus().catch(() => {});
+    refreshRemoteStatus().catch(() => { });
   } catch (err) {
     log(String(err.message || err));
     writeConsoleText(`初始化失败：${err.message || err}\n\n可以点「一键连通」重试。`, {
@@ -6114,8 +6111,8 @@ function sparklinePath(values, width, height, pad = 4, domain = null) {
   const nums = values.map((v) => (v == null || Number.isNaN(Number(v)) ? null : Number(v)));
   const solid = nums.filter((v) => v != null);
   if (!solid.length) return { line: "", area: "", points: [] };
-  const padX = 30;
-  const padY = 6;
+  const padX = 34;
+  const padY = 12;
   let min = Math.min(...solid);
   let max = Math.max(...solid);
   if (domain && Number.isFinite(domain.min) && Number.isFinite(domain.max) && domain.max > domain.min) {
@@ -6164,18 +6161,19 @@ function paintSpark(
   const svg = $(svgId);
   if (!svg) return;
   const w = 320;
-  const h = 72;
-  const padX = 30;
-  const padY = 6;
+  const h = 140;
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  const padX = 34;
+  const padY = 12;
   const main = sparklinePath(values, w, h, 4, domain);
   const alt = altValues
     ? sparklinePath(altValues, w, h, 4, altDomain)
     : { line: "", area: "", points: [] };
   const labels = axisLabels || ["100%", "50%", "0%"];
   let html = "";
-  html += `<text class="axis" x="2" y="${padY + 8}">${escapeHtml(labels[0])}</text>`;
+  html += `<text class="axis" x="2" y="${padY + 4}">${escapeHtml(labels[0])}</text>`;
   html += `<text class="axis" x="2" y="${(h / 2 + 3).toFixed(1)}">${escapeHtml(labels[1])}</text>`;
-  html += `<text class="axis" x="2" y="${h - 2}">${escapeHtml(labels[2])}</text>`;
+  html += `<text class="axis" x="2" y="${h - 4}">${escapeHtml(labels[2])}</text>`;
   html += `<path class="guide" d="M${padX},${padY} H${w - 4}"></path>`;
   html += `<path class="guide" d="M${padX},${(h / 2).toFixed(1)} H${w - 4}"></path>`;
   html += `<path class="guide" d="M${padX},${h - padY} H${w - 4}"></path>`;
@@ -6185,7 +6183,7 @@ function paintSpark(
   const dot = (points, cls) => {
     if (!points || points.length !== 1) return "";
     const [x, y] = points[0];
-    return `<circle class="dot ${cls}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.7"></circle>`;
+    return `<circle class="dot ${cls}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3"></circle>`;
   };
   html += dot(main.points, "");
   html += dot(alt.points, "alt");
@@ -6193,12 +6191,12 @@ function paintSpark(
   const last = solid.length ? Number(solid[solid.length - 1]) : null;
   if (last != null) {
     const text = valueText ? valueText(last) : fmtPct(last);
-    html += `<text class="last" x="${w - 4}" y="${padY + 9}" text-anchor="end">${escapeHtml(String(text))}</text>`;
+    html += `<text class="last" x="${w - 4}" y="${padY + 4}" text-anchor="end">${escapeHtml(String(text))}</text>`;
   }
   if (!main.points?.length && !alt.points?.length) {
-    html += `<text class="empty" x="${padX + 4}" y="40">${escapeHtml(emptyText)}</text>`;
+    html += `<text class="empty" x="${padX + 6}" y="${(h / 2 + 4).toFixed(1)}">${escapeHtml(emptyText)}</text>`;
   } else if (solid.length === 1) {
-    html += `<text class="sample" x="${padX + 4}" y="40">单点采样 · 稍后成线</text>`;
+    html += `<text class="sample" x="${padX + 6}" y="${(h / 2 + 4).toFixed(1)}">单点采样 · 稍后成线</text>`;
   }
   svg.innerHTML = html;
 }
@@ -6598,7 +6596,7 @@ function setAssistantOpen(open) {
           );
         }
       })
-      .catch(() => {});
+      .catch(() => { });
     if (assistantState.settingsOpen) $("assistant-base-url")?.focus();
     else $("assistant-input")?.focus();
   } else {
@@ -7131,8 +7129,8 @@ function formatAssistantResult(data) {
       const value = merged[key];
       const text = Array.isArray(value)
         ? value
-            .map((item) => (item && typeof item === "object" ? item.node || JSON.stringify(item) : String(item)))
-            .join(",")
+          .map((item) => (item && typeof item === "object" ? item.node || JSON.stringify(item) : String(item)))
+          .join(",")
         : value;
       return `${key}=${text}`;
     });
@@ -7277,7 +7275,7 @@ async function runAssistantPending(row, card) {
         message: expired ? "确认卡已过期，请重新提问。" : "该操作已经执行过。",
       });
       retireAssistantApproval(card);
-      await refresh(false, { light: true }).catch(() => {});
+      await refresh(false, { light: true }).catch(() => { });
     } else {
       markAssistantApproval(card, "pending");
       const hint = card.querySelector(".assistant-approval-hint");

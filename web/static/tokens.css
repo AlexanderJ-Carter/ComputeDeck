@@ -75,6 +75,8 @@
   --fs-lg: 16px;
   --fs-xl: 18px;
   --fs-2xl: 22px;
+  --fs-3xl: 28px;
+  --fs-4xl: 30px;
   --lh-tight: 1.2;
   --lh-snug: 1.4;
   --lh-body: 1.55;
@@ -88,6 +90,7 @@
   --sp-4: 12px;
   --sp-5: 16px;
   --sp-6: 22px;
+  --sp-7: 28px;
 
   /* geometry */
   --radius: 14px;
@@ -96,6 +99,21 @@
   --control-h: 36px;
   --control-h-sm: 28px;
   --rail-w: 220px;
+
+  /* dashboard module rhythm */
+  --dash-gap: 18px;
+  --dash-pad: 22px 24px;
+  --dash-pad-lg: 22px 24px 28px;
+  --dash-card-pad: 14px 16px;
+  --dash-toc-h: 34px;
+  --dash-chart-h: 148px;
+  --dash-kpi-value: var(--fs-2xl);
+  --dash-title: var(--fs-lg);
+  --dash-label: var(--fs-xs);
+  --dash-meta: var(--fs-xs);
+  --dash-body: var(--fs-md);
+  --dash-surface: var(--panel-2);
+  --dash-border: var(--line);
 
   --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 34%, transparent);
 }
