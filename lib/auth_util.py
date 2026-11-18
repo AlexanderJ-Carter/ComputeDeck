@@ -351,6 +351,51 @@ def oidc_config(cfg: AuthConfig | None = None, *, cluster: dict | None = None) -
     return normalize_oidc(cfg.oidc, ui_base=_ui_base_from_cluster(cluster))
 
 
+def write_oidc_client_secret(secret: str, *, cfg: AuthConfig | None = None) -> Path:
+    """将 OIDC client secret 写入 secrets 文件，并确保 cluster 指向该路径。
+
+    :param secret: 明文 client secret（不会回显）。
+    :returns: 写入的文件路径。
+    :raises ValueError: secret 为空。
+    """
+    text = str(secret or "").strip()
+    if not text:
+        raise ValueError("client secret 不能为空")
+    cfg = cfg or load_auth_config()
+    oidc = dict(cfg.oidc or {})
+    configured = str(oidc.get("client_secret_file") or "").strip()
+    path = Path(expand_path(configured)) if configured else _default_path("oidc_client_secret")
+    write_secret_file(path, text + "\n")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    # 若配置未指向该文件，写回 cluster.control.auth.oidc.client_secret_file
+    cluster_path = cluster_file(write=True)
+    doc = json.loads(cluster_path.read_text(encoding="utf-8")) if cluster_path.is_file() else {}
+    control = dict(doc.get("control") or {})
+    auth = dict(control.get("auth") or {})
+    oidc_cfg = dict(auth.get("oidc") or {})
+    rel = str(path)
+    try:
+        rel = str(path.resolve().relative_to(LOCAL_DIR.resolve()))
+        rel = f"config/local/{rel}" if not rel.startswith("config/") else rel
+    except ValueError:
+        rel = str(path)
+    # 优先写相对 secrets 名，便于跨机
+    if path.name == "oidc_client_secret" and path.parent.name == "secrets":
+        rel = "config/local/secrets/oidc_client_secret"
+    oidc_cfg["client_secret_file"] = rel
+    # 避免把明文 secret 留在 cluster.json
+    oidc_cfg.pop("client_secret", None)
+    auth["oidc"] = oidc_cfg
+    control["auth"] = auth
+    doc["control"] = control
+    cluster_path.parent.mkdir(parents=True, exist_ok=True)
+    cluster_path.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
 def password_login_allowed(cfg: AuthConfig | None = None) -> bool:
     """当前模式是否允许密码登录（含 OIDC 回落）。"""
     cfg = cfg or load_auth_config()
@@ -468,6 +513,9 @@ def auth_status_payload(*, cfg: AuthConfig | None = None, principal: AuthPrincip
             "redirect_uri": oidc_cfg.get("redirect_uri") or "",
             "login_url": "/api/auth/oidc/login",
             "allow_password_fallback": bool(oidc_cfg.get("allow_password_fallback")),
+            "has_client_secret": bool(oidc_cfg.get("client_secret")),
+            "allowed_groups": list(oidc_cfg.get("allowed_groups") or []),
+            "allowed_emails": list(oidc_cfg.get("allowed_emails") or []),
         },
         "principal": (
             {"subject": principal.subject, "method": principal.method}

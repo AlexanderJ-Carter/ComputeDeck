@@ -114,6 +114,7 @@ from auth_util import (  # noqa: E402
     try_login,
     verify_api_token,
     verify_session,
+    write_oidc_client_secret,
 )
 from oidc_util import OidcError, begin_login, finish_login, probe_oidc  # noqa: E402
 
@@ -274,6 +275,18 @@ EXEC_SUGGEST_EXTRA: list[dict[str, str]] = [
     {"command": "df -h", "label": "全部磁盘"},
     {"command": "free -h", "label": "内存"},
     {"command": "ip -br a", "label": "网卡简表"},
+    {
+        "command": "curl -sS -o /dev/null -w '%{http_code} %{time_total}s\\n' http://127.0.0.1:30000/health",
+        "label": "探活 · :30000/health",
+    },
+    {
+        "command": "curl -sS -o /dev/null -w '%{http_code}\\n' http://127.0.0.1:30000/v1/models",
+        "label": "探活 · :30000/v1/models",
+    },
+    {
+        "command": "curl -sS http://127.0.0.1:18080/_gpu_control/health",
+        "label": "探活 · Edge health",
+    },
 ]
 
 
@@ -3054,6 +3067,41 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"ok": bool(probe.get("ready")), **probe})
             return
 
+        if path == "/api/auth/oidc/secret":
+            secret = str(body.get("secret") or body.get("client_secret") or "")
+            clear = bool(body.get("clear"))
+            cfg = load_auth_config()
+            oidc = oidc_config(cfg)
+            secret_path = Path(expand_path(str(oidc.get("client_secret_file") or ""))) if oidc.get(
+                "client_secret_file"
+            ) else (LOCAL_DIR / "secrets" / "oidc_client_secret")
+            if clear:
+                if secret_path.is_file():
+                    secret_path.unlink()
+                self._json(
+                    200,
+                    {
+                        "ok": True,
+                        "cleared": True,
+                        "auth": auth_status_payload(cfg=load_auth_config()),
+                    },
+                )
+                return
+            try:
+                path_written = write_oidc_client_secret(secret, cfg=cfg)
+            except ValueError as exc:
+                self._json(400, {"ok": False, "error": str(exc)})
+                return
+            self._json(
+                200,
+                {
+                    "ok": True,
+                    "path": str(path_written),
+                    "auth": auth_status_payload(cfg=load_auth_config()),
+                },
+            )
+            return
+
         if path == "/api/assistant/config":
             base_url = str(body.get("base_url") or "").strip()
             model = str(body.get("model") or "").strip()
@@ -3282,6 +3330,38 @@ class Handler(BaseHTTPRequestHandler):
                                 payload["pending_actions"] = active
                             payload["conversation_id"] = cid
                             self._sse_send("error", payload)
+                        elif event == "tool":
+                            # 先落盘再推可点确认卡，避免用户抢点出现 action_not_found。
+                            pending_full = stream_state.get("pending_full") or []
+                            if (
+                                isinstance(payload, dict)
+                                and payload.get("pending_action")
+                                and pending_full
+                            ):
+                                _persist_session(
+                                    messages=stream_state.get("history"),
+                                    pending_full=pending_full,
+                                )
+                                # 去重后 id 可能变化，回写最新 public 卡给前端。
+                                latest = pending_full[-1] if pending_full else None
+                                if isinstance(latest, dict) and latest.get("id"):
+                                    stored = assistant_session.get_pending(session, str(latest["id"]))
+                                    if stored is None:
+                                        # put_pending 可能复用了旧 id，按签名再找。
+                                        stored = assistant_session.find_active_by_signature(
+                                            session,
+                                            tool=str(latest.get("tool") or ""),
+                                            args_hash=str(latest.get("args_hash") or ""),
+                                        )
+                                    if stored is not None:
+                                        payload = dict(payload)
+                                        payload["pending_action"] = assistant_session.public_pending(
+                                            stored
+                                        )
+                                        payload["action_id"] = stored.get("id")
+                                        latest.clear()
+                                        latest.update(stored)
+                            self._sse_send(event, payload)
                         else:
                             self._sse_send(event, payload)
                 except (BrokenPipeError, ConnectionResetError):
@@ -3565,7 +3645,13 @@ class Handler(BaseHTTPRequestHandler):
                 with _assistant_action_lock:
                     _assistant_inflight.discard(claim_key)
 
-            reply = None
+            # 执行结果与模型总结解耦：总结失败不得盖过「已执行」心智。
+            reply = (
+                "操作已执行。"
+                if executed_ok
+                else f"操作失败：{exec_failure_detail(data, result)}"
+            )
+            summary_error = None
             follow_pending: list[dict] = []
             if executed_ok and body.get("continue", True):
                 cluster = _read_json(cluster_file(), {})
@@ -3575,14 +3661,23 @@ class Handler(BaseHTTPRequestHandler):
                     "overview_light": compact_overview(build_overview(light=True)),
                     "jobs": jobs_list,
                 }
-                cont = handle_chat(
-                    history=session.get("messages") or [],
-                    context=context,
-                    runners=assistant_runners(jobs_list),
-                    known_nodes=nodes_meta,
-                    known_jobs=assistant_known_jobs(jobs_list),
-                    liveness_view=build_liveness_view(),
-                )
+
+                def _summarize_once() -> dict:
+                    return handle_chat(
+                        history=session.get("messages") or [],
+                        context=context,
+                        runners=assistant_runners(jobs_list),
+                        known_nodes=nodes_meta,
+                        known_jobs=assistant_known_jobs(jobs_list),
+                        liveness_view=build_liveness_view(),
+                    )
+
+                cont = _summarize_once()
+                cont_text = str(cont.get("reply") or cont.get("error") or "")
+                if cont.get("ok") is False and ("429" in cont_text or "限流" in cont_text):
+                    time.sleep(2)
+                    cont = _summarize_once()
+                    cont_text = str(cont.get("reply") or cont.get("error") or "")
                 if cont.get("history") is not None:
                     session["messages"] = cont["history"]
                 for row in cont.pop("pending_actions_full", None) or []:
@@ -3591,12 +3686,9 @@ class Handler(BaseHTTPRequestHandler):
                 assistant_session.save_merged(session)
                 session = assistant_session.load(cid)
                 if cont.get("ok") is False:
-                    reply = (
-                        "操作已执行，但模型总结暂不可用："
-                        f"{cont.get('reply') or cont.get('error') or '上游异常'}"
-                    )
+                    summary_error = cont_text or "上游异常"
                 else:
-                    reply = cont.get("reply")
+                    reply = cont.get("reply") or reply
                 follow_pending = cont.get("pending_actions") or []
             pending_map = session.get("pending") or {}
             active = [
@@ -3605,25 +3697,23 @@ class Handler(BaseHTTPRequestHandler):
                 if isinstance(row, dict)
                 and str(row.get("status") or "pending") in {"pending", "armed"}
             ]
-            self._json(
-                200,
-                {
-                    "ok": executed_ok,
-                    "status": "executed" if executed_ok else "failed",
-                    "conversation_id": cid,
-                    "action_id": action_id,
-                    "tool": action.get("tool"),
-                    "http_status": result.get("status"),
-                    "result": data,
-                    "reply": reply
-                    or (
-                        "操作已执行。"
-                        if executed_ok
-                        else f"操作失败：{exec_failure_detail(data, result)}"
-                    ),
-                    "pending_actions": active or follow_pending,
-                },
-            )
+            payload_out = {
+                "ok": executed_ok,
+                "status": "executed" if executed_ok else "failed",
+                "conversation_id": cid,
+                "action_id": action_id,
+                "tool": action.get("tool"),
+                "http_status": result.get("status"),
+                "result": data,
+                "reply": reply,
+                "pending_actions": active or follow_pending,
+            }
+            if summary_error:
+                payload_out["summary_ok"] = False
+                payload_out["summary_error"] = summary_error
+            else:
+                payload_out["summary_ok"] = True
+            self._json(200, payload_out)
             return
 
         if path == "/api/resources/refresh":

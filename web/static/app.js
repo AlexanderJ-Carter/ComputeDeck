@@ -1008,6 +1008,16 @@ function fillTargetSelects(nodes) {
       modelNode.value = state.selectedNode;
     }
   }
+  const toolkitNode = $("toolkit-node");
+  if (toolkitNode) {
+    const prev = toolkitNode.value;
+    toolkitNode.innerHTML =
+      `<option value="">全部节点</option>` + nodes.map(nodeOption).join("");
+    if ([...toolkitNode.options].some((o) => o.value === prev)) toolkitNode.value = prev;
+    else if (state.selectedNode && [...toolkitNode.options].some((o) => o.value === state.selectedNode)) {
+      toolkitNode.value = state.selectedNode;
+    }
+  }
   syncDeployMode();
 }
 
@@ -3175,6 +3185,22 @@ function renderView(name) {
   }
 }
 
+const TOOLKIT_GROUP_LABELS = {
+  runtime: "运行时",
+  train: "训练",
+  serve: "推理",
+  client: "客户端",
+};
+
+function toolkitTargetNode() {
+  return String($("toolkit-node")?.value || "").trim();
+}
+
+function toolkitTargetLabel() {
+  const node = toolkitTargetNode();
+  return node || "全部 GPU 节点";
+}
+
 function renderToolkits(payload) {
   const bundles = payload.bundles || [];
   const toolkits = payload.toolkits || [];
@@ -3183,69 +3209,146 @@ function renderToolkits(payload) {
   if (bundleRoot) {
     bundleRoot.innerHTML =
       bundles
-        .map(
-          (b) => `<button type="button" class="chip" data-toolkit-bundle="${escapeHtml(b.id)}" title="${escapeHtml(b.description || "")}">
-            ${escapeHtml(b.name || b.id)}
-          </button>`
-        )
+        .map((b) => {
+          const title = escapeHtml(b.description || b.name || b.id);
+          const name = escapeHtml(b.name || b.id);
+          return `<button type="button" class="chip chip-action" data-toolkit-bundle="${escapeHtml(b.id)}" title="${title}">
+            安装 · ${name}
+          </button>`;
+        })
         .join("") ||
       '<div class="empty-state compact"><strong>无工具栈捆绑</strong><p>检查 toolkits 配置中的 bundles。</p></div>';
     bundleRoot.querySelectorAll("[data-toolkit-bundle]").forEach((btn) => {
       btn.addEventListener("click", async () => {
+        const bundleId = btn.dataset.toolkitBundle;
         const ok = await confirmDialog({
           title: "安装工具栈",
-          message: `在全部 GPU 节点安装 ${btn.dataset.toolkitBundle}？pip 安装可能持续数分钟。`,
+          message: `在 ${toolkitTargetLabel()} 安装 ${bundleId}？pip 安装可能持续数分钟。`,
           confirmText: "开始安装",
         });
         if (!ok) return;
-        runToolkit("install", { bundle: btn.dataset.toolkitBundle });
+        runToolkit("install", { bundle: bundleId });
       });
     });
   }
   const list = document.getElementById("toolkit-list");
   if (list) {
-    list.innerHTML =
-      toolkits
-        .map((t) => {
+    if (!toolkits.length) {
+      list.innerHTML =
+        '<div class="empty-state compact"><strong>无工具栈定义</strong><p>检查 config/local/toolkits.json。</p></div>';
+    } else {
+      const groups = new Map();
+      for (const t of toolkits) {
+        const key = String(t.group || "other");
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(t);
+      }
+      const parts = [];
+      for (const [group, rows] of groups) {
+        const gLabel = TOOLKIT_GROUP_LABELS[group] || group;
+        parts.push(`<div class="toolkit-group-h">${escapeHtml(gLabel)}</div>`);
+        for (const t of rows) {
           const pkgs = (t.install_pip || []).join(", ") || "（仅探测）";
-          return `<div class="item">
+          const canInstall = Array.isArray(t.install_pip) && t.install_pip.length > 0;
+          parts.push(`<div class="item toolkit-item">
             <div>
               <strong>${escapeHtml(t.name || t.id)}</strong>
-              <span class="chip">${escapeHtml(t.group || "")}</span>
               <div class="meta">${escapeHtml(t.description || "")}</div>
               <div class="meta">pip: ${escapeHtml(pkgs)}</div>
             </div>
-            <button class="ghost tiny" data-toolkit-id="${escapeHtml(t.id)}">探测</button>
-          </div>`;
-        })
-        .join("") ||
-      '<div class="empty-state compact"><strong>无工具栈定义</strong><p>检查 config/local/toolkits.json。</p></div>';
-    list.querySelectorAll("[data-toolkit-id]").forEach((btn) => {
-      btn.addEventListener("click", () => runToolkit("probe", { ids: [btn.dataset.toolkitId] }));
-    });
+            <div class="btn-row">
+              <button type="button" class="ghost tiny" data-toolkit-probe="${escapeHtml(t.id)}">探测</button>
+              ${canInstall
+              ? `<button type="button" class="ghost tiny" data-toolkit-install="${escapeHtml(t.id)}">安装</button>`
+              : ""
+            }
+            </div>
+          </div>`);
+        }
+      }
+      list.innerHTML = parts.join("");
+      list.querySelectorAll("[data-toolkit-probe]").forEach((btn) => {
+        btn.addEventListener("click", () => runToolkit("probe", { ids: [btn.dataset.toolkitProbe] }));
+      });
+      list.querySelectorAll("[data-toolkit-install]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const id = btn.dataset.toolkitInstall;
+          const ok = await confirmDialog({
+            title: "安装工具",
+            message: `在 ${toolkitTargetLabel()} 安装 ${id}？pip 安装可能持续数分钟。`,
+            confirmText: "开始安装",
+          });
+          if (!ok) return;
+          runToolkit("install", { ids: [id] });
+        });
+      });
+    }
   }
   const meta = document.getElementById("toolkit-state-meta");
   if (meta) meta.textContent = stateTk.generated_at ? `探测于 ${stateTk.generated_at}` : "尚未探测";
+  const nodes = stateTk.nodes || {};
+  const names = Object.keys(nodes).sort();
+  const kpiRoot = document.getElementById("toolkit-kpis");
+  let readyNodes = 0;
+  let partialNodes = 0;
+  let missingNodes = 0;
+  for (const name of names) {
+    const entry = nodes[name] || {};
+    const rows = entry.toolkits || [];
+    if (!rows.length) {
+      missingNodes += 1;
+      continue;
+    }
+    const okCount = rows.filter((x) => x.ok).length;
+    if (okCount === rows.length) readyNodes += 1;
+    else if (okCount === 0) missingNodes += 1;
+    else partialNodes += 1;
+  }
+  if (kpiRoot) {
+    if (!names.length) {
+      kpiRoot.hidden = true;
+      kpiRoot.innerHTML = "";
+    } else {
+      kpiRoot.hidden = false;
+      kpiRoot.innerHTML = [
+        ["节点", names.length],
+        ["全齐", readyNodes],
+        ["部分缺失", partialNodes],
+        ["全缺 / 无结果", missingNodes],
+      ]
+        .map(
+          ([label, value]) =>
+            `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong></div>`
+        )
+        .join("");
+    }
+  }
   const nodesRoot = document.getElementById("toolkit-nodes");
   if (nodesRoot) {
-    const nodes = stateTk.nodes || {};
-    nodesRoot.innerHTML =
-      Object.keys(nodes)
-        .sort()
+    if (!names.length) {
+      nodesRoot.innerHTML =
+        '<div class="empty-state compact"><strong>暂无探测结果</strong><p>先选节点（可选）再点「探测」。</p></div>';
+    } else {
+      nodesRoot.innerHTML = names
         .map((name) => {
           const entry = nodes[name] || {};
-          const chips = (entry.toolkits || [])
+          const rows = entry.toolkits || [];
+          const okCount = rows.filter((x) => x.ok).length;
+          const chips = rows
             .map((x) => {
               const cls = x.ok ? "ok" : "bad";
-              return `<span class="chip ${cls}">${escapeHtml(x.id)}${x.version ? " " + escapeHtml(String(x.version)) : ""}</span>`;
+              const ver = x.version ? ` ${escapeHtml(String(x.version))}` : "";
+              return `<span class="chip ${cls}">${escapeHtml(x.id)}${ver}</span>`;
             })
             .join(" ");
+          const ratio = rows.length ? `${okCount}/${rows.length} 已就绪` : "无结果";
           return `<div class="item"><div><strong>${escapeHtml(name)}</strong>
-            <div class="meta">python ${escapeHtml(entry.python || "-")} · rc=${entry.rc ?? "-"}</div>
+            <div class="meta">${escapeHtml(ratio)} · python ${escapeHtml(entry.python || "-")}</div>
             <div class="chip-row">${chips || '<span class="meta">无结果</span>'}</div>
           </div></div>`;
         })
-        .join("") || '<div class="meta">暂无探测结果</div>';
+        .join("");
+    }
   }
 }
 
@@ -3257,9 +3360,12 @@ async function refreshToolkits() {
 
 async function runToolkit(action, extra = {}) {
   const label = action === "probe" ? "探测工具栈" : action === "install" ? "安装工具栈" : action;
+  const body = { ...extra };
+  const node = toolkitTargetNode();
+  if (node) body.node = node;
   setBusy(true);
+  revealConsole();
   try {
-    const body = { ...extra };
     const data = await api(`/api/toolkits/${action}`, {
       timeoutMs: 1900000,
       method: "POST",
@@ -4655,6 +4761,9 @@ function fillSetupForm(data) {
   if ($("auth-oidc-allowed-emails")) {
     $("auth-oidc-allowed-emails").value = (oidc.allowed_emails || []).join(", ");
   }
+  if ($("auth-oidc-allowed-groups")) {
+    $("auth-oidc-allowed-groups").value = (oidc.allowed_groups || []).join(", ");
+  }
   if ($("auth-oidc-username-claim")) $("auth-oidc-username-claim").value = oidc.username_claim || "";
   if ($("auth-oidc-scopes")) $("auth-oidc-scopes").value = (oidc.scopes || []).join(", ");
   if ($("oidc-redirect-hint")) {
@@ -5134,6 +5243,7 @@ function applyAuthFields(cluster) {
       client_id: ($("auth-oidc-client-id")?.value || "").trim(),
       client_secret_file: ($("auth-oidc-secret")?.value || "").trim(),
       allowed_emails: splitList($("auth-oidc-allowed-emails")?.value),
+      allowed_groups: splitList($("auth-oidc-allowed-groups")?.value),
       username_claim: ($("auth-oidc-username-claim")?.value || "").trim(),
       scopes: splitList($("auth-oidc-scopes")?.value),
       allow_password_fallback: !!$("auth-oidc-password-fallback")?.checked,
@@ -5605,14 +5715,8 @@ async function boot() {
     btn.addEventListener("click", () => runOneclick(btn.dataset.oneclick));
   });
   document.getElementById("btn-toolkit-probe")?.addEventListener("click", () => runToolkit("probe"));
-  on("btn-toolkit-train", "click", async () => {
-    const ok = await confirmDialog({
-      title: "安装微调栈",
-      message: "在全部 GPU 节点安装 LLaMA-Factory / DeepSpeed / Accelerate / PEFT？pip 安装可能持续数分钟。",
-      confirmText: "开始安装",
-    });
-    if (!ok) return;
-    runToolkit("install", { bundle: "train-stack" });
+  document.getElementById("btn-toolkit-refresh")?.addEventListener("click", () => {
+    refreshToolkits().catch((err) => actionError("刷新工具栈", err));
   });
   document.getElementById("btn-term-connect")?.addEventListener("click", connectTerminal);
   document.getElementById("btn-term-empty-connect")?.addEventListener("click", connectTerminal);
@@ -5719,6 +5823,8 @@ async function boot() {
   document.getElementById("btn-save-job").addEventListener("click", saveJob);
   document.getElementById("btn-save-watchdog")?.addEventListener("click", saveWatchdog);
   document.getElementById("btn-save-auth")?.addEventListener("click", saveAuthConfig);
+  document.getElementById("btn-oidc-secret-save")?.addEventListener("click", saveOidcSecret);
+  document.getElementById("btn-oidc-secret-clear")?.addEventListener("click", clearOidcSecret);
   document.getElementById("btn-auth-token-issue")?.addEventListener("click", issueAuthToken);
   document.getElementById("btn-auth-token-clear")?.addEventListener("click", clearAuthToken);
   document.getElementById("btn-oidc-check")?.addEventListener("click", checkOidcStatus);
@@ -7483,6 +7589,10 @@ async function runAssistantPending(row, card) {
     const reply = data.reply || (data.ok ? "操作已执行。" : "执行失败。");
     appendAssistantMsg("bot", reply, { markdown: true });
     assistantState.messages.push({ role: "assistant", content: reply });
+    if (data.ok && data.summary_ok === false && data.summary_error) {
+      const note = `摘要暂不可用：${data.summary_error}（操作本身已完成，可稍后重试提问。）`;
+      appendAssistantNote(note);
+    }
     syncAssistantPending(data.pending_actions || []);
     await refresh(false, { light: true });
   } catch (err) {
@@ -7492,14 +7602,34 @@ async function runAssistantPending(row, card) {
       const hint = card.querySelector(".assistant-approval-hint");
       if (hint) hint.textContent = "该操作正在执行，请稍候";
       finishAssistantRun(run, null, { message: "该操作正在执行，请稍候。" });
-    } else if (code === "action_not_pending" || code === "action_expired") {
-      const expired = code === "action_expired";
+    } else if (
+      code === "action_not_found"
+      || code === "action_not_pending"
+      || code === "action_expired"
+    ) {
+      const expired = code === "action_expired" || code === "action_not_found";
       settleAssistantPending(row.id);
-      markAssistantApproval(card, "expired", expired ? "确认卡已过期" : "已处理过");
+      markAssistantApproval(
+        card,
+        "expired",
+        code === "action_not_found" ? "确认卡已失效" : expired ? "确认卡已过期" : "已处理过",
+      );
       finishAssistantRun(run, null, {
-        message: expired ? "确认卡已过期，请重新提问。" : "该操作已经执行过。",
+        message:
+          code === "action_not_found"
+            ? "确认卡不存在或尚未就绪，未执行任何操作。请等本轮结束或重新提问。"
+            : expired
+              ? "确认卡已过期，未执行任何操作。请重新提问。"
+              : "该操作已经处理过。",
       });
       retireAssistantApproval(card);
+      toastBad(
+        code === "action_not_found"
+          ? "确认卡已失效，未执行"
+          : expired
+            ? "确认卡已过期，未执行"
+            : "该操作已处理过",
+      );
       await refresh(false, { light: true }).catch(() => { });
     } else if (code === "args_mismatch") {
       settleAssistantPending(row.id);
@@ -7523,12 +7653,54 @@ async function runAssistantPending(row, card) {
   }
 }
 
+function renderSecretsCabinet(auth) {
+  const root = $("secrets-cabinet");
+  const meta = $("secrets-cabinet-meta");
+  if (!root) return;
+  if (!auth) {
+    root.innerHTML = "";
+    if (meta) meta.textContent = "检测中…";
+    return;
+  }
+  const oidc = auth.oidc || {};
+  const items = [
+    ["控制面模式", auth.mode || "none", auth.enabled ? "ok" : "warn"],
+    ["登录密码", auth.password_configured ? "已配置" : "未配置", auth.password_configured ? "ok" : "warn"],
+    ["API Token", auth.api_token_configured ? "已配置" : "未配置", auth.api_token_configured ? "ok" : "warn"],
+    [
+      "OIDC Secret",
+      oidc.has_client_secret ? "已配置" : "未配置",
+      oidc.has_client_secret ? "ok" : "warn",
+    ],
+    [
+      "OIDC 白名单",
+      (oidc.allowed_emails || []).length || (oidc.allowed_groups || []).length
+        ? `邮箱 ${(oidc.allowed_emails || []).length} · 组 ${(oidc.allowed_groups || []).length}`
+        : "未限制",
+      "neutral",
+    ],
+  ];
+  root.innerHTML = items
+    .map(
+      ([label, value, tone]) =>
+        `<div class="secrets-cabinet-item" data-tone="${escapeHtml(tone)}"><span>${escapeHtml(
+          label
+        )}</span><strong>${escapeHtml(String(value))}</strong></div>`
+    )
+    .join("");
+  if (meta) {
+    const missing = items.filter((row) => row[2] === "warn").length;
+    meta.textContent = missing ? `${missing} 项待补齐` : "关键密钥已就绪";
+  }
+}
+
 function updateAuthPasswordState(auth) {
   const el = $("auth-password-state");
   if (!el) return;
   if (!auth || !auth.mode) {
     el.textContent = "检测中…";
     delete el.dataset.state;
+    renderSecretsCabinet(null);
     return;
   }
   const mode = auth.mode || "none";
@@ -7539,6 +7711,66 @@ function updateAuthPasswordState(auth) {
     const oidc = auth.oidc || {};
     oidcEl.textContent = oidc.ready ? `已就绪${oidc.issuer ? ` · ${oidc.issuer}` : ""}` : "未配置";
     oidcEl.dataset.state = oidc.ready ? "ok" : "warn";
+  }
+  renderSecretsCabinet(auth);
+}
+
+async function saveOidcSecret() {
+  const input = $("auth-oidc-secret-paste");
+  const secret = (input?.value || "").trim();
+  if (!secret) {
+    toastBad("请先粘贴 Client Secret");
+    return;
+  }
+  setBusy(true);
+  try {
+    const data = await api("/api/auth/oidc/secret", {
+      method: "POST",
+      body: JSON.stringify({ secret }),
+    });
+    if (input) input.value = "";
+    if (data.path && $("auth-oidc-secret") && !$("auth-oidc-secret").value) {
+      $("auth-oidc-secret").value = "config/local/secrets/oidc_client_secret";
+    }
+    if (data.auth) {
+      state.auth = { ...(state.auth || {}), ...data.auth };
+      updateAuthPasswordState(state.auth);
+    }
+    const meta = $("oidc-secret-meta");
+    if (meta) meta.textContent = "已写入 secrets（不回显）";
+    toastOk("OIDC Client Secret 已保存");
+  } catch (err) {
+    actionError("写入 OIDC Secret", err);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function clearOidcSecret() {
+  const ok = await confirmDialog({
+    title: "清除 OIDC Secret",
+    message: "清除后 OIDC 登录将不可用，直到重新写入。",
+    confirmText: "清除",
+    tone: "danger",
+  });
+  if (!ok) return;
+  setBusy(true);
+  try {
+    const data = await api("/api/auth/oidc/secret", {
+      method: "POST",
+      body: JSON.stringify({ clear: true }),
+    });
+    if (data.auth) {
+      state.auth = { ...(state.auth || {}), ...data.auth };
+      updateAuthPasswordState(state.auth);
+    }
+    const meta = $("oidc-secret-meta");
+    if (meta) meta.textContent = "已清除";
+    toastOk("OIDC Client Secret 已清除");
+  } catch (err) {
+    actionError("清除 OIDC Secret", err);
+  } finally {
+    setBusy(false);
   }
 }
 

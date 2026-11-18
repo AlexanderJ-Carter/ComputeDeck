@@ -7,8 +7,8 @@
   <title>ComputeDeck</title>
   <link rel="icon" href="/static/logo.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/vendor/xterm/xterm-6.1.0.css" />
-  <link rel="stylesheet" href="/static/tokens.css?v=__UI_VERSION__.dash24" />
-  <link rel="stylesheet" href="/static/style.css?v=__UI_VERSION__.dash24" />
+  <link rel="stylesheet" href="/static/tokens.css?v=__UI_VERSION__.dash25" />
+  <link rel="stylesheet" href="/static/style.css?v=__UI_VERSION__.dash25" />
   <script src="/static/theme-boot.js?v=__UI_VERSION__"></script>
 </head>
 
@@ -293,33 +293,42 @@
 
       <section class="view" data-view-panel="toolkits">
         <div class="toolkit-workspace">
-          <div class="panel">
+          <div class="panel toolkit-catalog-panel">
             <div class="panel-h">
               <h2 title="在 GPU 节点 pip 探测/安装常用训练与推理栈">AI 工具栈</h2>
               <div class="btn-row">
-                <button id="btn-toolkit-probe" class="ghost tiny" data-keep-enabled="1" data-action="1">探测全部</button>
-                <button id="btn-toolkit-train" class="primary tiny" data-keep-enabled="1" data-action="1">安装微调栈</button>
+                <label class="field toolkit-node-field">
+                  <span class="sr-only">目标节点</span>
+                  <select id="toolkit-node" data-keep-enabled="1" aria-label="目标节点">
+                    <option value="">全部节点</option>
+                  </select>
+                </label>
+                <button id="btn-toolkit-probe" class="ghost tiny" data-keep-enabled="1" data-action="1">探测</button>
               </div>
             </div>
-            <p class="meta">在 GPU 节点探测 / 安装训练与推理依赖；结果在右侧。</p>
-            <div id="toolkit-bundles" class="chip-row"></div>
-            <div id="toolkit-list" class="list"></div>
+            <p class="meta">按捆绑或单包装依赖；默认打全部节点，可先选一台再探测 / 安装。</p>
+            <div class="toolkit-section-label">捆绑安装</div>
+            <div id="toolkit-bundles" class="chip-row toolkit-bundle-row"></div>
+            <div class="toolkit-section-label">工具目录</div>
+            <div id="toolkit-list" class="list toolkit-catalog-list"></div>
           </div>
-          <div class="panel">
+          <div class="panel toolkit-result-panel">
             <div class="panel-h">
-              <h2>节点探测结果</h2>
-              <span class="meta" id="toolkit-state-meta">尚未探测</span>
+              <h2>节点覆盖</h2>
+              <div class="btn-row">
+                <span class="meta" id="toolkit-state-meta">尚未探测</span>
+                <button type="button" id="btn-toolkit-refresh" class="ghost tiny" data-keep-enabled="1">刷新</button>
+              </div>
             </div>
-            <div id="toolkit-nodes" class="list"></div>
+            <div id="toolkit-kpis" class="toolkit-kpis" hidden></div>
+            <div id="toolkit-nodes" class="list toolkit-result-list"></div>
             <details class="fold">
               <summary>CLI</summary>
               <pre class="snippet">gpu-control toolkits list
 gpu-control toolkits probe
+gpu-control toolkits probe --node &lt;name&gt;
 gpu-control toolkits install --bundle train-stack
-gpu-control jobs install train-job --name sft
-gpu-control deploy sft --nodes gpu-1,gpu-2 --gpus 16
-gpu-control jobs install ray-cluster --name ray
-gpu-control jobs install vllm-serve --name vllm</pre>
+gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
             </details>
           </div>
         </div>
@@ -823,7 +832,8 @@ gpu-control jobs install vllm-serve --name vllm</pre>
                       placeholder="/usr/bin/python3" /></label>
                   <label class="field"><span>脚本</span><input id="py-script" placeholder="/path/script.py" /></label>
                   <label class="field"><span>参数</span><input id="py-args" placeholder="--flag" /></label>
-                  <label class="field ops-span-2"><span>代码 (-c)</span><input id="py-code" placeholder="print(1)" /></label>
+                  <label class="field ops-span-2"><span>代码 (-c)</span><input id="py-code"
+                      placeholder="print(1)" /></label>
                   <label class="field"><span>CUDA_VISIBLE_DEVICES</span><input id="py-cuda" placeholder="0,1" /></label>
                   <label class="field"><span>工作目录</span><input id="py-cwd" placeholder="/data/…" /></label>
                 </div>
@@ -1149,14 +1159,32 @@ gpu-control jobs install vllm-serve --name vllm</pre>
                 </div>
                 <p class="meta" id="auth-token-meta" role="status" aria-live="polite">Token 只在生成时显示一次；脚本 / MCP 需同步更新。
                 </p>
+                <div class="panel-h" style="margin-top:14px">
+                  <h2>密钥就绪</h2>
+                  <span class="meta" id="secrets-cabinet-meta">检测中…</span>
+                </div>
+                <div id="secrets-cabinet" class="secrets-cabinet" aria-live="polite"></div>
                 <details class="fold" open>
                   <summary>OAuth / OIDC / 免密登录</summary>
                   <label class="field"><span>Issuer</span><input id="auth-oidc-issuer"
                       placeholder="https://login.example.com" /></label>
                   <label class="field"><span>Client ID</span><input id="auth-oidc-client-id" /></label>
-                  <label class="field"><span>Client Secret 文件</span><input id="auth-oidc-secret" /></label>
+                  <label class="field"><span>Client Secret 文件</span><input id="auth-oidc-secret"
+                      placeholder="config/local/secrets/oidc_client_secret" /></label>
+                  <label class="field"><span>粘贴 Client Secret</span>
+                    <input id="auth-oidc-secret-paste" type="password" autocomplete="off" data-keep-enabled="1"
+                      placeholder="粘贴后点写入，不会回显" /></label>
+                  <div class="btn-row">
+                    <button type="button" id="btn-oidc-secret-save" class="primary tiny" data-keep-enabled="1"
+                      data-action="1">写入 Secret</button>
+                    <button type="button" id="btn-oidc-secret-clear" class="ghost tiny" data-keep-enabled="1"
+                      data-action="1">清除 Secret</button>
+                    <span class="meta" id="oidc-secret-meta" role="status" aria-live="polite"></span>
+                  </div>
                   <label class="field"><span>允许邮箱（逗号分隔）</span><input id="auth-oidc-allowed-emails"
                       placeholder="you@corp.com,ops@corp.com" /></label>
+                  <label class="field"><span>允许 Groups（逗号分隔）</span><input id="auth-oidc-allowed-groups"
+                      placeholder="gpu-admins,platform" /></label>
                   <label class="field"><span>用户名 Claim</span><input id="auth-oidc-username-claim"
                       placeholder="email" /></label>
                   <label class="field"><span>Scopes</span><input id="auth-oidc-scopes"
@@ -1600,7 +1628,7 @@ gpu-control ui --background</pre>
   </div>
   <script src="/static/vendor/xterm/xterm-6.1.0.min.js"></script>
   <script src="/static/xterm-fit.js?v=__UI_VERSION__"></script>
-  <script src="/static/app.js?v=__UI_VERSION__.dash24"></script>
+  <script src="/static/app.js?v=__UI_VERSION__.dash25"></script>
 </body>
 
 </html>

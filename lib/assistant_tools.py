@@ -729,33 +729,68 @@ def exec_command_risk(command: str) -> Risk:
     if cmd == "curl":
         # curl 的“只读”判定必须覆盖所有会读写本地文件 / 发送数据的参数；
         # 漏掉一个就会让助手在无确认的情况下把节点文件发到外部 URL。
-        dangerous = {
-            "-x", "--request", "-d", "--data", "--data-raw", "--data-binary",
+        # 注意：不能对短选项做 .lower() 后再比对——`-X` 会变成 `-x`（proxy）。
+        write_flags = {
+            "-d", "--data", "--data-raw", "--data-binary",
             "--data-urlencode", "--data-ascii", "--json", "--form", "--form-string",
-            "--upload-file", "-t", "-T", "--telnet-option",
-            "-o", "-O", "--output", "--output-document", "--remote-name",
+            "--upload-file", "-T", "--telnet-option",
+            "-O", "--remote-name",
             "--post-file", "--post-data", "--config", "-K", "--create-dirs",
             "-b", "--cookie", "-c", "--cookie-jar", "-D", "--dump-header",
             "--trace", "--trace-ascii", "--stderr", "--libcurl", "--netrc-file",
             "-E", "--cert", "--key",
+            "-x", "--proxy", "--proxy-user", "--proxytunnel",
         }
-        for arg in args:
-            low = arg.lower()
-            if low in dangerous:
+        write_prefixes = (
+            "--data=", "--data-raw=", "--data-binary=", "--data-urlencode=",
+            "--json=", "--form=", "--upload-file=",
+            "--config=", "--cookie=", "--cookie-jar=",
+            "--proxy=", "--proxy-user=",
+        )
+        sink_ok = {"/dev/null", "-"}
+        idx = 0
+        while idx < len(args):
+            arg = str(args[idx])
+            if arg in write_flags:
                 return "destructive"
-            if low.startswith(("--data=", "--data-raw=", "--data-binary=", "--data-urlencode=",
-                               "--json=", "--form=", "--upload-file=", "--output=",
-                               "--config=", "--cookie=", "--cookie-jar=", "--request=")):
+            if arg.startswith(write_prefixes):
                 return "destructive"
+            # -X / --request：仅非 GET/HEAD 升为写；大小写敏感，勿与 -x(proxy) 混淆
+            if arg in {"-X", "--request"}:
+                method = str(args[idx + 1]).upper() if idx + 1 < len(args) else ""
+                if method and method not in {"GET", "HEAD"}:
+                    return "destructive"
+                idx += 2
+                continue
+            if arg.startswith("--request="):
+                method = arg.split("=", 1)[1].upper()
+                if method and method not in {"GET", "HEAD"}:
+                    return "destructive"
+                idx += 1
+                continue
+            # -o / --output：仅允许丢弃到 /dev/null 或 stdout(-) 的探活写法
+            if arg in {"-o", "--output", "--output-document"}:
+                target = str(args[idx + 1]) if idx + 1 < len(args) else ""
+                if target not in sink_ok:
+                    return "destructive"
+                idx += 2
+                continue
+            if arg.startswith("--output=") or arg.startswith("--output-document="):
+                target = arg.split("=", 1)[1]
+                if target not in sink_ok:
+                    return "destructive"
+                idx += 1
+                continue
             # -H @file / --header @file 会把本地文件当请求头发送
-            if low.startswith("-h") and "@" in low:
+            low = arg.lower()
+            if (low.startswith("-h") or low.startswith("--header")) and "@" in arg:
                 return "destructive"
-            if low.startswith("--header") and "@" in low:
-                return "destructive"
-        for idx, arg in enumerate(args):
             if arg in {"-H", "--header"} and idx + 1 < len(args):
                 if str(args[idx + 1]).strip().startswith("@"):
                     return "destructive"
+                idx += 2
+                continue
+            idx += 1
         return "read"
     if cmd == "wget":
         # wget 默认把响应写到磁盘；即使 -O - 也通常不是纯诊断命令。

@@ -238,10 +238,64 @@ def append_message(doc: dict[str, Any], message: dict[str, Any]) -> dict[str, An
     return doc
 
 
+def find_active_by_signature(
+    doc: dict[str, Any],
+    *,
+    tool: str,
+    args_hash: str,
+) -> dict[str, Any] | None:
+    """查找同工具 + args_hash 的活跃确认卡（pending/armed）。"""
+    pending = doc.get("pending") or {}
+    if not isinstance(pending, dict):
+        return None
+    tool_key = str(tool or "")
+    hash_key = str(args_hash or "")
+    if not tool_key or not hash_key:
+        return None
+    for row in pending.values():
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("status") or "pending") not in {"pending", "armed"}:
+            continue
+        if str(row.get("tool") or "") == tool_key and str(row.get("args_hash") or "") == hash_key:
+            return row
+    return None
+
+
 def put_pending(doc: dict[str, Any], action: dict[str, Any]) -> dict[str, Any]:
+    """写入确认卡；同 tool+args_hash 的活跃卡去重并复用已有 id。"""
     pending = doc.setdefault("pending", {})
-    if isinstance(pending, dict):
-        pending[str(action["id"])] = action
+    if not isinstance(pending, dict):
+        return doc
+    existing = find_active_by_signature(
+        doc,
+        tool=str(action.get("tool") or ""),
+        args_hash=str(action.get("args_hash") or ""),
+    )
+    if existing is not None:
+        # 复用已有卡：刷新 call_id / 展示字段，但保留原 id 与过期时间。
+        keep_id = str(existing.get("id") or "")
+        merged = dict(existing)
+        for key in (
+            "call_id",
+            "display_args",
+            "label",
+            "summary",
+            "target",
+            "warnings",
+            "risk",
+            "confirm_level",
+            "args",
+        ):
+            if key in action and action.get(key) is not None:
+                merged[key] = action[key]
+        merged["id"] = keep_id
+        merged["updated_at"] = _now()
+        pending[keep_id] = merged
+        action.clear()
+        action.update(merged)
+        return doc
+    pending[str(action["id"])] = action
     return doc
 
 

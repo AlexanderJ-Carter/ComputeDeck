@@ -142,6 +142,35 @@ class PublicPendingTests(unittest.TestCase):
         self.assertNotIn("args", public)
 
 
+class PendingDedupTests(unittest.TestCase):
+    def test_put_pending_reuses_active_signature(self) -> None:
+        doc = assistant_session.load("conv_testdedup01")
+        first = {
+            "id": "act_old",
+            "tool": "gc_exec",
+            "args_hash": "hash_curl",
+            "status": "pending",
+            "label": "危险命令",
+            "call_id": "call_1",
+        }
+        second = {
+            "id": "act_new",
+            "tool": "gc_exec",
+            "args_hash": "hash_curl",
+            "status": "pending",
+            "label": "危险命令",
+            "call_id": "call_2",
+            "summary": "再次提议",
+        }
+        assistant_session.put_pending(doc, first)
+        assistant_session.put_pending(doc, second)
+        pending = doc["pending"]
+        self.assertEqual(list(pending.keys()), ["act_old"])
+        self.assertEqual(second["id"], "act_old")
+        self.assertEqual(pending["act_old"]["call_id"], "call_2")
+        self.assertEqual(pending["act_old"]["summary"], "再次提议")
+
+
 class NodeAddValidationTests(unittest.TestCase):
     def test_node_add_requires_gpus(self) -> None:
         route = assistant_tools.route_for("gc_node", {"action": "add", "name": "n1", "host": "10.0.0.1"})
