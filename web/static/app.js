@@ -3364,7 +3364,6 @@ async function runToolkit(action, extra = {}) {
   const node = toolkitTargetNode();
   if (node) body.node = node;
   setBusy(true);
-  revealConsole();
   try {
     const data = await api(`/api/toolkits/${action}`, {
       timeoutMs: 1900000,
@@ -3373,6 +3372,7 @@ async function runToolkit(action, extra = {}) {
     });
     writeConsoleText(data.result?.stdout || data.result?.stderr || action, {
       meta: `toolkits ${action}`,
+      reveal: false,
     });
     if (data.toolkits) renderToolkits(data.toolkits);
     if (data.overview) applyOverview(data.overview);
@@ -5702,7 +5702,6 @@ async function boot() {
     if (btn) btn.click();
   });
   on("btn-quick-health", "click", runApiHealth);
-  on("btn-console-scroll", "click", revealConsole);
   on("console-unread", "click", revealConsole);
   on("btn-console-toggle", "click", () => {
     const wrap = $("batch-console-wrap");
@@ -6204,16 +6203,14 @@ async function boot() {
     }
   });
 
-  document.getElementById("btn-clear-console").addEventListener("click", () => {
-    writeConsoleText("已清空。点「一键连通」或上方运维卡片可再次产生输出。", {
+  document.getElementById("btn-clear-console")?.addEventListener("click", () => {
+    writeConsoleText("已清空。在「批量命令」或工具栈探测 / 安装后会再次出现输出。", {
       empty: true,
       meta: "已清空",
     });
+    const activity = $("log");
+    if (activity) activity.textContent = "就绪";
   });
-  document.getElementById("btn-clear-log").addEventListener("click", () => {
-    document.getElementById("log").textContent = "已清空";
-  });
-  document.getElementById("btn-console-connect").addEventListener("click", () => runOneclick("connect"));
 
   const focusActiveNav = () => {
     document.querySelector(".nav-item.active")?.focus({ preventScroll: true });

@@ -7,8 +7,8 @@
   <title>ComputeDeck</title>
   <link rel="icon" href="/static/logo.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/vendor/xterm/xterm-6.1.0.css" />
-  <link rel="stylesheet" href="/static/tokens.css?v=__UI_VERSION__.dash26" />
-  <link rel="stylesheet" href="/static/style.css?v=__UI_VERSION__.dash26" />
+  <link rel="stylesheet" href="/static/tokens.css?v=__UI_VERSION__.dash27" />
+  <link rel="stylesheet" href="/static/style.css?v=__UI_VERSION__.dash27" />
   <script src="/static/theme-boot.js?v=__UI_VERSION__"></script>
 </head>
 
@@ -802,7 +802,7 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
               <div class="panel ops-panel">
                 <div class="panel-h">
                   <h2>远程命令</h2>
-                  <span class="meta">输出在底部「执行输出」坞</span>
+                  <span class="meta">stdout 落入底部输出坞</span>
                 </div>
                 <p class="meta">在目标节点执行预设或自定义 shell；适合排查与一次性运维。</p>
                 <label class="field"><span>目标</span><select id="exec-target"></select></label>
@@ -827,7 +827,7 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
               <div class="panel ops-panel">
                 <div class="panel-h">
                   <h2>运行 Python</h2>
-                  <span class="meta">输出在底部「执行输出」坞</span>
+                  <span class="meta">stdout 落入底部输出坞</span>
                 </div>
                 <p class="meta">在节点上跑脚本或一行代码；后台模式用 nohup。</p>
                 <div class="compact-fields ops-form">
@@ -1454,25 +1454,25 @@ gpu-control ui --background</pre>
         </div>
       </section>
 
-      <section class="console-wrap panel collapsed" id="batch-console-wrap">
+      <section class="console-wrap panel collapsed" id="batch-console-wrap" aria-label="执行输出坞">
         <div class="panel-h">
           <div>
             <h2>执行输出</h2>
-            <p class="meta console-dock-hint">批跑 / 远程命令 / 探测的输出坞，默认折叠</p>
+            <p class="meta console-dock-hint">远程命令 / 批跑 / 探测的 stdout 落在这里（不是审计日志）。默认折叠，有更新时顶栏亮「有新输出」。</p>
           </div>
           <div class="btn-row">
             <span class="meta" id="console-meta">就绪</span>
             <span class="meta" id="busy-flag"></span>
             <button type="button" class="ghost tiny" id="btn-console-toggle" data-keep-enabled="1">展开</button>
-            <button type="button" class="ghost tiny" id="btn-console-scroll" data-keep-enabled="1">查看输出</button>
-            <button type="button" class="ghost tiny" id="btn-console-connect" data-keep-enabled="1">一键连通</button>
-            <button id="btn-clear-console" class="ghost tiny" data-keep-enabled="1">清空输出</button>
-            <button id="btn-clear-log" class="ghost tiny" data-keep-enabled="1">清空日志</button>
+            <button type="button" class="ghost tiny" id="btn-clear-console" data-keep-enabled="1">清空</button>
           </div>
         </div>
-        <div class="console-split">
-          <div id="console" class="console empty">加载中…</div>
-          <div id="log" class="log">就绪</div>
+        <div class="console-body">
+          <div id="console" class="console empty">尚无输出。在「批量命令」跑命令，或探测 / 安装工具栈后会出现在这里。</div>
+          <details class="fold console-activity">
+            <summary>活动记录 <span class="meta">短时事件流 · 不是审计</span></summary>
+            <div id="log" class="log">就绪</div>
+          </details>
         </div>
       </section>
     </div>
@@ -1632,7 +1632,7 @@ gpu-control ui --background</pre>
   </div>
   <script src="/static/vendor/xterm/xterm-6.1.0.min.js"></script>
   <script src="/static/xterm-fit.js?v=__UI_VERSION__"></script>
-  <script src="/static/app.js?v=__UI_VERSION__.dash26"></script>
+  <script src="/static/app.js?v=__UI_VERSION__.dash27"></script>
 </body>
 
 </html>

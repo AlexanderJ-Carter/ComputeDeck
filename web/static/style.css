@@ -1226,7 +1226,7 @@ hr {
   margin: 0;
 }
 
-.console-wrap.collapsed .console-split {
+.console-wrap.collapsed .console-body {
   display: none;
 }
 
@@ -1234,13 +1234,33 @@ hr {
   margin-bottom: 0;
 }
 
-.console-split {
+.console-body {
   display: grid;
-  grid-template-columns: 1.35fr 0.85fr;
-  min-height: 240px;
+  gap: 8px;
   border: 1px solid var(--line);
   border-radius: 12px;
   overflow: hidden;
+  background: var(--console-bg);
+}
+
+.console-body > .console {
+  border: 0;
+  border-radius: 0;
+  min-height: 180px;
+  max-height: 360px;
+}
+
+.console-activity {
+  margin: 0;
+  padding: 0 10px 8px;
+  color: var(--console-ink);
+  border-top: 1px solid color-mix(in srgb, var(--console-ink) 16%, transparent);
+}
+
+.console-activity > summary {
+  cursor: pointer;
+  padding: 8px 2px;
+  color: color-mix(in srgb, var(--console-ink) 78%, transparent);
 }
 
 .console,
@@ -1251,8 +1271,14 @@ hr {
   white-space: pre-wrap;
   overflow: auto;
   padding: 12px;
-  min-height: 240px;
-  max-height: 420px;
+}
+
+.log {
+  min-height: 80px;
+  max-height: 160px;
+  padding: 0 2px 4px;
+  background: transparent;
+  color: color-mix(in srgb, var(--console-ink) 82%, transparent);
 }
 
 .console {
@@ -2331,7 +2357,6 @@ code {
 
 
   .split,
-  .console-split,
   .form-grid,
   .setup-grid,
   .api-node-row {
@@ -2340,7 +2365,7 @@ code {
 
   .log {
     border-left: 0;
-    border-top: 1px solid var(--line);
+    border-top: 0;
   }
 }
 
@@ -4563,7 +4588,7 @@ textarea {
 .dash-grid,
 .setup-grid,
 .split,
-.console-split,
+.console-body,
 .page-head {
   min-width: 0;
   max-width: 100%;
@@ -4738,8 +4763,7 @@ body {
   .dash-grid-2,
   .dash-grid-3,
   .setup-grid,
-  .split,
-  .console-split {
+  .split {
     grid-template-columns: 1fr !important;
   }
 
