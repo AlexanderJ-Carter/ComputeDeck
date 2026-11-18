@@ -7,8 +7,8 @@
   <title>ComputeDeck</title>
   <link rel="icon" href="/static/logo.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/vendor/xterm/xterm-6.1.0.css" />
-  <link rel="stylesheet" href="/static/tokens.css?v=__UI_VERSION__.dash31" />
-  <link rel="stylesheet" href="/static/style.css?v=__UI_VERSION__.dash31" />
+  <link rel="stylesheet" href="/static/tokens.css?v=__UI_VERSION__.dash32" />
+  <link rel="stylesheet" href="/static/style.css?v=__UI_VERSION__.dash32" />
   <script src="/static/theme-boot.js?v=__UI_VERSION__"></script>
 </head>
 
@@ -301,7 +301,6 @@
             <div class="panel-h">
               <h2 title="在 GPU 节点 pip 探测/安装常用训练与推理栈">AI 工具栈</h2>
               <div class="btn-row">
-                <a class="ghost tiny" href="/help/手册/" target="_blank" rel="noopener" data-keep-enabled="1">手册</a>
                 <label class="field toolkit-node-field">
                   <span class="sr-only">目标节点</span>
                   <select id="toolkit-node" data-keep-enabled="1" aria-label="目标节点">
@@ -380,8 +379,6 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
                 <div class="panel-h">
                   <h2>已安装任务</h2>
                   <div class="btn-row">
-                    <a class="ghost tiny" href="/help/手册/" target="_blank" rel="noopener"
-                      data-keep-enabled="1">手册</a>
                     <button id="btn-install-recommended-jobs" class="primary tiny" data-keep-enabled="1"
                       data-action="1">安装推荐包</button>
                   </div>
@@ -513,8 +510,6 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
               <div class="panel">
                 <div class="panel-h">
                   <h2 title="填写 HF / ModelScope 仓库 id，选节点后拉取；可勾选登记到本地目录">下载新模型</h2>
-                  <a class="ghost tiny" href="/help/分布式与推理/" target="_blank" rel="noopener"
-                    data-keep-enabled="1">推理说明</a>
                 </div>
                 <label class="field"><span>仓库 ID</span><input id="pull-repo" placeholder="org/model-name"
                     data-keep-enabled="1" /></label>
@@ -605,8 +600,6 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
                 <div class="panel-h">
                   <h2>入口总览</h2>
                   <div class="btn-row">
-                    <a class="ghost tiny" href="/help/入口分层与nginx/" target="_blank" rel="noopener"
-                      data-keep-enabled="1">分层说明</a>
                     <button id="btn-api-health-2" class="primary tiny" data-action="1">探测上游</button>
                     <button id="btn-ingress-start" class="primary tiny" data-keep-enabled="1" data-action="1">启动
                       Edge</button>
@@ -760,8 +753,6 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
             <div class="panel-h term-side-h">
               <h2>交互终端</h2>
               <div class="btn-row">
-                <a class="ghost tiny" href="/help/远程接入/" target="_blank" rel="noopener"
-                  data-keep-enabled="1">远程接入</a>
                 <button type="button" id="btn-metrics-refresh" class="ghost tiny" data-keep-enabled="1"
                   title="刷新主机指标">刷新</button>
               </div>
@@ -815,8 +806,6 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
                 <div class="panel-h">
                   <h2>远程命令</h2>
                   <div class="btn-row">
-                    <a class="ghost tiny" href="/help/故障排查/" target="_blank" rel="noopener"
-                      data-keep-enabled="1">排障</a>
                     <span class="meta">stdout → 底部输出坞</span>
                   </div>
                 </div>
@@ -869,73 +858,68 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
         <div class="config-shell">
           <aside class="config-side" aria-label="配置分页">
             <div class="config-side-group">
-              <p class="config-side-label">配置</p>
+              <p class="config-side-label">日常配置</p>
               <button type="button" class="config-nav active" data-config-nav="connect" aria-current="page">
                 <span class="config-nav-num">1</span>
-                <span class="config-nav-text"><span class="config-nav-title">基础连接</span><span class="config-nav-sub">SSH
-                    · 集群策略</span></span>
+                <span class="config-nav-text"><span class="config-nav-title">基础连接</span><span class="config-nav-sub">主控 SSH · 集群名</span></span>
                 <span class="config-nav-state" data-config-state="connect" hidden></span>
               </button>
               <button type="button" class="config-nav" data-config-nav="nodes">
                 <span class="config-nav-num">2</span>
-                <span class="config-nav-text"><span class="config-nav-title">节点清单</span><span class="config-nav-sub">主机
-                    · GPU · 标签</span></span>
+                <span class="config-nav-text"><span class="config-nav-title">节点清单</span><span class="config-nav-sub">主机 · GPU 数</span></span>
                 <span class="config-nav-state" data-config-state="nodes" hidden></span>
               </button>
               <button type="button" class="config-nav" data-config-nav="jobs">
                 <span class="config-nav-num">3</span>
                 <span class="config-nav-text"><span class="config-nav-title">Job 模板</span><span
-                    class="config-nav-sub">启停命令 · 运行时</span></span>
+                    class="config-nav-sub">启停命令</span></span>
                 <span class="config-nav-state" data-config-state="jobs" hidden></span>
               </button>
               <button type="button" class="config-nav" data-config-nav="ops">
                 <span class="config-nav-num">4</span>
-                <span class="config-nav-text"><span class="config-nav-title">巡检与守护</span><span
-                    class="config-nav-sub">Watchdog</span></span>
+                <span class="config-nav-text"><span class="config-nav-title">巡检守护</span><span
+                    class="config-nav-sub">自动重启</span></span>
                 <span class="config-nav-state" data-config-state="ops" hidden></span>
               </button>
               <button type="button" class="config-nav" data-config-nav="auth">
                 <span class="config-nav-num">5</span>
-                <span class="config-nav-text"><span class="config-nav-title">登录与鉴权</span><span class="config-nav-sub">密码
-                    · OAuth / OIDC · Token</span></span>
+                <span class="config-nav-text"><span class="config-nav-title">登录鉴权</span><span class="config-nav-sub">密码 · 企业登录 · Token</span></span>
                 <span class="config-nav-state" data-config-state="auth" hidden></span>
               </button>
               <button type="button" class="config-nav" data-config-nav="remote">
                 <span class="config-nav-num">6</span>
                 <span class="config-nav-text"><span class="config-nav-title">远程接入</span><span
-                    class="config-nav-sub">Tailscale · Cloudflare · 端口</span></span>
+                    class="config-nav-sub">外网进来</span></span>
                 <span class="config-nav-state" data-config-state="remote" hidden></span>
               </button>
             </div>
             <div class="config-side-group">
-              <p class="config-side-label">检查与接入</p>
+              <p class="config-side-label">检查</p>
               <button type="button" class="config-nav" data-config-nav="checklist">
                 <span class="config-nav-num config-nav-num--icon">✓</span>
                 <span class="config-nav-text"><span class="config-nav-title">就绪检查</span><span
-                    class="config-nav-sub">配置清单 · doctor</span></span>
+                    class="config-nav-sub">缺什么一眼看见</span></span>
               </button>
               <button type="button" class="config-nav" data-config-nav="logs">
                 <span class="config-nav-num config-nav-num--icon">≡</span>
-                <span class="config-nav-text"><span class="config-nav-title">日志与诊断</span><span class="config-nav-sub">UI
-                    · watchdog · 审计</span></span>
-              </button>
-              <button type="button" class="config-nav" data-config-nav="integration">
-                <span class="config-nav-num config-nav-num--icon">⇄</span>
-                <span class="config-nav-text"><span class="config-nav-title">AI / MCP</span><span
-                    class="config-nav-sub">API · Token · MCP</span></span>
+                <span class="config-nav-text"><span class="config-nav-title">日志诊断</span><span class="config-nav-sub">出问题好查</span></span>
               </button>
             </div>
             <div class="config-side-group">
-              <p class="config-side-label">参考</p>
+              <p class="config-side-label">接入与参考</p>
+              <button type="button" class="config-nav" data-config-nav="integration">
+                <span class="config-nav-num config-nav-num--icon">⇄</span>
+                <span class="config-nav-text"><span class="config-nav-title">AI / MCP</span><span
+                    class="config-nav-sub">助手 · Agent · Token</span></span>
+              </button>
               <button type="button" class="config-nav" data-config-nav="docs">
                 <span class="config-nav-num config-nav-num--icon">?</span>
-                <span class="config-nav-text"><span class="config-nav-title">文档与 API</span><span
-                    class="config-nav-sub">命令 · Swagger · MkDocs</span></span>
+                <span class="config-nav-text"><span class="config-nav-title">文档手册</span><span
+                    class="config-nav-sub">命令 · API</span></span>
               </button>
               <button type="button" class="config-nav" data-config-nav="raw">
                 <span class="config-nav-num config-nav-num--icon">{ }</span>
-                <span class="config-nav-text"><span class="config-nav-title">高级配置</span><span class="config-nav-sub">路径
-                    · 查找顺序</span></span>
+                <span class="config-nav-text"><span class="config-nav-title">高级配置</span><span class="config-nav-sub">本地文件路径</span></span>
               </button>
             </div>
             <div class="config-side-foot">
@@ -1142,8 +1126,6 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
                 <div class="panel-h">
                   <h2>登录与鉴权</h2>
                   <div class="btn-row">
-                    <a class="ghost tiny" href="/help/安全加固/" target="_blank" rel="noopener"
-                      data-keep-enabled="1">安全加固</a>
                     <button id="btn-save-auth" class="primary tiny" data-keep-enabled="1">保存</button>
                   </div>
                 </div>
@@ -1386,7 +1368,6 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
                   <div class="btn-row">
                     <button type="button" id="btn-integration-mcp-copy" class="primary tiny" data-keep-enabled="1">复制
                       MCP 配置</button>
-                    <a class="btn ghost tiny" href="/help/ai-接入/" target="_blank" rel="noopener">接入文档</a>
                   </div>
                   <p class="meta" id="integration-mcp-meta">复制时会生成 / 轮换 Token 并写入片段（旧 Token 立即失效）。</p>
                   <pre id="integration-mcp-snippet" class="snippet" hidden></pre>
@@ -1412,8 +1393,8 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
               <header class="config-page-h">
                 <div>
                   <p class="config-page-kicker">参考</p>
-                  <h2 id="config-title-docs">文档与 API</h2>
-                  <p class="meta">上手步骤、常用命令与接口入口。</p>
+                  <h2 id="config-title-docs">文档手册</h2>
+                  <p class="meta">上手步骤与常用命令；完整手册在控制面 /help，不另开宣传站。</p>
                 </div>
               </header>
               <div class="panel">
@@ -1437,13 +1418,12 @@ gpu-control ui --background</pre>
               </div>
               <div class="panel">
                 <div class="panel-h">
-                  <h2>API / 文档（附属链接 · 不是业务入口）</h2>
+                  <h2>接口与手册</h2>
                 </div>
-                <div class="btn-row">
-                  <a class="btn primary" href="/api/docs" target="_blank" rel="noopener">API / Swagger</a>
-                  <a class="btn ghost" href="/help/" target="_blank" rel="noopener">文档站 /help</a>
-                  <a class="btn ghost" href="/api/openapi.json" target="_blank" rel="noopener">openapi.json</a>
-                  <a class="btn ghost" href="/api" target="_blank" rel="noopener">/api 目录</a>
+                <div class="btn-row doc-entry-row">
+                  <a class="btn ghost" href="/help/" target="_blank" rel="noopener">打开手册</a>
+                  <a class="btn ghost" href="/api/docs" target="_blank" rel="noopener">API 试调</a>
+                  <a class="btn ghost" href="/api" target="_blank" rel="noopener">能力目录</a>
                 </div>
                 <p class="meta" style="margin-top:10px">端口心智：控制面 <code>:8787</code> · 推理主入口 <code>:18080</code>（Edge）·
                   可选
@@ -1568,7 +1548,7 @@ gpu-control ui --background</pre>
         <input id="assistant-clear-key" type="checkbox" data-keep-enabled="1" />
         <span>清除已保存的 API Key</span>
       </label>
-      <p class="meta" id="assistant-settings-hint">请求由控制面主机访问 Base URL（不是浏览器本机）。内网请填可达兼容网关，先「连通探测」再拉取模型。确认卡约 15 分钟过期；会话文件保留约 7 天（最多 200 个）。接入说明见 <a href="/help/ai-接入/" target="_blank" rel="noopener">AI 接入</a>。</p>
+      <p class="meta" id="assistant-settings-hint">请求由控制面主机访问 Base URL（不是浏览器本机）。内网请填可达兼容网关，先「连通探测」再拉取模型。确认卡约 15 分钟过期；会话文件保留约 7 天（最多 200 个）。更细的接入步骤在「配置 → 文档与 API」。</p>
       <div class="assistant-settings-actions">
         <button type="button" id="assistant-probe" class="ghost" data-keep-enabled="1">连通探测</button>
         <button type="button" id="assistant-fetch-models" class="ghost" data-keep-enabled="1">拉取模型</button>
@@ -1617,10 +1597,7 @@ gpu-control ui --background</pre>
         <dt><kbd>Tab</kbd></dt>
         <dd>在按钮、输入框间移动焦点</dd>
       </dl>
-      <p class="meta">完整说明见 <a href="/help/" target="_blank" rel="noopener">文档站</a> ·
-        <a href="/api/docs" target="_blank" rel="noopener">API / Swagger</a> ·
-        <a href="/api" target="_blank" rel="noopener">API 目录</a>。
-      </p>
+      <p class="meta">完整说明在「配置 → 文档手册」。API 试调走 <code>/api/docs</code>。</p>
     </div>
   </dialog>
   <div id="auth-gate" class="auth-gate" role="dialog" aria-modal="true" aria-labelledby="auth-gate-title" hidden>
@@ -1648,7 +1625,7 @@ gpu-control ui --background</pre>
   </div>
   <script src="/static/vendor/xterm/xterm-6.1.0.min.js"></script>
   <script src="/static/xterm-fit.js?v=__UI_VERSION__"></script>
-  <script src="/static/app.js?v=__UI_VERSION__.dash31"></script>
+  <script src="/static/app.js?v=__UI_VERSION__.dash32"></script>
 </body>
 
 </html>

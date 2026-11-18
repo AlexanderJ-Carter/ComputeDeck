@@ -174,7 +174,8 @@
   window.addEventListener("wheel", pauseOnInteract, { passive: true });
   window.addEventListener("touchstart", pauseOnInteract, { passive: true });
 
-  if (!reduce) {
+  // 仅从开场进入才自动播放；带 hash 深链 / 刷新停在某页时不要把人拽走。
+  if (!reduce && startIdx === 0) {
     window.setTimeout(() => {
       if (!userStopped && !document.hidden) startAuto();
     }, 900);

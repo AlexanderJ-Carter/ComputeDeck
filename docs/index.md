@@ -1,50 +1,67 @@
 # ComputeDeck 文档
 
-<p align="center">
-  <img src="assets/logo.svg" alt="ComputeDeck" width="72" height="72" />
-</p>
-
-**ComputeDeck**（[仓库](https://github.com/AlexanderJ-Carter/ComputeDeck) · 命令 `gpu-control` · [宣传展板](https://alexanderj-carter.github.io/ComputeDeck/)）是多节点 GPU 控制面：Web、CLI、MCP，SSH / Ansible 编排。场景在 `config/local/`。许可证 **AGPL-3.0**。
+**ComputeDeck**（命令仍是 `gpu-control`）管多机 GPU：谁在用、跑什么任务、对外怎么进。  
+Web / CLI / MCP 共用同一套状态；场景配置写在 `config/local/`。许可证 **AGPL-3.0**。
 
 ![架构总览](assets/architecture-overview.svg)
 
-| 入口 | 说明 |
+## 文档放在哪
+
+| 方式 | 说明 |
 |------|------|
-| [部署总览](部署总览.md) | 拓扑选择、安装、入口、验证与发布检查 |
-| [上手与运维手册](手册.md) | 安装、节点、Job、Gateway、腾空 |
-| [生产部署](生产部署.md) | systemd、端口、发布清单 |
-| [安全加固](安全加固.md) | 鉴权、Token、TLS |
-| [配置参考](配置参考.md) | cluster / nodes / jobs / models |
-| [分布式与推理](分布式与推理.md) | DeepSpeed、Ray、vLLM、微调 |
-| [高可用与负载均衡](高可用与负载均衡.md) | LiteLLM / Edge、watchdog、AI Gateway |
-| [升级与备份](升级与备份.md) | 升级、回滚、迁移 |
-| [故障排查](故障排查.md) | 常见症状 |
-| [AI / MCP 接入](ai-接入.md) | Cursor / Claude Code / Codex 等 Agent、Bearer、助手 |
-| [容器部署](develop/docker.md) | 控制面 Docker / GHCR（不发 PyPI） |
-| [HTTP API](api/index.md) | 分组与示例 |
-| [OpenAPI](api/openapi.md) | `/api/docs` |
-| [开发约定](develop/docstrings.md) | Docstring · [布局](develop/layout.md) · [CI](develop/ci.md) |
+| **控制面 `/help/`** | 跟产品一起走。主控执行 `gpu-control docs build` 后，UI 里打开即可 |
+| **仓库 `docs/`** | 源码即文档，GitHub 上直接阅读 Markdown |
+| **GitHub Pages** | 只托管**宣传展板**（`demo/`），不是这本手册 |
 
-## 控制面在线时
-
-- UI：`http://<control>:8787/`
-- API 目录：`/api`
-- OpenAPI JSON：`/api/openapi.json`
-- Swagger：`/api/docs`
-- 文档站：`/help/`（先执行 `gpu-control docs build`）
+不要把手册和宣传站塞进同一个 Pages 根路径；手册以控制面为准。
 
 ```bash
 uv pip install -r requirements-docs.txt
 gpu-control docs build    # → web/static/help/
-gpu-control docs serve    # 本地预览 :8000
+gpu-control docs serve    # 本机预览
 ```
 
-## 质量门禁
+## 按场景读
 
-```bash
-./scripts/check.sh
-.venv/bin/python scripts/smoke_ui.py
-gpu-control doctor
-```
+### 刚装上
+
+1. [部署总览](部署总览.md) — 拓扑、端口、验证
+2. [上手手册](手册.md) — 节点、Job、腾空、Gateway
+3. [配置参考](配置参考.md) — `cluster` / `nodes` / jobs
+
+### 要对外服务
+
+- [分布式与推理](分布式与推理.md)
+- [高可用与负载均衡](高可用与负载均衡.md)
+- [入口分层与 nginx](入口分层与nginx.md)
+- [远程接入](远程接入.md)
+
+### 生产与排障
+
+- [生产部署](生产部署.md)
+- [安全加固](安全加固.md)
+- [升级与备份](升级与备份.md)
+- [故障排查](故障排查.md)
+
+### 接 Agent / IDE
+
+- [AI / MCP 接入](ai-接入.md)
+- [VS Code 插件](vscode插件.md)
+
+### 接口与开发
+
+- [HTTP API](api/index.md) · [OpenAPI](api/openapi.md)
+- [容器部署](develop/docker.md)
+- [仓库布局](develop/layout.md) · [CI](develop/ci.md)
+
+## 控制面常用入口
+
+| 地址 | 作用 |
+|------|------|
+| `:8787/` | Web UI |
+| `:8787/help/` | 本手册 |
+| `:8787/api` | 能力目录 |
+| `:8787/api/docs` | Swagger 试调 |
+| `:8787/api/openapi.json` | OpenAPI |
 
 版本见仓库根 `VERSION`，变更见 `CHANGELOG.md`。

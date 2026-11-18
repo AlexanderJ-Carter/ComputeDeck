@@ -42,7 +42,7 @@ const VIEW_META = {
   toolkits: { group: "资源", purpose: "探测与安装训练 / 推理依赖" },
   ops: { group: "运维", purpose: "对多节点执行命令与 Python 脚本" },
   terminal: { group: "运维", purpose: "连上单台节点的 SSH 终端" },
-  config: { group: "系统", purpose: "左侧分页编辑配置；检查、接入与参考各自独立" },
+  config: { group: "系统", purpose: "左侧按日常配置 / 检查 / 接入与参考分页；保存后刷新就绪状态" },
 };
 
 /** 顶层导航分组：现在每一项都是独立页面，不再共用子页签 */

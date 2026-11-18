@@ -13,10 +13,12 @@ python3 -m http.server 4173
 
 ## GitHub Pages
 
-已用工作流 `.github/workflows/pages.yml` 发布本目录。
+已用工作流 `.github/workflows/pages.yml` 发布**本目录（宣传展板）**。
 
 - 默认：https://alexanderj-carter.github.io/ComputeDeck/
 - 自定义域名：见 [docs/自定义域名.md](../docs/自定义域名.md)；买域后把域名写入 `CNAME`（参考 `CNAME.example`）
+
+产品手册不走这个 Pages：源码在仓库 `docs/`，运行时在控制面 `/help/`（`gpu-control docs build`）。
 
 产品名 **ComputeDeck**；命令行仍为 `gpu-control`。
 

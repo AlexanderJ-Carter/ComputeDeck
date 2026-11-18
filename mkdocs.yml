@@ -1,6 +1,7 @@
 site_name: ComputeDeck
 site_description: ComputeDeck — 多节点 GPU 控制面（命令行 gpu-control）
-site_url: https://alexanderj-carter.github.io/ComputeDeck/
+# 手册随控制面 /help 发布；GitHub Pages 只托管宣传展板 demo/，勿与手册抢根路径。
+site_url: https://github.com/AlexanderJ-Carter/ComputeDeck
 repo_url: https://github.com/AlexanderJ-Carter/ComputeDeck
 repo_name: AlexanderJ-Carter/ComputeDeck
 docs_dir: docs
@@ -59,28 +60,31 @@ extra:
   generator: false
 
 nav:
-  - 首页: index.md
-  - 部署总览: 部署总览.md
-  - 上手与运维: 手册.md
-  - 产品化:
+  - 开始:
+      - 文档首页: index.md
+      - 部署总览: 部署总览.md
+      - 上手手册: 手册.md
+  - 生产与运维:
       - 生产部署: 生产部署.md
       - 安全加固: 安全加固.md
       - 升级与备份: 升级与备份.md
       - 故障排查: 故障排查.md
       - 配置参考: 配置参考.md
-      - 打包与发布: 打包与发布.md
-  - 分布式与推理: 分布式与推理.md
-  - 高可用与负载均衡: 高可用与负载均衡.md
-  - 入口分层与 nginx: 入口分层与nginx.md
-  - VS Code 插件: vscode插件.md
-  - 远程接入: 远程接入.md
-  - AI / MCP 接入: ai-接入.md
-  - 宣传站自定义域名: 自定义域名.md
-  - 容器部署: develop/docker.md
-  - HTTP API:
-      - 概览: api/index.md
+  - 能力:
+      - 分布式与推理: 分布式与推理.md
+      - 高可用与负载均衡: 高可用与负载均衡.md
+      - 入口分层与 nginx: 入口分层与nginx.md
+      - 远程接入: 远程接入.md
+  - 接入:
+      - AI / MCP: ai-接入.md
+      - VS Code 插件: vscode插件.md
+  - 参考:
+      - HTTP API: api/index.md
       - OpenAPI / Swagger: api/openapi.md
-  - 开发约定:
+      - 打包与发布: 打包与发布.md
+      - 宣传站域名: 自定义域名.md
+  - 开发:
+      - 容器部署: develop/docker.md
       - Docstring 规范: develop/docstrings.md
       - 仓库布局: develop/layout.md
       - 校验与 CI: develop/ci.md
