@@ -7,8 +7,8 @@
   <title>ComputeDeck</title>
   <link rel="icon" href="/static/logo.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/vendor/xterm/xterm-6.1.0.css" />
-  <link rel="stylesheet" href="/static/tokens.css?v=__UI_VERSION__.dash27" />
-  <link rel="stylesheet" href="/static/style.css?v=__UI_VERSION__.dash27" />
+  <link rel="stylesheet" href="/static/tokens.css?v=__UI_VERSION__.dash28" />
+  <link rel="stylesheet" href="/static/style.css?v=__UI_VERSION__.dash28" />
   <script src="/static/theme-boot.js?v=__UI_VERSION__"></script>
 </head>
 
@@ -301,6 +301,7 @@
             <div class="panel-h">
               <h2 title="在 GPU 节点 pip 探测/安装常用训练与推理栈">AI 工具栈</h2>
               <div class="btn-row">
+                <a class="ghost tiny" href="/help/手册/" target="_blank" rel="noopener" data-keep-enabled="1">手册</a>
                 <label class="field toolkit-node-field">
                   <span class="sr-only">目标节点</span>
                   <select id="toolkit-node" data-keep-enabled="1" aria-label="目标节点">
@@ -510,6 +511,8 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
               <div class="panel">
                 <div class="panel-h">
                   <h2 title="填写 HF / ModelScope 仓库 id，选节点后拉取；可勾选登记到本地目录">下载新模型</h2>
+                  <a class="ghost tiny" href="/help/分布式与推理/" target="_blank" rel="noopener"
+                    data-keep-enabled="1">推理说明</a>
                 </div>
                 <label class="field"><span>仓库 ID</span><input id="pull-repo" placeholder="org/model-name"
                     data-keep-enabled="1" /></label>
@@ -600,6 +603,8 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
                 <div class="panel-h">
                   <h2>入口总览</h2>
                   <div class="btn-row">
+                    <a class="ghost tiny" href="/help/入口分层与nginx/" target="_blank" rel="noopener"
+                      data-keep-enabled="1">分层说明</a>
                     <button id="btn-api-health-2" class="primary tiny" data-action="1">探测上游</button>
                     <button id="btn-ingress-start" class="primary tiny" data-keep-enabled="1" data-action="1">启动
                       Edge</button>
@@ -610,6 +615,7 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
                     <button id="btn-copy-urls" class="ghost tiny">复制上游 URL</button>
                   </div>
                 </div>
+                <div id="ingress-kpis" class="ingress-kpis" aria-live="polite"></div>
                 <p class="meta" id="ingress-meta">加载中…</p>
                 <p class="meta ingress-layering" id="ingress-layering">入口分层：检测中…</p>
 
@@ -751,8 +757,12 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
           <aside class="term-side panel" aria-label="节点与主机资源">
             <div class="panel-h term-side-h">
               <h2>交互终端</h2>
-              <button type="button" id="btn-metrics-refresh" class="ghost tiny" data-keep-enabled="1"
-                title="刷新主机指标">刷新</button>
+              <div class="btn-row">
+                <a class="ghost tiny" href="/help/远程接入/" target="_blank" rel="noopener"
+                  data-keep-enabled="1">远程接入</a>
+                <button type="button" id="btn-metrics-refresh" class="ghost tiny" data-keep-enabled="1"
+                  title="刷新主机指标">刷新</button>
+              </div>
             </div>
             <p class="meta term-side-hint">经主控 SSH 到节点；断开不会停进程。</p>
             <label class="term-field">
@@ -802,7 +812,11 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
               <div class="panel ops-panel">
                 <div class="panel-h">
                   <h2>远程命令</h2>
-                  <span class="meta">stdout 落入底部输出坞</span>
+                  <div class="btn-row">
+                    <a class="ghost tiny" href="/help/故障排查/" target="_blank" rel="noopener"
+                      data-keep-enabled="1">排障</a>
+                    <span class="meta">stdout → 底部输出坞</span>
+                  </div>
                 </div>
                 <p class="meta">在目标节点执行预设或自定义 shell；适合排查与一次性运维。</p>
                 <label class="field"><span>目标</span><select id="exec-target"></select></label>
@@ -1125,7 +1139,11 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
               <div class="panel" id="cfg-auth">
                 <div class="panel-h">
                   <h2>登录与鉴权</h2>
-                  <button id="btn-save-auth" class="primary tiny" data-keep-enabled="1">保存</button>
+                  <div class="btn-row">
+                    <a class="ghost tiny" href="/help/安全加固/" target="_blank" rel="noopener"
+                      data-keep-enabled="1">安全加固</a>
+                    <button id="btn-save-auth" class="primary tiny" data-keep-enabled="1">保存</button>
+                  </div>
                 </div>
                 <div class="auth-password-box">
                   <div class="kv"><b>登录密码</b> <span id="auth-password-state">检测中…</span></div>
@@ -1552,7 +1570,7 @@ gpu-control ui --background</pre>
         <input id="assistant-clear-key" type="checkbox" data-keep-enabled="1" />
         <span>清除已保存的 API Key</span>
       </label>
-      <p class="meta" id="assistant-settings-hint">请求由控制面主机访问 Base URL（不是浏览器本机）。内网请填可达兼容网关，先「连通探测」再拉取模型。确认卡约 15 分钟过期；会话文件保留约 7 天（最多 200 个），详见审计日志。</p>
+      <p class="meta" id="assistant-settings-hint">请求由控制面主机访问 Base URL（不是浏览器本机）。内网请填可达兼容网关，先「连通探测」再拉取模型。确认卡约 15 分钟过期；会话文件保留约 7 天（最多 200 个）。接入说明见 <a href="/help/ai-接入/" target="_blank" rel="noopener">AI 接入</a>。</p>
       <div class="assistant-settings-actions">
         <button type="button" id="assistant-probe" class="ghost" data-keep-enabled="1">连通探测</button>
         <button type="button" id="assistant-fetch-models" class="ghost" data-keep-enabled="1">拉取模型</button>
@@ -1632,7 +1650,7 @@ gpu-control ui --background</pre>
   </div>
   <script src="/static/vendor/xterm/xterm-6.1.0.min.js"></script>
   <script src="/static/xterm-fit.js?v=__UI_VERSION__"></script>
-  <script src="/static/app.js?v=__UI_VERSION__.dash27"></script>
+  <script src="/static/app.js?v=__UI_VERSION__.dash28"></script>
 </body>
 
 </html>

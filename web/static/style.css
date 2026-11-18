@@ -2078,6 +2078,48 @@ code {
   color: var(--warn, #9a6700);
 }
 
+.ingress-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.ingress-kpi {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 8px);
+  background: var(--panel-2, var(--bg));
+  min-width: 0;
+}
+
+.ingress-kpi span {
+  display: block;
+  font-size: var(--fs-sm, 12px);
+  color: var(--muted);
+}
+
+.ingress-kpi strong {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-md, 14px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ingress-kpi[data-tone="ok"] strong {
+  color: var(--ok, #1a7f37);
+}
+
+.ingress-kpi[data-tone="warn"] strong {
+  color: var(--warn, #9a6700);
+}
+
+.ingress-kpi[data-tone="bad"] strong {
+  color: var(--bad, #cf222e);
+}
+
 .term-workspace {
   display: grid;
   grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);

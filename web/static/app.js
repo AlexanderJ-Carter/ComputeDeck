@@ -1795,6 +1795,53 @@ function edgePhaseMeta(edge) {
   return { label: "未运行", tone: "warn" };
 }
 
+function companionById(status, id) {
+  const rows = status?.companions || [];
+  return rows.find((row) => row && row.id === id) || null;
+}
+
+function renderIngressKpis(status) {
+  const root = document.getElementById("ingress-kpis");
+  if (!root || !status) return;
+  const edge = status.edge || {};
+  const ll = status.litellm || {};
+  const tls = status.tls || {};
+  const nginx = companionById(status, "nginx") || {};
+  const tlsRow = companionById(status, "tls") || {};
+  const edgeMeta = edgePhaseMeta(edge);
+  const llMeta = litellmPhaseMeta(ll);
+  const pool = (edge.status && edge.status.pool) || {};
+  const publicUrl = status.public_base_url || edge.url || "";
+  const tlsLabel = tlsRow.label || tls.label || (tls.enabled ? "已启用" : "HTTP 明文");
+  const tlsTone = tlsRow.severity
+    || (tls.enabled && !tls.ready ? "bad" : tls.ready ? "ok" : "neutral");
+  const nginxLabel = nginx.label || (nginx.installed ? "已安装" : "不必装（用 Edge）");
+  const nginxTone = nginx.severity || (nginx.installed ? "ok" : "neutral");
+  const items = [
+    ["Edge", edgeMeta.label, edgeMeta.tone || "neutral"],
+    [
+      "上游",
+      pool.upstream_count != null ? `${pool.available ?? "?"}/${pool.upstream_count}` : "—",
+      pool.upstream_count != null && Number(pool.available) > 0 ? "ok" : "warn",
+    ],
+    ["LiteLLM", llMeta.label, llMeta.tone || "neutral"],
+    ["Master Key", ll.configured ? "已配置" : "未配置", ll.configured ? "ok" : "warn"],
+    ["nginx", nginxLabel, nginxTone],
+    ["TLS", tlsLabel, tlsTone],
+    ["对外", publicUrl || status.domain || "IP:端口", publicUrl || status.domain ? "ok" : "neutral"],
+  ];
+  root.innerHTML = items
+    .map(
+      ([label, value, tone]) =>
+        `<div class="ingress-kpi" data-tone="${escapeHtml(tone)}"><span>${escapeHtml(
+          label
+        )}</span><strong title="${escapeHtml(String(value))}">${escapeHtml(
+          String(value)
+        )}</strong></div>`
+    )
+    .join("");
+}
+
 function renderIngressMeta(status) {
   const el = document.getElementById("ingress-meta");
   if (!el || !status) return;
@@ -1803,6 +1850,7 @@ function renderIngressMeta(status) {
   const pool = (edge.status && edge.status.pool) || {};
   const edgeMeta = edgePhaseMeta(edge);
   const llMeta = litellmPhaseMeta(ll);
+  renderIngressKpis(status);
   el.textContent = [
     `主入口 ${status.preferred || "edge"}`,
     `Edge ${edgeMeta.label}`,
@@ -1818,7 +1866,9 @@ function renderIngressMeta(status) {
     const summary = layering.summary || "入口分层未知";
     const rec = layering.duplicate_node_lb
       ? " · 建议 litellm_upstream=edge，由 Edge 统一选节点"
-      : "";
+      : layering.recommendation
+        ? ` · ${layering.recommendation}`
+        : "";
     layEl.textContent = `入口分层：${summary}${rec}`;
     layEl.dataset.tone = layering.duplicate_node_lb ? "warn" : "";
   }

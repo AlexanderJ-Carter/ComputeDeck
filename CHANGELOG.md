@@ -20,6 +20,11 @@
 - OIDC 支持 Groups 白名单与粘贴写入 Client Secret；配置页密钥就绪总览
 - 工具栈：节点选择、捆绑/单包安装、覆盖 KPI
 
+### Changed
+
+- 底部执行输出坞改为单栏 stdout + 折叠活动记录，去掉误导性「一键连通」等按钮
+- 入口总览增加 Edge / LiteLLM / nginx / TLS / 对外 KPI；关键页挂 `/help` 情境链接
+
 ### Fixed
 
 - 流式确认卡先落盘再可点，避免抢点出现 `action_not_found`
