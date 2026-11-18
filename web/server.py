@@ -116,6 +116,15 @@ from auth_util import (  # noqa: E402
     verify_session,
     write_oidc_client_secret,
 )
+from runlog_util import (  # noqa: E402
+    append_runlog,
+    clear_runlog,
+    list_runlog,
+    new_request_id,
+    record_cli,
+    set_audit_context,
+)
+from assistant_insight_util import append_insight, list_insights  # noqa: E402
 from oidc_util import OidcError, begin_login, finish_login, probe_oidc  # noqa: E402
 
 sys.path.insert(0, str(SCRIPTS_DIR))
@@ -1388,12 +1397,7 @@ def run_cli(args: list[str], timeout: int = 900, *, log: bool = True) -> dict:
         _last_action_at = time.monotonic()
         invalidate_overview_cache(gateway=(args and args[0] == "gateway"))
     if log and args and args[0] not in {"logs"}:
-        from runlog_util import record_cli
-
-        try:
-            record_cli(args, result, source="api")
-        except Exception:  # noqa: BLE001 — logging must never break an action
-            pass
+        record_cli(args, result, source="api")
     return result
 
 
@@ -1569,6 +1573,30 @@ def build_setup_status() -> dict:
             "id": "ansible",
             "ok": (PROJECT_DIR / ".venv" / "bin" / "ansible-playbook").is_file(),
             "label": "Ansible venv",
+        },
+        {
+            "id": "help_site",
+            "ok": (PROJECT_DIR / "web" / "static" / "help" / "index.html").is_file(),
+            "label": "文档站 /help",
+            "detail": "需 mkdocs build；发行物应已带上",
+        },
+        {
+            "id": "mcp",
+            "ok": mcp_exists and mcp_exec,
+            "label": "MCP 入口 bin/gpu-control-mcp",
+            "detail": str(PROJECT_DIR / "bin" / "gpu-control-mcp"),
+        },
+        {
+            "id": "vscode_docs",
+            "ok": (PROJECT_DIR / "docs" / "vscode插件.md").is_file(),
+            "label": "VS Code 插件说明",
+            "detail": "docs/vscode插件.md · Release 附 VSIX",
+        },
+        {
+            "id": "mcp_examples",
+            "ok": (CONFIG_DIR / "examples" / "mcp.cursor.json").is_file(),
+            "label": "MCP 客户端示例",
+            "detail": "config/examples/mcp.*.json",
         },
     ]
     return {
@@ -2008,8 +2036,6 @@ def run_oneclick(action: str, body: dict | None = None) -> dict:
         return {"ok": False, "error": f"未知动作: {action}", "steps": []}
 
     ok = all(s.get("ok") for s in steps) if steps else False
-    from runlog_util import append_runlog
-
     append_runlog(
         "oneclick",
         ok=ok,
@@ -2185,6 +2211,13 @@ class Handler(BaseHTTPRequestHandler):
         """
         principal, err = authenticate_http(path=path, headers=self.headers, query=query)
         self.auth_principal = principal
+        req_id = getattr(self, "audit_request_id", None) or new_request_id()
+        self.audit_request_id = req_id
+        if principal is not None:
+            actor = f"{principal.method}:{principal.subject}"
+        else:
+            actor = "anonymous"
+        set_audit_context(actor=actor, request_id=req_id, source="api")
         if err is None:
             return True
         cfg = load_auth_config()
@@ -2198,6 +2231,12 @@ class Handler(BaseHTTPRequestHandler):
             extra_headers={"WWW-Authenticate": 'Bearer realm="gpu-control"'},
         )
         return False
+
+    def _audit_actor(self) -> str:
+        principal = getattr(self, "auth_principal", None)
+        if principal is None:
+            return "anonymous"
+        return f"{principal.method}:{principal.subject}"
 
     def _read_body(self) -> dict:
         try:
@@ -2627,12 +2666,17 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/runlog":
-            from runlog_util import list_runlog
-
             qs = parse_qs(parsed.query)
             limit = int((qs.get("limit") or ["50"])[0])
             kind = (qs.get("kind") or [None])[0]
             self._json(200, list_runlog(limit=limit, kind=kind))
+            return
+
+        if path == "/api/assistant/insights":
+            qs = parse_qs(parsed.query)
+            limit = int((qs.get("limit") or ["20"])[0])
+            kind = (qs.get("kind") or [None])[0]
+            self._json(200, list_insights(limit=limit, kind=kind))
             return
 
         if path == "/api/logs":
@@ -3202,6 +3246,20 @@ class Handler(BaseHTTPRequestHandler):
                 findings=findings if isinstance(findings, list) else [],
                 cluster=cluster,
             )
+            append_insight(
+                kind="analyze",
+                ok=bool(out.get("ok")),
+                reply=str(out.get("reply") or out.get("error") or ""),
+                actor=self._audit_actor(),
+                meta={"open_settings": bool(out.get("open_settings"))},
+            )
+            append_runlog(
+                "assistant_analyze",
+                ok=bool(out.get("ok")),
+                summary="AI 解读看板",
+                source="api",
+                actor=self._audit_actor(),
+            )
             invalidate_overview_cache()
             self._json(200, out)
             return
@@ -3423,6 +3481,19 @@ class Handler(BaseHTTPRequestHandler):
             if stage == "reject":
                 assistant_session.update_pending(session, action_id, status="rejected")
                 assistant_session.save_merged(session)
+                append_runlog(
+                    "assistant_reject",
+                    ok=True,
+                    summary=f"拒绝 {action.get('tool') or 'tool'} {action_id}",
+                    source="assistant",
+                    actor=self._audit_actor(),
+                    detail={
+                        "conversation_id": cid,
+                        "action_id": action_id,
+                        "tool": action.get("tool"),
+                        "label": action.get("label"),
+                    },
+                )
                 self._json(200, {"ok": True, "status": "rejected", "conversation_id": cid})
                 return
             status = str(action.get("status") or "pending")
@@ -3713,6 +3784,22 @@ class Handler(BaseHTTPRequestHandler):
                 payload_out["summary_error"] = summary_error
             else:
                 payload_out["summary_ok"] = True
+            append_runlog(
+                "assistant_execute",
+                ok=executed_ok,
+                summary=f"{action.get('tool') or 'tool'} {action_id}",
+                source="assistant",
+                actor=self._audit_actor(),
+                detail={
+                    "conversation_id": cid,
+                    "action_id": action_id,
+                    "tool": action.get("tool"),
+                    "risk": action.get("risk"),
+                    "label": action.get("label"),
+                    "http_status": result.get("status"),
+                    "summary_ok": payload_out.get("summary_ok"),
+                },
+            )
             self._json(200, payload_out)
             return
 
@@ -4597,9 +4684,13 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/runlog/clear":
-            from runlog_util import clear_runlog
-
-            self._json(200, clear_runlog())
+            if not body.get("confirm"):
+                self._json(400, {"ok": False, "error": "清空审计日志需要 confirm=true"})
+                return
+            self._json(
+                200,
+                clear_runlog(actor=self._audit_actor(), source="api"),
+            )
             return
 
         if path == "/api/metrics/refresh":

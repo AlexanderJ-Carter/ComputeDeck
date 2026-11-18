@@ -52,6 +52,22 @@ class RunlogTests(unittest.TestCase):
         payload = runlog_util.list_runlog(limit=10, kind="oneclick")
         self.assertEqual([x["summary"] for x in payload["items"]], ["b"])
 
+    def test_actor_and_request_id(self) -> None:
+        runlog_util.set_audit_context(actor="session:admin", request_id="req_abc")
+        entry = runlog_util.append_runlog("cli", ok=True, summary="deploy")
+        self.assertEqual(entry["actor"], "session:admin")
+        self.assertEqual(entry["request_id"], "req_abc")
+        runlog_util.clear_audit_context()
+
+    def test_clear_leaves_audit_row(self) -> None:
+        runlog_util.append_runlog("cli", ok=True, summary="old")
+        result = runlog_util.clear_runlog(actor="session:admin", source="api")
+        self.assertTrue(result["ok"])
+        payload = runlog_util.list_runlog(limit=10)
+        self.assertEqual(payload["total"], 1)
+        self.assertEqual(payload["items"][0]["kind"], "runlog_clear")
+        self.assertEqual(payload["items"][0]["actor"], "session:admin")
+
 
 if __name__ == "__main__":
     unittest.main()

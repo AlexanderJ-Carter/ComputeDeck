@@ -11,6 +11,21 @@
 
 ## [Unreleased]
 
+### Added
+
+- 运行审计条目含 `actor` / `request_id`；助手 execute / reject / AI 解读写入 runlog
+- `GET /api/assistant/insights` 回看最近 AI 解读；看板监管页展示历史列表
+- 清空 runlog 需 `confirm=true`，并留下「谁清空了」审计行
+- 就绪检查增加 `/help`、MCP 入口、VS Code 说明、MCP 示例配置项
+- OIDC 支持 Groups 白名单与粘贴写入 Client Secret；配置页密钥就绪总览
+- 工具栈：节点选择、捆绑/单包安装、覆盖 KPI
+
+### Fixed
+
+- 流式确认卡先落盘再可点，避免抢点出现 `action_not_found`
+- `curl -X GET` / `-o /dev/null` 探活不再误标为危险命令
+- 助手执行成功与模型总结解耦；上游 429 不再盖过「已执行」心智
+
 ---
 
 ## [1.2.7] - 2026-11-18

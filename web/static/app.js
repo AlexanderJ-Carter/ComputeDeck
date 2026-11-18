@@ -6666,6 +6666,7 @@ function restoreAiAnalyze() {
   } catch (_) {
     /* ignore */
   }
+  loadInsightHistory().catch(() => { });
 }
 
 function renderAiAnalyzeFollowUp(reply) {
@@ -6715,6 +6716,7 @@ async function runAiAnalyze() {
       JSON.stringify({ reply, at: stamp, ok: !!data.ok })
     );
     renderAiAnalyzeFollowUp(data.ok ? reply : "");
+    loadInsightHistory().catch(() => { });
     if (data.open_settings) {
       await setAssistantOpen(true);
       setAssistantSettingsOpen(true);
@@ -7874,8 +7876,10 @@ async function loadRunlog() {
       items
         .map((row) => {
           const ok = row.ok === true ? "ok" : row.ok === false ? "bad" : "idle";
+          const who = row.actor ? ` · ${row.actor}` : "";
+          const src = row.source ? ` · ${row.source}` : "";
           return `<div class="item runlog-item" data-tone="${ok}">
-            <div><strong>${escapeHtml(row.kind || "log")}</strong><span class="meta">${escapeHtml(row.ts || "")}</span></div>
+            <div><strong>${escapeHtml(row.kind || "log")}</strong><span class="meta">${escapeHtml(row.ts || "")}${escapeHtml(who)}${escapeHtml(src)}</span></div>
             <div class="meta">${escapeHtml(row.summary || "")}</div>
           </div>`;
         })
@@ -7888,17 +7892,46 @@ async function loadRunlog() {
 async function clearRunlog() {
   const ok = await confirmDialog({
     title: "清空动作审计",
-    message: "将删除 state/runlog.jsonl；不影响 UI / watchdog 日志。",
+    message: "将删除 state/runlog.jsonl 中的历史条目，并留下一条「谁清空了」的审计记录。不影响 UI / watchdog 日志。",
     tone: "danger",
     confirmText: "清空",
   });
   if (!ok) return;
   try {
-    await api("/api/runlog/clear", { method: "POST", body: "{}" });
+    await api("/api/runlog/clear", {
+      method: "POST",
+      body: JSON.stringify({ confirm: true }),
+    });
     toastOk("动作审计已清空");
     await loadRunlog();
   } catch (err) {
     toastBad(`清空失败：${err.message || err}`);
+  }
+}
+
+async function loadInsightHistory() {
+  const root = $("ai-insight-history");
+  const meta = $("ai-insight-history-meta");
+  if (!root) return;
+  try {
+    const data = await api("/api/assistant/insights?limit=8&kind=analyze", { timeoutMs: 15000 });
+    const items = data.items || [];
+    if (meta) meta.textContent = items.length ? `${items.length} 条` : "无";
+    root.innerHTML =
+      items
+        .map((row) => {
+          const preview = String(row.reply || "").replace(/\s+/g, " ").slice(0, 120);
+          return `<div class="item">
+            <div><strong>${escapeHtml(row.ok ? "成功" : "失败")}</strong>
+              <span class="meta">${escapeHtml(row.ts || "")}${row.actor ? ` · ${escapeHtml(row.actor)}` : ""}</span>
+            </div>
+            <div class="meta">${escapeHtml(preview || "（无正文）")}</div>
+          </div>`;
+        })
+        .join("") || '<div class="meta">尚无服务端归档；点「AI 解读」后会出现在这里。</div>';
+  } catch (err) {
+    if (meta) meta.textContent = "读取失败";
+    root.innerHTML = `<div class="meta">${escapeHtml(String(err.message || err))}</div>`;
   }
 }
 
