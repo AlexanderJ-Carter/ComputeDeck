@@ -7,8 +7,8 @@
   <title>ComputeDeck</title>
   <link rel="icon" href="/static/logo.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/vendor/xterm/xterm-6.1.0.css" />
-  <link rel="stylesheet" href="/static/tokens.css?v=__UI_VERSION__.dash20" />
-  <link rel="stylesheet" href="/static/style.css?v=__UI_VERSION__.dash20" />
+  <link rel="stylesheet" href="/static/tokens.css?v=__UI_VERSION__.dash24" />
+  <link rel="stylesheet" href="/static/style.css?v=__UI_VERSION__.dash24" />
   <script src="/static/theme-boot.js?v=__UI_VERSION__"></script>
 </head>
 
@@ -198,14 +198,13 @@
                 <div class="toolbar dash-ops">
                   <button id="btn-quick-refresh" class="primary" data-action="1"
                     title="采集全部节点的 GPU 快照（Ansible，可能数十秒）">刷新 GPU</button>
-                  <button id="btn-quick-health" class="ghost" data-action="1"
-                    title="探测各节点推理 API 健康并更新端点池">探测 API</button>
+                  <button id="btn-quick-health" class="ghost" data-action="1" title="探测各节点推理 API 健康并更新端点池">探测
+                    API</button>
                   <button class="ghost" data-oneclick="diagnose" data-action="1"
                     title="运行 diagnose：配置、入口、租约、存活等只读检查">一键检测</button>
                   <button class="ghost" data-oneclick="repair" data-action="1"
                     title="只修复安全可逆的问题（如残留 pid 文件 / 缺失 inventory）">一键修复</button>
-                  <button id="btn-full-sync" class="ghost" data-action="1"
-                    title="连通 + 资源 + 模型 + 入口的全量同步">全量同步</button>
+                  <button id="btn-full-sync" class="ghost" data-action="1" title="连通 + 资源 + 模型 + 入口的全量同步">全量同步</button>
                 </div>
               </div>
               <div class="dash-action-group">
@@ -279,6 +278,7 @@
               </summary>
               <div id="ai-analyze-box" class="snippet notices-ai markdown">点「AI 解读」结合公告与 diagnose 给出只读建议。未配置上游时会引导去助手设置。
               </div>
+              <div id="ai-analyze-follow" class="notices-ai-follow" hidden></div>
             </details>
             <details class="fold notices-ai-wrap" id="auto-ai-fold" hidden>
               <summary class="notices-ai-h">
@@ -292,33 +292,36 @@
       </section>
 
       <section class="view" data-view-panel="toolkits">
-        <div class="panel">
-          <div class="panel-h">
-            <h2 title="在 GPU 节点 pip 探测/安装常用训练与推理栈">AI 工具栈</h2>
-            <div class="btn-row">
-              <button id="btn-toolkit-probe" class="ghost tiny" data-keep-enabled="1" data-action="1">探测全部</button>
-              <button id="btn-toolkit-train" class="primary tiny" data-keep-enabled="1" data-action="1">安装微调栈</button>
+        <div class="toolkit-workspace">
+          <div class="panel">
+            <div class="panel-h">
+              <h2 title="在 GPU 节点 pip 探测/安装常用训练与推理栈">AI 工具栈</h2>
+              <div class="btn-row">
+                <button id="btn-toolkit-probe" class="ghost tiny" data-keep-enabled="1" data-action="1">探测全部</button>
+                <button id="btn-toolkit-train" class="primary tiny" data-keep-enabled="1" data-action="1">安装微调栈</button>
+              </div>
             </div>
+            <p class="meta">在 GPU 节点探测 / 安装训练与推理依赖；结果在右侧。</p>
+            <div id="toolkit-bundles" class="chip-row"></div>
+            <div id="toolkit-list" class="list"></div>
           </div>
-          <div id="toolkit-bundles" class="chip-row"></div>
-          <div id="toolkit-list" class="list"></div>
-        </div>
-        <div class="panel">
-          <div class="panel-h">
-            <h2>节点探测结果</h2>
-            <span class="meta" id="toolkit-state-meta">尚未探测</span>
-          </div>
-          <div id="toolkit-nodes" class="list"></div>
-          <details class="fold">
-            <summary>CLI</summary>
-            <pre class="snippet">gpu-control toolkits list
+          <div class="panel">
+            <div class="panel-h">
+              <h2>节点探测结果</h2>
+              <span class="meta" id="toolkit-state-meta">尚未探测</span>
+            </div>
+            <div id="toolkit-nodes" class="list"></div>
+            <details class="fold">
+              <summary>CLI</summary>
+              <pre class="snippet">gpu-control toolkits list
 gpu-control toolkits probe
 gpu-control toolkits install --bundle train-stack
 gpu-control jobs install train-job --name sft
 gpu-control deploy sft --nodes gpu-1,gpu-2 --gpus 16
 gpu-control jobs install ray-cluster --name ray
 gpu-control jobs install vllm-serve --name vllm</pre>
-          </details>
+            </details>
+          </div>
         </div>
       </section>
 
@@ -351,7 +354,7 @@ gpu-control jobs install vllm-serve --name vllm</pre>
         <div class="section-shell">
           <aside class="section-nav" aria-label="任务分页">
             <button type="button" class="section-nav-btn active" data-workload-nav="jobs" aria-current="page">
-              <span class="section-nav-title">任务操作</span><span class="section-nav-sub">选择 · 启停 · 部署</span>
+              <span class="section-nav-title">已安装任务</span><span class="section-nav-sub">列表 · 启停 · 部署</span>
             </button>
             <button type="button" class="section-nav-btn" data-workload-nav="queue">
               <span class="section-nav-title">队列与租约</span><span class="section-nav-sub">排队 · 占用 · 互通</span>
@@ -359,71 +362,7 @@ gpu-control jobs install vllm-serve --name vllm</pre>
           </aside>
           <div class="section-main">
             <section class="section-page section-page--two active" data-workload-panel="jobs">
-              <div class="panel">
-                <div class="panel-h">
-                  <h2>任务操作</h2>
-                </div>
-                <div class="field job-picker-field">
-                  <span>已安装任务</span>
-                  <div class="job-picker" id="job-picker">
-                    <button type="button" class="job-picker-btn" id="job-picker-btn" aria-haspopup="listbox"
-                      aria-expanded="false">
-                      <span id="job-picker-label">加载中…</span>
-                      <span class="job-picker-caret" aria-hidden="true">▾</span>
-                    </button>
-                    <div class="job-picker-menu" id="job-picker-menu" role="listbox" aria-label="已安装任务" hidden></div>
-                    <select id="job-select" class="job-picker-native" aria-hidden="true" tabindex="-1"></select>
-                  </div>
-                </div>
-                <span id="job-select-hint" class="meta"></span>
-                <label class="field">
-                  <span>目标节点</span>
-                  <select id="job-target">
-                    <option value="all">全部节点</option>
-                  </select>
-                </label>
-                <span id="job-target-hint" class="hidden"></span>
-                <div class="btn-row">
-                  <button data-job-action="status">状态</button>
-                  <button data-job-action="start" class="primary">启动</button>
-                  <button data-job-action="stop" class="danger">停止</button>
-                  <button id="btn-job-logs" class="ghost" data-action="1">日志</button>
-                  <button data-job-action="restart">重启</button>
-                  <button data-job-action="wait">等待就绪</button>
-                </div>
-                <div class="deploy-box">
-                  <div class="panel-h">
-                    <h3 class="sub">部署 / 换机</h3>
-                  </div>
-                  <div class="compact-fields">
-                    <label class="field">
-                      <span>部署方式</span>
-                      <select id="deploy-mode">
-                        <option value="gpus">按 GPU 数自动选机</option>
-                        <option value="node">指定节点</option>
-                      </select>
-                    </label>
-                    <label class="field" id="deploy-gpus-wrap">
-                      <span>部署 GPU 数</span>
-                      <input id="deploy-gpus" type="number" min="1" step="1" value="4" />
-                    </label>
-                    <label class="field" id="deploy-node-wrap" hidden>
-                      <span>指定节点</span>
-                      <select id="deploy-node"></select>
-                    </label>
-                    <button id="btn-deploy" class="primary" data-action="1" title="按当前选择部署并等待就绪">一键部署</button>
-                  </div>
-                </div>
-                <details class="fold" style="margin-top:10px">
-                  <summary>高级：参数覆盖</summary>
-                  <label class="field" style="margin-top:8px">
-                    <span>启动参数</span>
-                    <input id="job-extra-args" placeholder="覆盖 extra_args，空格分隔" />
-                  </label>
-                  <span id="job-args-hint" class="meta"></span>
-                </details>
-              </div>
-              <div class="panel">
+              <div class="panel workload-list-panel">
                 <div class="panel-h">
                   <h2>已安装任务</h2>
                   <div class="btn-row">
@@ -446,25 +385,98 @@ gpu-control jobs install vllm-serve --name vllm</pre>
                   <div id="job-templates-list" class="list" style="margin-top:8px"></div>
                 </details>
               </div>
+              <div class="panel workload-ops-panel">
+                <div class="panel-h">
+                  <h2>当前任务操作</h2>
+                </div>
+                <div class="field job-picker-field">
+                  <span>选中任务</span>
+                  <div class="job-picker" id="job-picker">
+                    <button type="button" class="job-picker-btn" id="job-picker-btn" aria-haspopup="listbox"
+                      aria-expanded="false">
+                      <span id="job-picker-label">加载中…</span>
+                      <span class="job-picker-caret" aria-hidden="true">▾</span>
+                    </button>
+                    <div class="job-picker-menu" id="job-picker-menu" role="listbox" aria-label="已安装任务" hidden></div>
+                    <select id="job-select" class="job-picker-native" aria-hidden="true" tabindex="-1"></select>
+                  </div>
+                </div>
+                <span id="job-select-hint" class="meta"></span>
+                <label class="field">
+                  <span>目标节点</span>
+                  <select id="job-target">
+                    <option value="all">全部节点</option>
+                  </select>
+                </label>
+                <span id="job-target-hint" class="hidden"></span>
+                <div class="btn-row workload-primary-actions">
+                  <button data-job-action="start" class="primary">启动</button>
+                  <button data-job-action="stop" class="danger">停止</button>
+                  <button id="btn-deploy" class="primary" data-action="1" title="按当前选择部署并等待就绪">一键部署</button>
+                </div>
+                <div class="btn-row">
+                  <button data-job-action="status" class="ghost">状态</button>
+                  <button id="btn-job-logs" class="ghost" data-action="1">日志</button>
+                  <button data-job-action="restart" class="ghost">重启</button>
+                  <button data-job-action="wait" class="ghost">等待就绪</button>
+                </div>
+                <details class="fold deploy-box" style="margin-top:10px">
+                  <summary>部署方式 / 换机</summary>
+                  <div class="compact-fields" style="margin-top:8px">
+                    <label class="field">
+                      <span>部署方式</span>
+                      <select id="deploy-mode">
+                        <option value="gpus">按 GPU 数自动选机</option>
+                        <option value="node">指定节点</option>
+                      </select>
+                    </label>
+                    <label class="field" id="deploy-gpus-wrap">
+                      <span>部署 GPU 数</span>
+                      <input id="deploy-gpus" type="number" min="1" step="1" value="4" />
+                    </label>
+                    <label class="field" id="deploy-node-wrap" hidden>
+                      <span>指定节点</span>
+                      <select id="deploy-node"></select>
+                    </label>
+                  </div>
+                </details>
+                <details class="fold" style="margin-top:10px">
+                  <summary>高级：参数覆盖</summary>
+                  <label class="field" style="margin-top:8px">
+                    <span>启动参数</span>
+                    <input id="job-extra-args" placeholder="覆盖 extra_args，空格分隔" />
+                  </label>
+                  <span id="job-args-hint" class="meta"></span>
+                </details>
+              </div>
             </section>
 
             <section class="section-page" data-workload-panel="queue" hidden>
-              <div class="panel">
-                <div class="panel-h">
-                  <h2>队列 / 占用</h2>
-                  <button id="btn-queue-submit" class="ghost tiny" data-action="1">按 Job 默认 GPU 入队</button>
+              <div class="queue-stack">
+                <div class="panel">
+                  <div class="panel-h">
+                    <h2>队列</h2>
+                    <button id="btn-queue-submit" class="ghost tiny" data-action="1">按 Job 默认 GPU 入队</button>
+                  </div>
+                  <div id="queue" class="list"></div>
                 </div>
-                <div id="queue" class="list"></div>
-                <h3 class="sub">占用登记</h3>
-                <div id="leases" class="list"></div>
-                <h3 class="sub">节点互通</h3>
-                <div class="btn-row" style="margin-bottom:8px">
-                  <button id="btn-probe" class="ghost tiny" data-keep-enabled="1" data-action="1">探测互通</button>
-                  <button id="btn-schedule" class="ghost tiny" data-keep-enabled="1" data-action="1">调度队列</button>
+                <div class="panel">
+                  <div class="panel-h">
+                    <h2>占用登记</h2>
+                  </div>
+                  <div id="leases" class="list"></div>
                 </div>
-                <div id="probe" class="list"></div>
+                <div class="panel">
+                  <div class="panel-h">
+                    <h2>节点互通</h2>
+                    <div class="btn-row">
+                      <button id="btn-probe" class="ghost tiny" data-keep-enabled="1" data-action="1">探测互通</button>
+                      <button id="btn-schedule" class="ghost tiny" data-keep-enabled="1" data-action="1">调度队列</button>
+                    </div>
+                  </div>
+                  <div id="probe" class="list"></div>
+                </div>
               </div>
-
             </section>
           </div>
         </div>
@@ -532,17 +544,19 @@ gpu-control jobs install vllm-serve --name vllm</pre>
                   <button id="btn-models-refresh" class="ghost tiny" data-keep-enabled="1">刷新</button>
                 </div>
                 <label class="field"><span>模型</span><select id="model-select"></select></label>
-                <div class="kv"><b>路径</b> <span id="model-path">-</span></div>
-                <div class="kv"><b>仓库</b> <span id="model-repo">-</span></div>
-                <div class="kv"><b>关联 Job</b> <span id="model-job">-</span></div>
-                <div class="kv"><b>启动参数</b> <span id="model-args">-</span></div>
-                <div class="kv"><b>校验期望</b> <span id="model-verify" class="verify-box">-</span></div>
+                <div class="model-meta-card">
+                  <div class="kv"><b>路径</b> <span id="model-path">-</span></div>
+                  <div class="kv"><b>仓库</b> <span id="model-repo">-</span></div>
+                  <div class="kv"><b>关联 Job</b> <span id="model-job">-</span></div>
+                  <div class="kv"><b>启动参数</b> <span id="model-args">-</span></div>
+                  <div class="kv"><b>校验期望</b> <span id="model-verify" class="verify-box">-</span></div>
+                </div>
                 <div class="btn-row">
+                  <button id="btn-models-apply-job" class="primary" data-action="1">填入任务并部署</button>
+                  <button id="btn-models-verify" data-action="1">校验</button>
+                  <button id="btn-models-pull" class="ghost" data-action="1">重拉</button>
                   <button id="btn-models-deps" class="ghost" data-action="1">依赖</button>
                   <button id="btn-models-check" class="ghost" data-action="1">路径</button>
-                  <button id="btn-models-verify" data-action="1">校验</button>
-                  <button id="btn-models-pull" data-action="1">重拉</button>
-                  <button id="btn-models-apply-job" class="primary" data-action="1">填入任务并部署</button>
                 </div>
                 <pre id="model-action-result" class="snippet model-result" hidden></pre>
                 <details class="fold">
@@ -551,7 +565,6 @@ gpu-control jobs install vllm-serve --name vllm</pre>
                   <pre id="model-defaults-paths" class="snippet tiny-pre"></pre>
                 </details>
               </div>
-
             </section>
           </div>
         </div>
@@ -615,8 +628,6 @@ gpu-control jobs install vllm-serve --name vllm</pre>
                     <div class="kv"><b>地址</b> <a id="litellm-card-url" href="#" target="_blank" rel="noopener">-</a>
                     </div>
                     <div class="kv"><b>上游</b> <span id="litellm-upstream">-</span></div>
-                    <div class="kv"><b>二进制</b> <code id="litellm-card-bin">-</code></div>
-                    <div class="kv"><b>Master Key</b> <span id="litellm-key-meta">未加载</span></div>
                     <div class="kv"><b>管理台</b> <span id="litellm-db-meta">检测中…</span></div>
                     <div class="btn-row" style="margin-bottom:8px">
                       <button id="btn-litellm-start" class="primary tiny" data-keep-enabled="1"
@@ -627,19 +638,23 @@ gpu-control jobs install vllm-serve --name vllm</pre>
                       <a id="litellm-ui-link" class="ghost tiny" href="http://127.0.0.1:4000/ui/" target="_blank"
                         rel="noopener" data-keep-enabled="1" title="LiteLLM Admin UI 需要数据库（DATABASE_URL）">打开 Admin</a>
                     </div>
-                    <label class="field"><span>设置 / 生成 Master Key</span>
-                      <input id="litellm-master-key" type="password" placeholder="sk-… 或点生成" autocomplete="off"
-                        data-keep-enabled="1" /></label>
-                    <div class="btn-row">
-                      <button id="btn-litellm-key-generate" class="primary tiny" data-keep-enabled="1"
-                        data-action="1">生成并保存</button>
-                      <button id="btn-litellm-key-save" class="ghost tiny" data-keep-enabled="1"
-                        data-action="1">保存</button>
-                      <button id="btn-litellm-key-clear" class="ghost tiny" data-keep-enabled="1"
-                        data-action="1">清除</button>
-                    </div>
-                    <p class="meta" id="litellm-key-reveal" hidden></p>
-                    <details class="fold" style="margin-top:8px" id="litellm-models-fold" open>
+                    <details class="fold ingress-manage" id="litellm-key-fold">
+                      <summary>密钥与二进制 <span class="meta" id="litellm-key-meta">未加载</span></summary>
+                      <div class="kv" style="margin-top:8px"><b>二进制</b> <code id="litellm-card-bin">-</code></div>
+                      <label class="field"><span>设置 / 生成 Master Key</span>
+                        <input id="litellm-master-key" type="password" placeholder="sk-… 或点生成" autocomplete="off"
+                          data-keep-enabled="1" /></label>
+                      <div class="btn-row">
+                        <button id="btn-litellm-key-generate" class="primary tiny" data-keep-enabled="1"
+                          data-action="1">生成并保存</button>
+                        <button id="btn-litellm-key-save" class="ghost tiny" data-keep-enabled="1"
+                          data-action="1">保存</button>
+                        <button id="btn-litellm-key-clear" class="ghost tiny" data-keep-enabled="1"
+                          data-action="1">清除</button>
+                      </div>
+                      <p class="meta" id="litellm-key-reveal" hidden></p>
+                    </details>
+                    <details class="fold ingress-manage" id="litellm-models-fold">
                       <summary>模型（简化管理）<span class="meta" id="litellm-models-meta"></span></summary>
                       <div class="btn-row" style="margin:8px 0">
                         <button type="button" id="btn-litellm-models-refresh" class="ghost tiny"
@@ -661,7 +676,7 @@ gpu-control jobs install vllm-serve --name vllm</pre>
                           data-keep-enabled="1">添加模型</button>
                       </div>
                     </details>
-                    <details class="fold" style="margin-top:8px">
+                    <details class="fold ingress-manage">
                       <summary>诊断：原因 / 日志尾</summary>
                       <p class="meta" id="litellm-card-reasons">-</p>
                       <pre class="snippet" id="litellm-log-tail" style="max-height:180px;overflow:auto">（无日志）</pre>
@@ -719,27 +734,44 @@ gpu-control jobs install vllm-serve --name vllm</pre>
       </section>
 
       <section class="view" data-view-panel="terminal">
-        <div class="panel terminal-panel">
-          <div class="panel-h">
-            <h2>交互终端（SSH PTY）</h2>
-            <div class="btn-row">
-              <select id="term-node"></select>
-              <button id="btn-term-connect" class="primary" data-keep-enabled="1">连接</button>
-              <button id="btn-term-disconnect" class="ghost" data-keep-enabled="1">断开</button>
-              <button id="btn-metrics-refresh" class="ghost" data-keep-enabled="1">刷新主机指标</button>
+        <div class="term-workspace" id="term-workspace" data-connected="0">
+          <aside class="term-side panel" aria-label="节点与主机资源">
+            <div class="panel-h term-side-h">
+              <h2>交互终端</h2>
+              <button type="button" id="btn-metrics-refresh" class="ghost tiny" data-keep-enabled="1"
+                title="刷新主机指标">刷新</button>
+            </div>
+            <p class="meta term-side-hint">经主控 SSH 到节点；断开不会停进程。</p>
+            <label class="term-field">
+              <span>节点</span>
+              <select id="term-node" data-keep-enabled="1"></select>
+            </label>
+            <div class="term-side-actions">
+              <button type="button" id="btn-term-connect" class="primary" data-keep-enabled="1">连接</button>
+              <button type="button" id="btn-term-disconnect" class="ghost" data-keep-enabled="1" disabled>断开</button>
+            </div>
+            <p class="meta" id="term-status" role="status" aria-live="polite">未连接 · 选择节点后点击「连接」</p>
+            <div class="term-metrics-h">
+              <strong>主机资源</strong>
+              <span class="meta" id="metrics-at">尚未采集</span>
+            </div>
+            <div id="host-metrics" class="term-node-list"></div>
+          </aside>
+          <div class="term-stage panel">
+            <div class="term-empty" id="term-empty">
+              <strong id="term-empty-title">尚未连接</strong>
+              <p id="term-empty-body" class="meta">在左侧选择在线节点，点「连接」打开 SSH PTY。也可点主机资源行直接连上。</p>
+              <button type="button" id="btn-term-empty-connect" class="primary" data-keep-enabled="1">连接所选节点</button>
+            </div>
+            <div class="term-live" id="term-live" hidden>
+              <header class="term-live-h">
+                <strong id="term-live-title">SSH PTY</strong>
+                <span class="meta" id="term-live-meta">会话中</span>
+              </header>
+              <div id="term" class="term-host"></div>
             </div>
           </div>
-          <p class="meta">通过主控 SSH 到节点；断开不会停进程。</p>
-          <span class="meta" id="term-status" role="status" aria-live="polite">未连接</span>
-          <div id="term" class="term-host"></div>
         </div>
-        <details class="panel terminal-metrics" id="terminal-metrics" open>
-          <summary class="panel-h terminal-metrics-h">
-            <h2>主机资源</h2>
-            <span class="meta" id="metrics-at">尚未采集</span>
-          </summary>
-          <div id="host-metrics" class="metrics-grid"></div>
-        </details>
       </section>
 
       <section class="view" data-view-panel="ops">
@@ -754,42 +786,50 @@ gpu-control jobs install vllm-serve --name vllm</pre>
           </aside>
           <div class="section-main">
             <section class="section-page active" data-ops-panel="exec">
-              <div class="panel">
+              <div class="panel ops-panel">
                 <div class="panel-h">
                   <h2>远程命令</h2>
+                  <span class="meta">输出在底部「执行输出」坞</span>
                 </div>
+                <p class="meta">在目标节点执行预设或自定义 shell；适合排查与一次性运维。</p>
                 <label class="field"><span>目标</span><select id="exec-target"></select></label>
-                <div class="preset-grid" id="exec-presets"></div>
-                <div class="row exec-suggest-row">
-                  <div class="exec-suggest-wrap">
-                    <input id="exec-custom" type="text" placeholder="nvidia-smi -L（输入可补全）" autocomplete="off"
-                      aria-autocomplete="list" aria-controls="exec-suggest-list" />
-                    <ul id="exec-suggest-list" class="exec-suggest-list" role="listbox" hidden></ul>
+                <div class="ops-block">
+                  <h3 class="sub">预设</h3>
+                  <div class="preset-grid" id="exec-presets"></div>
+                </div>
+                <div class="ops-block">
+                  <h3 class="sub">自定义</h3>
+                  <div class="row exec-suggest-row">
+                    <div class="exec-suggest-wrap">
+                      <input id="exec-custom" type="text" placeholder="nvidia-smi -L（输入可补全）" autocomplete="off"
+                        aria-autocomplete="list" aria-controls="exec-suggest-list" />
+                      <ul id="exec-suggest-list" class="exec-suggest-list" role="listbox" hidden></ul>
+                    </div>
+                    <button id="btn-exec-custom" class="primary" data-action="1">执行</button>
                   </div>
-                  <button id="btn-exec-custom" class="primary" data-action="1">执行</button>
                 </div>
               </div>
-
             </section>
             <section class="section-page" data-ops-panel="python" hidden>
-              <div class="panel">
+              <div class="panel ops-panel">
                 <div class="panel-h">
                   <h2>运行 Python</h2>
+                  <span class="meta">输出在底部「执行输出」坞</span>
                 </div>
-                <label class="field"><span>目标</span><select id="py-target"></select></label>
-                <label class="field"><span>解释器</span><input id="py-bin" value=""
-                    placeholder="/usr/bin/python3" /></label>
-                <label class="field"><span>脚本</span><input id="py-script" placeholder="/path/script.py" /></label>
-                <label class="field"><span>参数</span><input id="py-args" placeholder="--flag" /></label>
-                <label class="field"><span>代码 (-c)</span><input id="py-code" placeholder="print(1)" /></label>
-                <div class="row gap">
-                  <input id="py-cuda" placeholder="CUDA_VISIBLE_DEVICES" aria-label="CUDA_VISIBLE_DEVICES" />
-                  <input id="py-cwd" placeholder="工作目录" aria-label="工作目录" />
+                <p class="meta">在节点上跑脚本或一行代码；后台模式用 nohup。</p>
+                <div class="compact-fields ops-form">
+                  <label class="field"><span>目标</span><select id="py-target"></select></label>
+                  <label class="field"><span>解释器</span><input id="py-bin" value=""
+                      placeholder="/usr/bin/python3" /></label>
+                  <label class="field"><span>脚本</span><input id="py-script" placeholder="/path/script.py" /></label>
+                  <label class="field"><span>参数</span><input id="py-args" placeholder="--flag" /></label>
+                  <label class="field ops-span-2"><span>代码 (-c)</span><input id="py-code" placeholder="print(1)" /></label>
+                  <label class="field"><span>CUDA_VISIBLE_DEVICES</span><input id="py-cuda" placeholder="0,1" /></label>
+                  <label class="field"><span>工作目录</span><input id="py-cwd" placeholder="/data/…" /></label>
                 </div>
                 <label class="check" for="py-bg"><input type="checkbox" id="py-bg" /><span>后台 nohup</span></label>
-                <button id="btn-run-py" class="primary wide" data-action="1">运行 Python</button>
+                <button id="btn-run-py" class="primary" data-action="1">运行 Python</button>
               </div>
-
             </section>
           </div>
         </div>
@@ -1384,7 +1424,10 @@ gpu-control ui --background</pre>
 
       <section class="console-wrap panel collapsed" id="batch-console-wrap">
         <div class="panel-h">
-          <h2>执行输出</h2>
+          <div>
+            <h2>执行输出</h2>
+            <p class="meta console-dock-hint">批跑 / 远程命令 / 探测的输出坞，默认折叠</p>
+          </div>
           <div class="btn-row">
             <span class="meta" id="console-meta">就绪</span>
             <span class="meta" id="busy-flag"></span>
@@ -1557,7 +1600,7 @@ gpu-control ui --background</pre>
   </div>
   <script src="/static/vendor/xterm/xterm-6.1.0.min.js"></script>
   <script src="/static/xterm-fit.js?v=__UI_VERSION__"></script>
-  <script src="/static/app.js?v=__UI_VERSION__.dash20"></script>
+  <script src="/static/app.js?v=__UI_VERSION__.dash24"></script>
 </body>
 
 </html>

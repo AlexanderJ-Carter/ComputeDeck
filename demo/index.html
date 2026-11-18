@@ -5,9 +5,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>ComputeDeck — 多节点 GPU 控制面</title>
-  <meta name="description" content="ComputeDeck：多节点 GPU 控制面 · 单屏工作台 · 配置分页 · AI 趋势解读 · MCP。" />
+  <meta name="description" content="ComputeDeck：多节点 GPU 控制面 · 看板五子页 · 助手浮层 · 终端工作台 · MCP。" />
   <meta property="og:title" content="ComputeDeck — 多节点 GPU 控制面" />
-  <meta property="og:description" content="多节点 GPU 控制面 · Web · CLI · AI 助手 · MCP" />
+  <meta property="og:description" content="多节点 GPU 控制面 · 看板五子页 · Web 小助手 · 终端工作台 · MCP" />
   <meta property="og:url" content="https://compute.alexander.xin/" />
   <meta property="og:image" content="https://compute.alexander.xin/assets/architecture-overview.svg" />
   <meta name="twitter:card" content="summary_large_image" />
@@ -57,10 +57,10 @@
         <p class="eyebrow reveal d1">多节点 GPU 控制面</p>
         <h1 class="reveal d2">ComputeDeck</h1>
         <p class="lede reveal d3">主控一台，卡、任务和入口都管得住。</p>
-        <p class="lede sub reveal d3">单屏工作台 · 配置分页 · AI 趋势解读；命令行可补全，Agent 走同一套 MCP。</p>
+        <p class="lede sub reveal d3">看板五子页 · 助手浮层确认卡 · 终端工作台；命令行可补全，Agent 走同一套 MCP。</p>
         <div class="hero-stats reveal d4">
           <div class="stat-card"><b data-count="20">0</b><span>MCP 工具</span></div>
-          <div class="stat-card"><b data-count="3">0</b><span>AI 能力</span></div>
+          <div class="stat-card"><b data-count="30">0</b><span>助手工具</span></div>
           <div class="stat-card"><b data-count="10">0</b><span>推荐 Job</span></div>
         </div>
         <p class="hint reveal d5">下滑浏览 · ↓ / 空格 · 默认自动播放</p>
@@ -119,13 +119,13 @@ GPU 3  76%  PID  9921  ???</pre>
         <h2 class="reveal d1">从看见卡，到对外服务</h2>
         <p class="body narrow reveal d2">占卡、跑任务、对外入口、Agent 接入，都落在同一套配置和状态里。</p>
         <ol class="cap-rail reveal d3">
-          <li><strong>单屏</strong><span>一页一屏 · 列表内部滚动</span></li>
-          <li><strong>看板</strong><span>健康分 · GPU 池 · 趋势</span></li>
+          <li><strong>看板</strong><span>总览 · 入口 · 运维 · 趋势 · 监管</span></li>
+          <li><strong>工作台</strong><span>内容区滚动 · 终端左右栏</span></li>
           <li><strong>Job</strong><span>推理 / 训练 / Ray / Docker</span></li>
           <li><strong>配置</strong><span>左侧分页 · 一次一页</span></li>
           <li><strong>入口</strong><span>Edge · LiteLLM · 远程接入</span></li>
           <li><strong>模型栈</strong><span>拉取校验 · train/serve</span></li>
-          <li><strong>AI</strong><span>趋势 / 日志解读 · 31 工具 · 行内确认</span></li>
+          <li><strong>助手</strong><span>FAB 浮层 · 确认卡 · 监管解读</span></li>
           <li><strong>Agent</strong><span>OpenAPI · 20 个 gc_*</span></li>
         </ol>
         <p class="rail-foot reveal d4">日常在 UI 里配；高级仍可写 <code>config/local</code>。</p>
@@ -139,15 +139,18 @@ GPU 3  76%  PID  9921  ???</pre>
         <div>
           <p class="eyebrow reveal">看得见</p>
           <h2 class="reveal d1">池子、占用、入口一眼排开</h2>
-          <p class="body reveal d2">看板先看总览；趋势把 API 连通、GPU 算力/显存、槽位、节点在线率与队列等待放在同一条时间线上。没有曲线时会直接说明是无端点、GPU 快照过期，还是等待采样。</p>
+          <p class="body reveal d2">看板拆成五子页：总览看健康与 GPU 池，入口 / 运维 / 趋势 / 监管各做一件事。趋势把 API 连通、GPU 算力/显存、槽位放在同一条时间线上。</p>
           <ul class="bullet reveal d3">
-            <li>60 分钟曲线 · 两列排布 · 时间轴与末值</li>
+            <li>总览 · 入口 · 运维 · 趋势 · 监管</li>
             <li><code>free</code>：停 Job、清进程、释租约</li>
             <li><code>cordon</code>：隔离调度，部署会躲开</li>
           </ul>
         </div>
         <div class="mock-panel reveal d3" aria-hidden="true">
-          <div class="mock-chrome"><i></i><i></i><i></i><span>overview</span></div>
+          <div class="mock-chrome"><i></i><i></i><i></i><span>看板</span></div>
+          <div class="mock-toc" aria-hidden="true">
+            <span class="on">总览</span><span>入口</span><span>运维</span><span>趋势</span><span>监管</span>
+          </div>
           <div class="mock-top">
             <span class="ring"><i style="--p:0"></i><b>0</b></span>
             <div class="mock-kvs">
@@ -193,7 +196,8 @@ GPU 3  76%  PID  9921  ???</pre>
         <div>
           <p class="eyebrow reveal">配置驱动</p>
           <h2 class="reveal d1">一页一件事，配置不再堆成山</h2>
-          <p class="body reveal d2">配置中心按「配置 / 检查与接入 / 参考」三组共 11 页，一次只显示一页；节点级 SSH 用户 / 端口 / 私钥在节点清单里逐台设置。左侧分页直达，保存后自动刷新就绪状态。</p>
+          <p class="body reveal d2">配置中心按「配置 / 检查与接入 / 参考」三组共 11 页，一次只显示一页；节点级 SSH 用户 / 端口 /
+            私钥在节点清单里逐台设置。左侧分页直达，保存后自动刷新就绪状态。</p>
         </div>
         <div class="cfg-mock reveal d3" aria-hidden="true">
           <div class="cfg-mock-head"><strong>配置中心</strong><span>左侧分页 · 一次一页</span></div>
@@ -228,7 +232,8 @@ GPU 3  76%  PID  9921  ???</pre>
           <p class="body reveal d2">LiteLLM 直连每个节点端口，统一模型名、虚拟密钥、预算与重试/冷却；Edge 或 nginx 只负责 18080 的
             TLS/域名前置，不再重复选节点。</p>
           <div class="flow reveal d3" aria-hidden="true">
-            <span>Client</span><i></i><span>nginx / Edge</span><i></i><span class="ok">LiteLLM</span><i></i><span>节点 API</span>
+            <span>Client</span><i></i><span>nginx / Edge</span><i></i><span class="ok">LiteLLM</span><i></i><span>节点
+              API</span>
           </div>
           <ul class="bullet reveal d4">
             <li><code>gateway litellm-db init</code> 内置 Postgres</li>
@@ -289,14 +294,15 @@ GPU 3  76%  PID  9921  ???</pre>
       <div class="slide-bg mesh-a"></div>
       <div class="slide-inner">
         <p class="eyebrow reveal">AI · Agent</p>
-        <h2 class="reveal d1">AI 自动巡检，配置也能一步一步带你</h2>
-        <p class="body narrow reveal d2">AI 能读最近一小时趋势，解释 GPU 负载、队列积压与入口异常；写操作先出行内确认卡，破坏性操作二次确认，完成后确认卡收起、只留参数与结果记录。SSH / 主机 / API / 互通 / GPU 在过期前自动采集，「配置就绪」逐步检查并让 AI 指导下一步；Cursor / Claude Code 仍走同一 <code>bin/gpu-control-mcp</code>。</p>
+        <h2 class="reveal d1">右下角助手，写操作先确认再执行</h2>
+        <p class="body narrow reveal d2">FAB 浮层助手读趋势与日志；监管页可「AI 解读」并跟进到对话。写操作出行内确认卡，破坏性操作点两次；会话落盘带过期与参数校验。Cursor /
+          Claude Code 仍走同一 <code>bin/gpu-control-mcp</code>。</p>
         <div class="ai-stage reveal d3" aria-hidden="true">
           <div class="ai-demo">
             <article class="ai-card glow">
               <header>
-                <strong>控制面助手</strong>
-                <span>对话 · 只读工具</span>
+                <strong>小助手 FAB</strong>
+                <span>浮层 · 确认卡</span>
               </header>
               <div class="ai-thread">
                 <p class="ai-msg user">现在集群状态怎么样？</p>
@@ -340,7 +346,8 @@ GPU 3  76%  PID  9921  ???</pre>
               <svg class="ai-spark" viewBox="0 0 200 48" preserveAspectRatio="none">
                 <path class="area"
                   d="M0,36 L20,30 L40,32 L60,22 L80,18 L100,20 L120,14 L140,16 L160,10 L180,12 L200,8 L200,48 L0,48 Z" />
-                <path class="line" d="M0,36 L20,30 L40,32 L60,22 L80,18 L100,20 L120,14 L140,16 L160,10 L180,12 L200,8" />
+                <path class="line"
+                  d="M0,36 L20,30 L40,32 L60,22 L80,18 L100,20 L120,14 L140,16 L160,10 L180,12 L200,8" />
               </svg>
             </article>
             <article>
@@ -373,7 +380,7 @@ GPU 3  76%  PID  9921  ???</pre>
       <div class="slide-inner">
         <p class="eyebrow reveal">可靠性</p>
         <h2 class="reveal d1">账记得清，漂移看得见</h2>
-        <p class="body narrow reveal d2">状态可对账，故障可诊断，生产环境默认不裸奔。</p>
+        <p class="body narrow reveal d2">状态可对账，故障可诊断；交互终端是左节点右 PTY 的工作台，未连接不再甩大黑盒。生产环境默认不裸奔。</p>
         <div class="reli-grid reveal d3">
           <article>
             <strong>flock 状态</strong>
@@ -410,11 +417,12 @@ GPU 3  76%  PID  9921  ???</pre>
         <div class="finale-copy">
           <p class="eyebrow reveal">开源 · AGPL-3.0</p>
           <h2 class="reveal d1">拿到你的机房里用</h2>
-          <p class="body reveal d2">克隆 + <code>uv</code> 或容器跑起控制面。UI 里按左侧分页配节点 / Job / 登录 / 远程 / 日志；看板一屏看趋势、和 AI 对话、补全命令。不发 PyPI / npm。</p>
+          <p class="body reveal d2">克隆 + <code>uv</code> 或容器跑起控制面。UI 里按左侧分页配节点 / Job / 登录 / 远程 /
+            日志；看板五子页看状态，右下角助手对话与确认，终端左右栏连节点。不发 PyPI / npm。</p>
           <ul class="finale-ai reveal d3">
-            <li><strong>AI 对话</strong><span>总览 · 自检 · 建议操作</span></li>
-            <li><strong>命令补全</strong><span>exec suggest</span></li>
-            <li><strong>监管公告</strong><span>规则告警 + AI 解读</span></li>
+            <li><strong>小助手 FAB</strong><span>浮层对话 · 写操作确认卡</span></li>
+            <li><strong>监管解读</strong><span>规则告警 · 可跟进到助手</span></li>
+            <li><strong>终端工作台</strong><span>左节点 · 右 PTY</span></li>
             <li><strong>MCP</strong><span>Cursor / Claude / Codex</span></li>
           </ul>
           <div class="cta-row reveal d4">

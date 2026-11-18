@@ -16,13 +16,15 @@ from pathlib import Path
 from typing import Any
 
 from paths import STATE_DIR
-from state_util import atomic_write_json, read_json
+from state_util import atomic_write_json, read_json, update_json
 
 SESSION_DIR = STATE_DIR / "assistant_sessions"
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,64}$")
 _MAX_SESSIONS = 200
 _MAX_AGE_SEC = 7 * 86400
 _MAX_MESSAGES = 120
+_TERMINAL_PENDING = frozenset({"executed", "failed", "rejected", "expired"})
+_ACTIVE_PENDING = frozenset({"pending", "armed", "executing"})
 
 
 def _now() -> str:
@@ -89,26 +91,117 @@ def load(conversation_id: str) -> dict[str, Any]:
     return data
 
 
-def save(doc: dict[str, Any]) -> dict[str, Any]:
-    """原子保存并裁剪会话。"""
+def _prepare_doc(doc: dict[str, Any]) -> dict[str, Any]:
+    """规范化会话文档并裁剪消息。"""
     cid = valid_id((doc or {}).get("conversation_id"))
     if not cid:
         raise ValueError("conversation_id 不合法")
-    doc = dict(doc)
-    doc["conversation_id"] = cid
-    doc["updated_at"] = _now()
-    messages = doc.get("messages")
+    prepared = dict(doc)
+    prepared["conversation_id"] = cid
+    prepared["updated_at"] = _now()
+    messages = prepared.get("messages")
     if isinstance(messages, list) and len(messages) > _MAX_MESSAGES:
-        doc["messages"] = messages[-_MAX_MESSAGES:]
+        prepared["messages"] = messages[-_MAX_MESSAGES:]
+    prepared.setdefault("pending", {})
+    return prepared
+
+
+def merge_pending(base: dict[str, Any] | None, incoming: dict[str, Any] | None) -> dict[str, Any]:
+    """合并 pending：终态优先，避免 chat 用旧内存覆盖已执行确认卡。"""
+    out: dict[str, Any] = {}
+    for source in (base or {}, incoming or {}):
+        if not isinstance(source, dict):
+            continue
+        for action_id, row in source.items():
+            if not isinstance(row, dict):
+                continue
+            key = str(action_id)
+            prev = out.get(key)
+            if prev is None:
+                out[key] = dict(row)
+                continue
+            prev_status = str(prev.get("status") or "pending")
+            next_status = str(row.get("status") or "pending")
+            if prev_status in _TERMINAL_PENDING and next_status in _ACTIVE_PENDING:
+                continue
+            if next_status in _TERMINAL_PENDING and prev_status in _ACTIVE_PENDING:
+                out[key] = dict(row)
+                continue
+            if prev_status in _TERMINAL_PENDING and next_status in _TERMINAL_PENDING:
+                # 同为终态时保留更新更晚的；无法比较则保留 executed 优先于其它终态。
+                prev_ts = parse_time(prev.get("updated_at")) or parse_time(prev.get("executed_at")) or 0.0
+                next_ts = parse_time(row.get("updated_at")) or parse_time(row.get("executed_at")) or 0.0
+                if next_ts > prev_ts:
+                    out[key] = dict(row)
+                elif next_ts == prev_ts and next_status == "executed" and prev_status != "executed":
+                    out[key] = dict(row)
+                continue
+            out[key] = dict(row)
+    return out
+
+
+def save(doc: dict[str, Any]) -> dict[str, Any]:
+    """原子保存并裁剪会话（无锁；并发写请用 ``save_merged`` / ``update``）。"""
+    prepared = _prepare_doc(doc)
     SESSION_DIR.mkdir(parents=True, exist_ok=True)
-    path = _path(cid)
-    atomic_write_json(path, doc)
+    path = _path(prepared["conversation_id"])
+    atomic_write_json(path, prepared, mode=0o600)
     try:
         os.chmod(path, 0o600)
     except OSError:
         pass
     prune()
-    return doc
+    return prepared
+
+
+def save_merged(doc: dict[str, Any]) -> dict[str, Any]:
+    """带锁保存：磁盘上的终态 pending 优先于本次写入中的 stale pending。"""
+    prepared = _prepare_doc(doc)
+    cid = prepared["conversation_id"]
+    path = _path(cid)
+
+    def mutator(current: Any) -> dict[str, Any]:
+        base = current if isinstance(current, dict) else _empty(cid)
+        merged = dict(prepared)
+        merged["pending"] = merge_pending(base.get("pending") or {}, prepared.get("pending") or {})
+        if not merged.get("created_at"):
+            merged["created_at"] = base.get("created_at") or _now()
+        return _prepare_doc(merged)
+
+    SESSION_DIR.mkdir(parents=True, exist_ok=True)
+    result = update_json(path, mutator, default=_empty(cid))
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    prune()
+    return result
+
+
+def update(conversation_id: str, mutator) -> dict[str, Any]:
+    """跨进程锁下读改写会话。"""
+    cid = valid_id(conversation_id)
+    if not cid:
+        raise ValueError("conversation_id 不合法")
+    path = _path(cid)
+
+    def _wrap(current: Any) -> dict[str, Any]:
+        doc = current if isinstance(current, dict) else _empty(cid)
+        doc.setdefault("messages", [])
+        doc.setdefault("pending", {})
+        doc["conversation_id"] = cid
+        result = mutator(doc)
+        prepared = _prepare_doc(doc if result is None else result)
+        return prepared
+
+    SESSION_DIR.mkdir(parents=True, exist_ok=True)
+    result = update_json(path, _wrap, default=_empty(cid))
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    prune()
+    return result
 
 
 def prune() -> None:
@@ -168,11 +261,12 @@ def update_pending(doc: dict[str, Any], action_id: str, **fields: Any) -> dict[s
 
 
 def public_pending(action: dict[str, Any]) -> dict[str, Any]:
-    """返回给前端的安全字段（不包含一次性 token 的明文）。"""
+    """返回给前端的安全字段（不含完整 args 明文）。"""
     keys = (
         "id",
         "tool",
         "display_args",
+        "args_hash",
         "risk",
         "confirm_level",
         "label",
@@ -209,24 +303,32 @@ def clean_expired_pending(doc: dict[str, Any], *, ttl_sec: int = 900) -> dict[st
     pending = doc.get("pending") or {}
     if not isinstance(pending, dict):
         return doc
-    now = time.time()
     for action_id, row in list(pending.items()):
         if not isinstance(row, dict):
             pending.pop(action_id, None)
             continue
         if str(row.get("status") or "pending") not in {"pending", "armed"}:
             continue
-        created = row.get("created_epoch")
-        if created is not None and now - float(created) > ttl_sec:
+        if action_expired(row, ttl_sec=ttl_sec):
             row["status"] = "expired"
     return doc
 
 
 def action_expired(action: dict[str, Any], *, ttl_sec: int = 900) -> bool:
+    """确认卡是否过期：优先 ``expires_at``，其次 ``created_epoch``；皆无则视为过期。"""
+    expires_at = parse_time(action.get("expires_at"))
+    if expires_at is not None:
+        return time.time() >= expires_at
     created = action.get("created_epoch")
-    if created is None:
-        return False
-    return time.time() - float(created) > ttl_sec
+    if created is not None:
+        try:
+            return time.time() - float(created) > ttl_sec
+        except (TypeError, ValueError):
+            return True
+    created_at = parse_time(action.get("created_at"))
+    if created_at is not None:
+        return time.time() - created_at > ttl_sec
+    return True
 
 
 def dump_for_debug(doc: dict[str, Any]) -> str:

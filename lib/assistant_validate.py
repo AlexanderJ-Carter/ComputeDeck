@@ -170,7 +170,7 @@ def validate_call(
         if action == "render":
             required = []
         elif action == "add":
-            required = [("name", "节点名"), ("host", "主机地址")]
+            required = [("name", "节点名"), ("host", "主机地址"), ("gpus", "GPU 数量")]
         else:
             required = [("name", "节点名")]
     elif name == "gc_remote":

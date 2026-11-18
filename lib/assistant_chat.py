@@ -647,11 +647,10 @@ def _sanitize_history(
     max_messages: int = 40,
     max_chars: int = 60000,
 ) -> list[dict[str, Any]]:
-    """保留 user/assistant/tool 及配对的 tool_calls，防止工具历史被截断。"""
+    """从尾部保留 user/assistant/tool 及配对的 tool_calls，优先保住最近上下文。"""
     rows = messages if isinstance(messages, list) else []
-    out: list[dict[str, Any]] = []
+    cleaned: list[dict[str, Any]] = []
     call_ids: set[str] = set()
-    total = 0
     for row in rows:
         if not isinstance(row, dict):
             continue
@@ -661,72 +660,92 @@ def _sanitize_history(
             text = content.strip()
             if not text:
                 continue
-            item = {"role": "user", "content": text[:4000]}
+            cleaned.append({"role": "user", "content": text[:4000]})
         elif role == "assistant":
             tool_calls = row.get("tool_calls")
             if not isinstance(tool_calls, list) or not tool_calls:
                 text = content.strip()
                 if not text:
                     continue
-                item = {"role": "assistant", "content": text[:4000]}
+                cleaned.append({"role": "assistant", "content": text[:4000]})
+                continue
+            clean_calls = []
+            for call in tool_calls:
+                if not isinstance(call, dict):
+                    continue
+                call_id = str(call.get("id") or "")
+                fn = call.get("function") or {}
+                name = str((fn or {}).get("name") or "")
+                if not call_id or not name:
+                    continue
+                call_ids.add(call_id)
+                clean_calls.append(
+                    {
+                        "id": call_id,
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "arguments": str((fn or {}).get("arguments") or "{}")[:4000],
+                        },
+                    }
+                )
+            if not clean_calls:
+                text = content.strip()
+                if not text:
+                    continue
+                cleaned.append({"role": "assistant", "content": text[:4000]})
             else:
-                clean_calls = []
-                for call in tool_calls:
-                    if not isinstance(call, dict):
-                        continue
-                    call_id = str(call.get("id") or "")
-                    fn = call.get("function") or {}
-                    name = str((fn or {}).get("name") or "")
-                    if not call_id or not name:
-                        continue
-                    call_ids.add(call_id)
-                    clean_calls.append(
-                        {
-                            "id": call_id,
-                            "type": "function",
-                            "function": {
-                                "name": name,
-                                "arguments": str((fn or {}).get("arguments") or "{}")[:4000],
-                            },
-                        }
-                    )
-                if not clean_calls:
-                    text = content.strip()
-                    if not text:
-                        continue
-                    item = {"role": "assistant", "content": text[:4000]}
-                else:
-                    item = {
+                cleaned.append(
+                    {
                         "role": "assistant",
                         "content": content[:4000],
                         "tool_calls": clean_calls,
                     }
+                )
         elif role == "tool":
             call_id = str(row.get("tool_call_id") or "")
             if call_id not in call_ids:
                 continue
-            item = {
-                "role": "tool",
-                "tool_call_id": call_id,
-                "content": content[:12000],
-            }
-        else:
-            continue
+            cleaned.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "content": content[:12000],
+                }
+            )
+
+    kept: list[dict[str, Any]] = []
+    total = 0
+    for item in reversed(cleaned):
         size = len(json.dumps(item, ensure_ascii=False))
-        if total + size > max_chars and out:
+        if kept and total + size > max_chars:
             break
+        kept.append(item)
         total += size
-        out.append(item)
-    if len(out) > max_messages:
-        out = out[-max_messages:]
-        # 裁掉开头孤立的 tool 消息
-        while out and out[0].get("role") == "tool":
-            out.pop(0)
+    kept.reverse()
+    if len(kept) > max_messages:
+        kept = kept[-max_messages:]
+
+    while kept and kept[0].get("role") == "tool":
+        kept.pop(0)
+
+    live_ids: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for item in kept:
+        if item.get("role") == "assistant" and item.get("tool_calls"):
+            for call in item["tool_calls"]:
+                live_ids.add(str(call.get("id") or ""))
+            out.append(item)
+        elif item.get("role") == "tool":
+            if str(item.get("tool_call_id") or "") in live_ids:
+                out.append(item)
+        else:
+            out.append(item)
     return out
 
 
 def _normalize_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """兼容旧客户端：把前端消息收敛成可用的 OpenAI 历史。"""
+    """把前端消息收敛成可用的 OpenAI 历史。"""
     return _sanitize_history(messages)
 
 
@@ -771,6 +790,7 @@ def _public_action(action: dict[str, Any]) -> dict[str, Any]:
         "id",
         "tool",
         "display_args",
+        "args_hash",
         "risk",
         "confirm_level",
         "label",
@@ -931,11 +951,33 @@ def stream_chat(
                     time.sleep(2)
                     continue
                 info = format_upstream_error(exc, base_url=cfg["base_url"])
-                yield ("error", {"error": "upstream_unavailable", **info, "reply": f"{info['error']}。{info['hint']}"})
+                state["history"] = openai_messages[1:]
+                state["pending_full"] = pending_full
+                state["tool_traces"] = tool_traces
+                yield (
+                    "error",
+                    {
+                        "error": "upstream_unavailable",
+                        **info,
+                        "reply": f"{info['error']}。{info['hint']}",
+                        "pending_actions": [_public_action(a) for a in pending_full],
+                    },
+                )
                 return
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 info = format_upstream_error(exc, base_url=cfg["base_url"])
-                yield ("error", {"error": "upstream_unavailable", **info, "reply": f"{info['error']}。{info['hint']}"})
+                state["history"] = openai_messages[1:]
+                state["pending_full"] = pending_full
+                state["tool_traces"] = tool_traces
+                yield (
+                    "error",
+                    {
+                        "error": "upstream_unavailable",
+                        **info,
+                        "reply": f"{info['error']}。{info['hint']}",
+                        "pending_actions": [_public_action(a) for a in pending_full],
+                    },
+                )
                 return
 
         if full_message is not None:
@@ -1013,20 +1055,36 @@ def stream_chat(
                     "result": tool_result,
                 }
                 tool_traces.append(trace)
-                yield (
-                    "tool",
+                if isinstance(tool_result, dict) and tool_result.get("deferred"):
+                    tool_status = "deferred"
+                elif isinstance(tool_result, dict) and tool_result.get("ok") is False:
+                    tool_status = "error"
+                else:
+                    tool_status = "ok"
+                # 每生成确认卡就写入 state，便于上游随后失败时服务端仍可落盘。
+                state["history"] = openai_messages[1:] + [
                     {
-                        "tool": name,
-                        "risk": risk,
-                        "status": "deferred" if risk != "read" else "ok",
-                        "label": validation.get("label") or name,
-                        "action_id": (
-                            tool_result.get("action_id")
-                            if isinstance(tool_result, dict)
-                            else ""
-                        ),
-                    },
-                )
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": json.dumps(tool_result, ensure_ascii=False)[:12000],
+                    }
+                ]
+                state["pending_full"] = list(pending_full)
+                state["tool_traces"] = tool_traces
+                tool_event = {
+                    "tool": name,
+                    "risk": risk,
+                    "status": tool_status,
+                    "label": validation.get("label") or name,
+                    "action_id": (
+                        tool_result.get("action_id")
+                        if isinstance(tool_result, dict)
+                        else ""
+                    ),
+                }
+                if tool_status == "deferred" and pending_full:
+                    tool_event["pending_action"] = _public_action(pending_full[-1])
+                yield ("tool", tool_event)
                 openai_messages.append(
                     {
                         "role": "tool",
@@ -1241,8 +1299,8 @@ def handle_chat(
             "reply": f"{info['error']}。{info['hint']}",
             "warning": detail or None,
             "quick_actions": quick_actions(ready=True, context=context),
-            "pending_actions": [],
-            "pending_actions_full": [],
+            "pending_actions": [_public_action(a) for a in pending_full],
+            "pending_actions_full": pending_full,
             "tool_traces": tool_traces,
             "history": openai_messages[1:],
             "open_settings": True,
@@ -1255,8 +1313,8 @@ def handle_chat(
             "mode": "llm",
             "reply": f"{info['error']}。{info['hint']}",
             "quick_actions": quick_actions(ready=True, context=context),
-            "pending_actions": [],
-            "pending_actions_full": [],
+            "pending_actions": [_public_action(a) for a in pending_full],
+            "pending_actions_full": pending_full,
             "tool_traces": tool_traces,
             "history": openai_messages[1:],
             "open_settings": True,

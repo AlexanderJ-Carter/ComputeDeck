@@ -104,10 +104,12 @@ def _node_route(args: dict[str, Any]) -> dict[str, Any]:
     if action == "remove":
         return {"method": "POST", "path": "/api/node/remove", "body": {"name": args.get("name")}}
     if action == "add":
+        if args.get("gpus") is None:
+            return None
         body = {
             "name": args.get("name"),
             "host": args.get("host"),
-            "gpus": args.get("gpus") if args.get("gpus") is not None else 4,
+            "gpus": args.get("gpus"),
         }
         for key in ("labels", "user", "port", "key"):
             if args.get(key) not in (None, ""):
@@ -928,7 +930,7 @@ def summary_for(name: str, args: dict[str, Any], target: dict[str, Any] | None =
             "render": "根据 nodes.json 重新渲染 inventory 与端点缓存。",
             "cordon": f"节点 {args.get('name')} 将不再参与调度与部署。",
             "uncordon": f"节点 {args.get('name')} 恢复参与调度。",
-            "add": f"新增节点 {args.get('name')} → {args.get('host')}，GPU 数 {args.get('gpus') or 4}。",
+            "add": f"新增节点 {args.get('name')} → {args.get('host')}，GPU 数 {args.get('gpus')}。",
             "remove": f"从 nodes.json 删除节点 {args.get('name')}。",
         }.get(action, "修改节点清单。")
     elif name == "gc_queue":

@@ -1436,41 +1436,107 @@ function renderPool(overview) {
   }
 }
 
+function setTerminalConnectedUi(connected, node = "") {
+  const workspace = $("term-workspace");
+  const live = $("term-live");
+  const empty = $("term-empty");
+  const disconnectBtn = $("btn-term-disconnect");
+  if (workspace) workspace.dataset.connected = connected ? "1" : "0";
+  if (live) live.hidden = !connected;
+  if (empty) empty.hidden = !!connected;
+  if (disconnectBtn) disconnectBtn.disabled = !connected;
+  if (!connected) {
+    updateTerminalEmptyState();
+    return;
+  }
+  const liveTitle = $("term-live-title");
+  const liveMeta = $("term-live-meta");
+  if (liveTitle) liveTitle.textContent = node ? `SSH · ${node}` : "SSH PTY";
+  if (liveMeta) liveMeta.textContent = "会话中 · 断开不会停远端进程";
+}
+
+function updateTerminalEmptyState() {
+  const empty = $("term-empty");
+  if (!empty || $("term-workspace")?.dataset.connected === "1") return;
+  const sel = $("term-node");
+  const name = sel?.value || "";
+  const node = name ? overviewNode(name) : null;
+  const offline = node && (node.liveness_state === "offline" || node.state === "offline");
+  const title = $("term-empty-title");
+  const body = $("term-empty-body");
+  const btn = $("btn-term-empty-connect");
+  if (!name) {
+    if (title) title.textContent = "尚未连接";
+    if (body) body.textContent = "在左侧选择在线节点，点「连接」打开 SSH PTY。也可点主机资源行直接连上。";
+    if (btn) btn.disabled = true;
+    return;
+  }
+  if (offline) {
+    if (title) title.textContent = `${name} 离线`;
+    if (body) {
+      body.textContent = `最后成功 ${node.last_seen || "从未"}。节点恢复在线后再连接。`;
+    }
+    if (btn) btn.disabled = true;
+    return;
+  }
+  if (title) title.textContent = `准备连接 ${name}`;
+  if (body) {
+    const cpu = node?.cpu_percent != null ? `${node.cpu_percent}%` : "—";
+    const load = node?.load1 ?? "—";
+    const mem =
+      node?.mem_used_mb != null && node?.mem_total_mb != null
+        ? `${node.mem_used_mb} / ${node.mem_total_mb} MB`
+        : "—";
+    body.textContent = `CPU ${cpu} · 负载 ${load} · 内存 ${mem}。连接后右侧打开交互 PTY。`;
+  }
+  if (btn) btn.disabled = false;
+}
+
 function renderHostMetrics(overview) {
   const root = document.getElementById("host-metrics");
   if (!root) return;
   const nodes = overview.nodes || [];
   const at = (overview.summary && overview.summary.host_metrics_at) || (overview.host_metrics || {}).generated_at;
-  document.getElementById("metrics-at").textContent = at ? `采集于 ${at}` : "尚未采集，点「刷新主机指标」";
+  const metricsAt = document.getElementById("metrics-at");
+  if (metricsAt) metricsAt.textContent = at ? `采集于 ${at}` : "尚未采集，点「刷新」";
+  const selected = $("term-node")?.value || "";
   if (!nodes.length) {
     root.innerHTML =
-      '<div class="empty-state"><strong>暂无节点</strong><p>先在「配置 → 配置向导 → 节点清单」添加节点，再刷新主机指标。</p></div>';
+      '<div class="empty-state compact"><strong>暂无节点</strong><p>先在配置里添加节点，再刷新主机指标。</p></div>';
+    updateTerminalEmptyState();
     return;
   }
   root.innerHTML = nodes
     .map((n) => {
-      const memPct =
-        n.mem_total_mb > 0 ? Math.min(100, Math.round((100 * (n.mem_used_mb || 0)) / n.mem_total_mb)) : 0;
-      const cpu = n.cpu_percent != null ? Math.min(100, Math.round(n.cpu_percent)) : 0;
-      return `<div class="metric-card">
-        <div class="name">${escapeHtml(n.name)}</div>
-        <div class="row"><span>CPU</span><b>${n.cpu_percent ?? "-"}%</b></div>
-        <div class="metric-bar"><span style="width:${cpu}%"></span></div>
-        <div class="row"><span>负载</span><b>${n.load1 ?? "-"}</b></div>
-        <div class="row"><span>内存</span><b>${n.mem_used_mb ?? "-"} / ${n.mem_total_mb ?? "-"} MB</b></div>
-        <div class="metric-bar"><span style="width:${memPct}%"></span></div>
-        <div class="row"><span>操作</span><button class="tiny primary" data-open-term="${escapeHtml(
+      const offline = n.liveness_state === "offline" || n.state === "offline";
+      const cpu = n.cpu_percent != null ? `${n.cpu_percent}%` : "—";
+      const load = n.load1 ?? "—";
+      const mem =
+        n.mem_used_mb != null && n.mem_total_mb != null
+          ? `${n.mem_used_mb}/${n.mem_total_mb} MB`
+          : "—";
+      const active = selected && selected === n.name ? " is-active" : "";
+      const state = offline ? "is-offline" : "is-online";
+      return `<button type="button" class="term-node-row${active} ${state}" data-open-term="${escapeHtml(
         n.name
-      )}" data-keep-enabled="1">终端</button></div>
-      </div>`;
+      )}" data-keep-enabled="1" ${offline ? "disabled" : ""}>
+        <span class="term-node-name">${escapeHtml(n.name)}</span>
+        <span class="term-node-meta">CPU ${escapeHtml(String(cpu))} · 负载 ${escapeHtml(String(load))}</span>
+        <span class="term-node-mem">${escapeHtml(String(mem))}</span>
+      </button>`;
     })
     .join("");
   root.querySelectorAll("[data-open-term]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.getElementById("term-node").value = btn.dataset.openTerm;
+      const sel = document.getElementById("term-node");
+      if (sel) {
+        sel.value = btn.dataset.openTerm;
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+      }
       connectTerminal();
     });
   });
+  updateTerminalEmptyState();
 }
 
 function ensureTerminal() {
@@ -1539,7 +1605,9 @@ function disconnectTerminal() {
   }
   termState.ws = null;
   termState.node = null;
-  document.getElementById("term-status").textContent = "已断开";
+  const status = document.getElementById("term-status");
+  if (status) status.textContent = "已断开";
+  setTerminalConnectedUi(false);
 }
 
 function overviewNode(name) {
@@ -1550,19 +1618,28 @@ function syncTerminalTargetState() {
   const sel = document.getElementById("term-node");
   if (!sel) return;
   const btn = document.getElementById("btn-term-connect");
+  const emptyBtn = document.getElementById("btn-term-empty-connect");
   const status = document.getElementById("term-status");
   const node = overviewNode(sel.value);
   const offline = node && (node.liveness_state === "offline" || node.state === "offline");
+  const disable = !sel.value || Boolean(offline);
   if (btn) {
-    btn.disabled = Boolean(offline);
+    btn.disabled = disable;
     btn.title = offline ? "节点离线，无法建立 SSH 连接" : "";
   }
+  if (emptyBtn) emptyBtn.disabled = disable || Boolean(termState.ws);
+  document.querySelectorAll("#host-metrics .term-node-row").forEach((row) => {
+    row.classList.toggle("is-active", row.dataset.openTerm === sel.value);
+  });
   if (termState.ws) return;
   if (status) {
     status.textContent = offline
       ? `${sel.value} 离线，无法连接（最后成功 ${node.last_seen || "从未"}）`
-      : "未连接 · 选择节点后点击「连接」";
+      : sel.value
+        ? `未连接 · 已选 ${sel.value}`
+        : "未连接 · 选择节点后点击「连接」";
   }
+  updateTerminalEmptyState();
 }
 
 function connectTerminal() {
@@ -1571,11 +1648,18 @@ function connectTerminal() {
   const target = overviewNode(node);
   if (target && (target.liveness_state === "offline" || target.state === "offline")) {
     document.getElementById("term-status").textContent = `${node} 离线，无法连接`;
+    updateTerminalEmptyState();
     return toastBad("节点离线，无法建立 SSH 连接");
   }
   const term = ensureTerminal();
   if (!term) return;
-  disconnectTerminal();
+  if (termState.ws) {
+    try {
+      termState.ws.close();
+    } catch (_) { }
+    termState.ws = null;
+  }
+  setTerminalConnectedUi(true, node);
   if (termState.fit) termState.fit.fit();
   term.reset();
   term.writeln(`\r\n\x1b[36m连接 ${node} …\x1b[0m`);
@@ -1588,8 +1672,12 @@ function connectTerminal() {
   termState.ws = ws;
   termState.node = node;
   document.getElementById("term-status").textContent = `正在连接 ${node}…`;
+  const disconnectBtn = $("btn-term-disconnect");
+  if (disconnectBtn) disconnectBtn.disabled = false;
   ws.onopen = () => {
     document.getElementById("term-status").textContent = `已连接 ${node}（交互 PTY）`;
+    const liveMeta = $("term-live-meta");
+    if (liveMeta) liveMeta.textContent = "已连接 · 交互 PTY";
     sendTermResize();
     term.focus();
   };
@@ -1600,6 +1688,10 @@ function connectTerminal() {
         if (msg.type === "status") {
           document.getElementById("term-status").textContent =
             `已连接 ${msg.node} · ${msg.user}@${msg.host}`;
+          const liveTitle = $("term-live-title");
+          const liveMeta = $("term-live-meta");
+          if (liveTitle) liveTitle.textContent = `SSH · ${msg.node}`;
+          if (liveMeta) liveMeta.textContent = `${msg.user}@${msg.host}`;
           return;
         }
       } catch (_) { }
@@ -1609,7 +1701,13 @@ function connectTerminal() {
     term.write(new Uint8Array(ev.data));
   };
   ws.onclose = () => {
-    document.getElementById("term-status").textContent = `连接已关闭（${node}）`;
+    if (termState.ws === ws) {
+      termState.ws = null;
+      termState.node = null;
+      setTerminalConnectedUi(false);
+    }
+    const status = document.getElementById("term-status");
+    if (status) status.textContent = `连接已关闭（${node}）`;
     term.writeln("\r\n\x1b[31m[会话结束]\x1b[0m");
   };
   ws.onerror = () => {
@@ -4882,7 +4980,7 @@ async function testIntegrationApi() {
   }
 }
 
-function aiGuide() {
+async function aiGuide() {
   const steps = stateSetup.data?.steps || [];
   const summary = steps
     .map((step) => `${step.title}：${step.ok === true ? "就绪" : step.ok === false ? "待配置" : "需查看"}`)
@@ -4890,8 +4988,8 @@ function aiGuide() {
   const prompt =
     `请检查并指导我完成 ComputeDeck 配置。当前步骤：${summary || "尚未读取"}。` +
     "先读取状态（setup / overview / doctor），指出下一步具体操作；只读操作可以直接执行，写操作先确认。";
-  setAssistantOpen(true);
-  sendAssistant(prompt);
+  await setAssistantOpen(true);
+  await sendAssistant(prompt);
 }
 
 async function copyMcpConfig() {
@@ -5516,8 +5614,10 @@ async function boot() {
     if (!ok) return;
     runToolkit("install", { bundle: "train-stack" });
   });
-  document.getElementById("btn-term-connect").addEventListener("click", connectTerminal);
-  document.getElementById("btn-term-disconnect").addEventListener("click", disconnectTerminal);
+  document.getElementById("btn-term-connect")?.addEventListener("click", connectTerminal);
+  document.getElementById("btn-term-empty-connect")?.addEventListener("click", connectTerminal);
+  document.getElementById("btn-term-disconnect")?.addEventListener("click", disconnectTerminal);
+  setTerminalConnectedUi(false);
   document.getElementById("btn-metrics-refresh").addEventListener("click", refreshMetrics);
   document.getElementById("btn-lb-refresh").addEventListener("click", refreshLb);
   document.getElementById("lb-strategy").addEventListener("change", refreshLb);
@@ -6026,10 +6126,7 @@ async function boot() {
       return;
     }
     if (ev.key === "Escape") {
-      if (noticesState.open) {
-        ev.preventDefault();
-        setNoticesPopOpen(false);
-      }
+      // 公告 / 助手 Esc 由 bindAssistant 统一分层处理，避免重复关闭。
       return;
     }
     if (assistantState.open) return;
@@ -6090,6 +6187,8 @@ async function boot() {
     await seedConsole();
     hideConsoleUnread();
     await loadAssistantStatus();
+    // 未打开面板也同步 pending，刷新后 FAB 红点仍能提示待确认操作。
+    restoreAssistantConversation({ render: false }).catch(() => { });
     refreshRemoteStatus().catch(() => { });
   } catch (err) {
     log(String(err.message || err));
@@ -6452,17 +6551,43 @@ function restoreAiAnalyze() {
     const saved = JSON.parse(raw);
     const box = $("ai-analyze-box");
     const at = $("ai-analyze-at");
-    if (box && saved.reply) setMarkdown(box, saved.reply);
+    if (box && saved.reply) {
+      setMarkdown(box, saved.reply);
+      if (saved.ok) box.dataset.lastOkReply = saved.reply;
+    }
     if (at && saved.at) at.textContent = saved.at;
+    if (saved.ok && saved.reply) renderAiAnalyzeFollowUp(saved.reply);
   } catch (_) {
     /* ignore */
   }
+}
+
+function renderAiAnalyzeFollowUp(reply) {
+  const wrap = $("ai-analyze-follow");
+  if (!wrap) return;
+  wrap.hidden = !reply;
+  wrap.innerHTML = "";
+  if (!reply) return;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "ghost tiny";
+  btn.dataset.keepEnabled = "1";
+  btn.textContent = "在助手中跟进";
+  btn.addEventListener("click", async () => {
+    await setAssistantOpen(true);
+    await sendAssistant(
+      "以下是监管页的 AI 解读结果，请基于当前集群状态继续给出可执行下一步；写操作先出确认卡。\n\n" +
+      String(reply).slice(0, 6000)
+    );
+  });
+  wrap.appendChild(btn);
 }
 
 async function runAiAnalyze() {
   const box = $("ai-analyze-box");
   const at = $("ai-analyze-at");
   const btn = $("btn-ai-analyze");
+  const previous = box?.dataset.lastOkReply || "";
   if (btn) btn.disabled = true;
   if (box) box.textContent = "正在深度同步（diagnose）并请求 AI 解读…";
   if (at) at.textContent = "进行中…";
@@ -6474,20 +6599,34 @@ async function runAiAnalyze() {
     });
     const reply = data.reply || data.error || "（无解读）";
     const stamp = new Date().toLocaleString();
-    if (box) setMarkdown(box, reply);
+    if (box) {
+      setMarkdown(box, reply);
+      if (data.ok) box.dataset.lastOkReply = reply;
+    }
     if (at) at.textContent = stamp;
     localStorage.setItem(
       "gpu-control-ai-analyze",
       JSON.stringify({ reply, at: stamp, ok: !!data.ok })
     );
+    renderAiAnalyzeFollowUp(data.ok ? reply : "");
     if (data.open_settings) {
-      setAssistantOpen(true);
+      await setAssistantOpen(true);
       setAssistantSettingsOpen(true);
     }
     await syncNotices();
     if (data.ok) toastOk("AI 解读完成");
   } catch (err) {
-    if (box) box.textContent = `解读失败：${err.message || err}`;
+    if (box) {
+      if (previous) {
+        setMarkdown(box, previous);
+        const note = document.createElement("p");
+        note.className = "warn";
+        note.textContent = `本次解读失败：${err.message || err}（仍保留上次成功结果）`;
+        box.prepend(note);
+      } else {
+        box.textContent = `解读失败：${err.message || err}`;
+      }
+    }
     if (at) at.textContent = "失败";
     toastBad(`AI 解读失败：${err.message || err}`);
   } finally {
@@ -6519,7 +6658,10 @@ const assistantState = {
   quickActions: [],
   streamController: null,
   executingAction: null,
-  restored: false,
+  pendingSynced: false,
+  threadRendered: false,
+  restorePromise: null,
+  generation: 0,
 };
 try {
   assistantState.conversationId = localStorage.getItem(ASSISTANT_CONV_KEY) || null;
@@ -6537,48 +6679,133 @@ function setAssistantConversation(id) {
   }
 }
 
-async function restoreAssistantConversation() {
-  if (!assistantState.conversationId || assistantState.restored) return;
+function bumpAssistantGeneration() {
+  assistantState.generation += 1;
+  return assistantState.generation;
+}
+
+function renderAssistantSessionData(data) {
   const thread = $("assistant-thread");
-  if (!thread || thread.children.length) return;
-  assistantState.restored = true;
+  if (!thread || !data) return;
+  const active = (data.pending_actions || []).filter(
+    (row) => row && ["pending", "armed"].includes(String(row.status || "pending"))
+  );
+  thread.innerHTML = "";
+  assistantState.messages = [];
+  for (const msg of data.messages || []) {
+    if (!msg || !msg.content) continue;
+    assistantState.messages.push({ role: msg.role, content: msg.content });
+    appendAssistantMsg(msg.role === "user" ? "user" : "bot", msg.content, {
+      markdown: msg.role !== "user",
+    });
+  }
+  syncAssistantPending(active);
+  assistantState.threadRendered = true;
+}
+
+async function restoreAssistantConversation({ render = true } = {}) {
+  if (!assistantState.conversationId) {
+    assistantState.pendingSynced = true;
+    if (render) assistantState.threadRendered = true;
+    return null;
+  }
+  if (!render && assistantState.pendingSynced && !assistantState.restorePromise) {
+    return null;
+  }
+  if (render && assistantState.threadRendered && assistantState.pendingSynced) {
+    return null;
+  }
+
+  const applyData = (data) => {
+    if (!data) return null;
+    if (!data.exists) {
+      setAssistantConversation(null);
+      assistantState.pending = [];
+      updateAssistantFabDot();
+      assistantState.pendingSynced = true;
+      if (render) assistantState.threadRendered = true;
+      return null;
+    }
+    const active = (data.pending_actions || []).filter(
+      (row) => row && ["pending", "armed"].includes(String(row.status || "pending"))
+    );
+    assistantState.pending = active;
+    assistantState.pendingSynced = true;
+    updateAssistantFabDot();
+    if (render && !assistantState.threadRendered) {
+      renderAssistantSessionData({ ...data, pending_actions: active });
+    } else if (!render) {
+      // boot 只同步红点，不强行清空线程。
+    } else {
+      syncAssistantPending(active);
+    }
+    return data;
+  };
+
+  if (assistantState.restorePromise) {
+    const data = await assistantState.restorePromise;
+    return applyData(data);
+  }
+
+  assistantState.restorePromise = (async () => {
+    try {
+      return await api(
+        `/api/assistant/session?conversation_id=${encodeURIComponent(assistantState.conversationId)}`,
+        { timeoutMs: 15000 }
+      );
+    } catch (err) {
+      assistantState.pendingSynced = false;
+      log(`assistant restore: ${err.message || err}`);
+      return null;
+    } finally {
+      assistantState.restorePromise = null;
+    }
+  })();
+  const data = await assistantState.restorePromise;
+  return applyData(data);
+}
+
+async function refreshAssistantPendingFromSession() {
+  if (!assistantState.conversationId) return;
   try {
     const data = await api(
       `/api/assistant/session?conversation_id=${encodeURIComponent(assistantState.conversationId)}`,
       { timeoutMs: 15000 }
     );
-    if (!data.exists) {
-      setAssistantConversation(null);
-      return;
-    }
-    thread.innerHTML = "";
-    assistantState.messages = [];
-    for (const msg of data.messages || []) {
-      if (!msg || !msg.content) continue;
-      assistantState.messages.push({ role: msg.role, content: msg.content });
-      appendAssistantMsg(msg.role === "user" ? "user" : "bot", msg.content, {
-        markdown: msg.role !== "user",
-      });
-    }
-    syncAssistantPending(data.pending_actions || []);
+    if (!data?.exists) return;
+    const active = (data.pending_actions || []).filter(
+      (row) => row && ["pending", "armed"].includes(String(row.status || "pending"))
+    );
+    assistantState.pending = active;
+    assistantState.pendingSynced = true;
+    syncAssistantPending(active);
+    updateAssistantFabDot();
   } catch (err) {
-    assistantState.restored = false;
-    log(`assistant restore: ${err.message || err}`);
+    log(`assistant pending refresh: ${err.message || err}`);
   }
 }
 
 function newAssistantConversation() {
+  assistantState.streamController?.abort();
+  bumpAssistantGeneration();
   setAssistantConversation(null);
   assistantState.messages = [];
   assistantState.pending = [];
-  assistantState.restored = true;
+  assistantState.pendingSynced = true;
+  assistantState.threadRendered = true;
+  assistantState.busy = false;
+  assistantState.streamController = null;
+  const stopBtn = $("assistant-stop");
+  if (stopBtn) stopBtn.hidden = true;
+  const sendBtn = $("assistant-send");
+  if (sendBtn) sendBtn.disabled = false;
   const thread = $("assistant-thread");
   if (thread) thread.innerHTML = "";
   syncAssistantPending([]);
   appendAssistantMsg("bot", "新对话已开始。你可以让我巡检、部署、腾空节点或检查入口。");
 }
 
-function setAssistantOpen(open) {
+async function setAssistantOpen(open) {
   assistantState.open = !!open;
   const panel = $("assistant-panel");
   const fab = $("assistant-fab");
@@ -6586,17 +6813,14 @@ function setAssistantOpen(open) {
   if (fab) fab.setAttribute("aria-expanded", open ? "true" : "false");
   updateAssistantFabDot();
   if (open) {
-    restoreAssistantConversation()
-      .then(() => {
-        const thread = $("assistant-thread");
-        if (thread && !thread.children.length) {
-          appendAssistantMsg(
-            "bot",
-            "你好，我是 ComputeDeck 助手。可以让我巡检集群、查节点、部署 Job 或检查入口；写操作会先请你确认。"
-          );
-        }
-      })
-      .catch(() => { });
+    await restoreAssistantConversation({ render: true });
+    const thread = $("assistant-thread");
+    if (thread && !thread.children.length) {
+      appendAssistantMsg(
+        "bot",
+        "你好，我是 ComputeDeck 助手。可以让我巡检集群、查节点、部署 Job 或检查入口；写操作会先请你确认。"
+      );
+    }
     if (assistantState.settingsOpen) $("assistant-base-url")?.focus();
     else $("assistant-input")?.focus();
   } else {
@@ -7022,18 +7246,18 @@ function syncAssistantPending(pending) {
     }
   });
   assistantState.pending = items;
-  const seen = new Set();
+  const seenIds = new Set();
   thread
     .querySelectorAll('.assistant-approval[data-state="pending"], .assistant-approval[data-state="armed"]')
     .forEach((card) => {
-      if (card.dataset.signature) seen.add(card.dataset.signature);
+      if (card.dataset.actionId) seenIds.add(card.dataset.actionId);
     });
   let appended = false;
   for (const row of items) {
-    if (thread.querySelector(`.assistant-approval[data-action-id="${row.id}"]`)) continue;
-    const signature = assistantActionSignature(row);
-    if (seen.has(signature)) continue;
-    seen.add(signature);
+    const id = String(row.id || "");
+    if (!id || seenIds.has(id)) continue;
+    // 同签名的旧卡若仍在界面且不在 keep 集合，已在上方移除；这里按 action_id 追加。
+    seenIds.add(id);
     thread.appendChild(assistantApprovalCard(row));
     appended = true;
   }
@@ -7237,6 +7461,7 @@ async function runAssistantPending(row, card) {
       body: JSON.stringify({
         conversation_id: assistantState.conversationId,
         action_id: row.id,
+        args_hash: row.args_hash || "",
         confirm: destructive ? "EXECUTE" : true,
       }),
       timeoutMs: 1900000,
@@ -7276,6 +7501,12 @@ async function runAssistantPending(row, card) {
       });
       retireAssistantApproval(card);
       await refresh(false, { light: true }).catch(() => { });
+    } else if (code === "args_mismatch") {
+      settleAssistantPending(row.id);
+      markAssistantApproval(card, "expired", "参数已失效");
+      finishAssistantRun(run, null, { message: "参数与提案不一致，请重新提问。" });
+      retireAssistantApproval(card);
+      toastBad("确认卡参数已失效，请重新提问");
     } else {
       markAssistantApproval(card, "pending");
       const hint = card.querySelector(".assistant-approval-hint");
@@ -7439,10 +7670,10 @@ async function clearRunlog() {
   }
 }
 
-function askAssistantAboutTrends() {
-  setAssistantOpen(true);
+async function askAssistantAboutTrends() {
+  await setAssistantOpen(true);
   if (!assistantState.status) loadAssistantStatus();
-  sendAssistant(
+  await sendAssistant(
     "请调用 gc_metrics_history 查看最近一小时的连通与负载趋势，指出异常节点、GPU 负载失衡、队列积压或入口问题，并给出下一步建议。"
   );
 }
@@ -7476,9 +7707,9 @@ async function loadAssistantTools() {
 
 async function askAssistantAboutLogs() {
   const name = $("log-file")?.value || "ui";
-  setAssistantOpen(true);
+  await setAssistantOpen(true);
   if (!assistantState.status) loadAssistantStatus();
-  sendAssistant(
+  await sendAssistant(
     `请调用 gc_logs 查看 ${name} 最近 200 行日志，指出错误 / 异常和下一步排查建议；如果涉及节点或入口状态，再结合 overview。`
   );
 }
@@ -7607,6 +7838,10 @@ async function sendAssistant(text) {
     setAssistantSettingsOpen(true);
     return;
   }
+  if (assistantState.open) {
+    await restoreAssistantConversation({ render: true });
+  }
+  const generation = assistantState.generation;
   const input = $("assistant-input");
   if (input) {
     input.value = "";
@@ -7631,6 +7866,7 @@ async function sendAssistant(text) {
   let donePayload = null;
 
   const finish = (data) => {
+    if (generation !== assistantState.generation) return;
     if (data?.conversation_id) setAssistantConversation(data.conversation_id);
     const reply = data?.reply || data?.error || "（无回复）";
     if (bubble && bubble.isConnected) {
@@ -7639,6 +7875,12 @@ async function sendAssistant(text) {
         bubbleBody.innerHTML = "";
         if (reply) setMarkdown(bubbleBody, reply);
         else bubbleBody.remove();
+      }
+      if (data?.warning) {
+        const warn = document.createElement("p");
+        warn.className = "assistant-warning meta";
+        warn.textContent = String(data.warning);
+        bubble.appendChild(warn);
       }
       if (bubbleSteps && !bubbleSteps.children.length) bubbleSteps.remove();
       scrollAssistantThread();
@@ -7653,6 +7895,7 @@ async function sendAssistant(text) {
 
   try {
     await postAssistantStream(payload, (event, data) => {
+      if (generation !== assistantState.generation) return;
       if (event === "meta") {
         if (data.conversation_id) setAssistantConversation(data.conversation_id);
       } else if (event === "delta") {
@@ -7666,8 +7909,15 @@ async function sendAssistant(text) {
         }
       } else if (event === "tool") {
         const label = data.label || data.tool || "工具";
-        const state = data.status === "deferred" ? "pending" : "done";
+        const state = data.status === "deferred" ? "pending" : data.status === "error" ? "failed" : "done";
         appendAssistantStep(bubbleSteps, label, state, data.action_id || "");
+        if (data.pending_action && data.pending_action.id) {
+          const merged = [...(assistantState.pending || [])];
+          if (!merged.some((row) => String(row.id) === String(data.pending_action.id))) {
+            merged.push(data.pending_action);
+          }
+          syncAssistantPending(merged);
+        }
       } else if (event === "done") {
         donePayload = data;
       } else if (event === "error") {
@@ -7680,6 +7930,9 @@ async function sendAssistant(text) {
         ok: false,
         reply: streamed ? `${streamed}\n\n（已停止）` : "已停止。",
       };
+      if (generation === assistantState.generation) {
+        await refreshAssistantPendingFromSession();
+      }
     } else if (!streamed && bubble) {
       // 流式不可用（老网关 / 反代缓冲）时回落到普通请求；已经输出过内容则不重复。
       bubble.remove();
@@ -7698,20 +7951,21 @@ async function sendAssistant(text) {
     }
   }
 
-  if (donePayload) {
-    finish(donePayload);
-  } else if (streamed) {
-    finish({ ok: true, reply: streamed });
-  } else if (bubble) {
-    bubble.classList.remove("streaming");
-    const body = bubble.querySelector(".assistant-body");
-    if (body) body.textContent = "（上游没有返回内容）";
+  if (generation === assistantState.generation) {
+    if (donePayload) {
+      finish(donePayload);
+    } else if (streamed) {
+      finish({ ok: true, reply: streamed });
+    } else if (bubble) {
+      bubble.classList.remove("streaming");
+      const body = bubble.querySelector(".assistant-body");
+      if (body) body.textContent = "（上游没有返回内容）";
+    }
+    assistantState.busy = false;
+    assistantState.streamController = null;
+    if (stopBtn) stopBtn.hidden = true;
+    if (sendBtn) sendBtn.disabled = false;
   }
-
-  assistantState.busy = false;
-  assistantState.streamController = null;
-  if (stopBtn) stopBtn.hidden = true;
-  if (sendBtn) sendBtn.disabled = false;
 }
 
 function bindAssistant() {
@@ -7739,6 +7993,11 @@ function bindAssistant() {
   document.addEventListener("keydown", (ev) => {
     if (!(ev.metaKey || ev.ctrlKey) || ev.altKey) return;
     if (ev.key !== "k" && ev.key !== "K") return;
+    const target = ev.target;
+    const typing =
+      target &&
+      (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable);
+    if (typing && assistantState.open) return;
     ev.preventDefault();
     const next = !assistantState.open;
     setAssistantOpen(next);
@@ -7746,21 +8005,33 @@ function bindAssistant() {
   });
   if (fab) {
     fab.addEventListener("click", () => {
-      setAssistantOpen(!assistantState.open);
-      if (assistantState.open && !assistantState.status) loadAssistantStatus();
+      setAssistantOpen(!assistantState.open).then(() => {
+        if (assistantState.open && !assistantState.status) loadAssistantStatus();
+      });
     });
   }
   if (closeBtn) closeBtn.addEventListener("click", () => setAssistantOpen(false));
   if (newConvBtn) newConvBtn.addEventListener("click", newAssistantConversation);
   $("assistant-stop")?.addEventListener("click", () => assistantState.streamController?.abort());
   document.addEventListener("keydown", (ev) => {
-    if (ev.key !== "Escape" || !assistantState.open) return;
+    if (ev.key !== "Escape") return;
     if (document.querySelector("dialog[open]")) return;
+    if (noticesState.open) {
+      ev.preventDefault();
+      setNoticesPopOpen(false);
+      return;
+    }
+    if (!assistantState.open) return;
+    ev.preventDefault();
     const armed = document.querySelector('.assistant-approval[data-state="armed"]');
     if (armed) {
       markAssistantApproval(armed, "pending");
       const hint = armed.querySelector(".assistant-approval-hint");
       if (hint) hint.textContent = "已取消这次确认，可重新点「允许」";
+      return;
+    }
+    if (assistantState.settingsOpen) {
+      setAssistantSettingsOpen(false);
       return;
     }
     setAssistantOpen(false);

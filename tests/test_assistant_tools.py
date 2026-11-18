@@ -296,7 +296,7 @@ class ValidationTests(unittest.TestCase):
     def test_node_add_must_be_new(self) -> None:
         out = validate_call(
             "gc_node",
-            {"action": "add", "name": "a", "host": "10.0.0.9"},
+            {"action": "add", "name": "a", "host": "10.0.0.9", "gpus": 4},
             nodes=NODES,
             jobs=JOBS,
             liveness_view=LIVE,

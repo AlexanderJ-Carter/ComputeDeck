@@ -803,8 +803,22 @@ def assistant_runners(jobs_list: list[dict]) -> dict:
         return _gateway_status_fresh()
 
     def _models(args: dict) -> Any:
+        action = str((args or {}).get("action") or "list").strip() or "list"
         node = str((args or {}).get("node") or "").strip() or None
-        return build_models_payload(node)
+        nodes = str((args or {}).get("nodes") or "").strip() or None
+        model = str((args or {}).get("model") or "").strip() or None
+        if action == "list":
+            return build_models_payload(node)
+        if action in {"check", "deps", "verify", "show", "paths"}:
+            cmd = ["models", action]
+            if node:
+                cmd.extend(["--node", node])
+            elif nodes:
+                cmd.extend(["--nodes", nodes])
+            if model and action == "verify":
+                cmd.extend(["--model", model])
+            return _cli_json_result(cmd, timeout=300)
+        return {"ok": False, "error": f"只读执行器不支持 gc_models action={action}"}
 
     def _toolkits(_args: dict) -> Any:
         return _toolkit_overview(load_toolkit_state())
@@ -2521,6 +2535,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(400, {"ok": False, "error": "conversation_id 不合法"})
                 return
             session = assistant_session.load(cid)
+            before = json.dumps(session.get("pending") or {}, sort_keys=True, ensure_ascii=False)
+            assistant_session.clean_expired_pending(session)
+            after = json.dumps(session.get("pending") or {}, sort_keys=True, ensure_ascii=False)
+            if before != after:
+                assistant_session.save_merged(session)
+                session = assistant_session.load(cid)
             raw = session.get("messages") or []
             messages = []
             for row in raw:
@@ -2535,6 +2555,7 @@ class Handler(BaseHTTPRequestHandler):
                 for row in (session.get("pending") or {}).values()
                 if isinstance(row, dict)
                 and str(row.get("status") or "pending") in {"pending", "armed"}
+                and not assistant_session.action_expired(row)
             ]
             self._json(
                 200,
@@ -3215,6 +3236,18 @@ class Handler(BaseHTTPRequestHandler):
                     and str(row.get("status") or "pending") in {"pending", "armed"}
                 ]
 
+            def _persist_session(*, messages=None, pending_full=None) -> None:
+                if messages is not None:
+                    session["messages"] = messages
+                for action in pending_full or []:
+                    assistant_session.put_pending(session, action)
+                assistant_session.clean_expired_pending(session)
+                assistant_session.save_merged(session)
+                # 重新加载，保证后续 _active_pending 看到磁盘终态优先后的结果。
+                refreshed = assistant_session.load(cid)
+                session.clear()
+                session.update(refreshed)
+
             if bool(body.get("stream")):
                 self._sse_start()
                 self._sse_send("meta", {"conversation_id": cid})
@@ -3230,23 +3263,38 @@ class Handler(BaseHTTPRequestHandler):
                         state=stream_state,
                     ):
                         if event == "done":
-                            session["messages"] = stream_state.get("history") or session.get("messages") or []
-                            for action in stream_state.get("pending_full") or []:
-                                assistant_session.put_pending(session, action)
-                            assistant_session.clean_expired_pending(session)
-                            assistant_session.save(session)
+                            _persist_session(
+                                messages=stream_state.get("history") or session.get("messages") or [],
+                                pending_full=stream_state.get("pending_full") or [],
+                            )
                             payload["conversation_id"] = cid
                             active = _active_pending()
                             if active:
                                 payload["pending_actions"] = active
                             self._sse_send("done", payload)
                         elif event == "error":
+                            _persist_session(
+                                messages=stream_state.get("history") or session.get("messages") or [],
+                                pending_full=stream_state.get("pending_full") or [],
+                            )
+                            active = _active_pending()
+                            if active:
+                                payload["pending_actions"] = active
+                            payload["conversation_id"] = cid
                             self._sse_send("error", payload)
                         else:
                             self._sse_send(event, payload)
                 except (BrokenPipeError, ConnectionResetError):
+                    _persist_session(
+                        messages=stream_state.get("history"),
+                        pending_full=stream_state.get("pending_full") or [],
+                    )
                     return
                 except Exception as exc:  # noqa: BLE001 — SSE 已开始，只能回错误事件
+                    _persist_session(
+                        messages=stream_state.get("history"),
+                        pending_full=stream_state.get("pending_full") or [],
+                    )
                     try:
                         self._sse_send("error", {"error": "internal_error", "reply": str(exc)})
                     except (BrokenPipeError, ConnectionResetError):
@@ -3262,12 +3310,10 @@ class Handler(BaseHTTPRequestHandler):
                 known_jobs=known_jobs,
                 liveness_view=live_view,
             )
-            if result.get("history") is not None:
-                session["messages"] = result["history"]
-            for action in result.pop("pending_actions_full", None) or []:
-                assistant_session.put_pending(session, action)
-            assistant_session.clean_expired_pending(session)
-            assistant_session.save(session)
+            _persist_session(
+                messages=result.get("history") if result.get("history") is not None else None,
+                pending_full=result.pop("pending_actions_full", None) or [],
+            )
             active = _active_pending()
             if active:
                 result["pending_actions"] = active
@@ -3296,7 +3342,7 @@ class Handler(BaseHTTPRequestHandler):
             stage = str(body.get("stage") or "execute").lower()
             if stage == "reject":
                 assistant_session.update_pending(session, action_id, status="rejected")
-                assistant_session.save(session)
+                assistant_session.save_merged(session)
                 self._json(200, {"ok": True, "status": "rejected", "conversation_id": cid})
                 return
             status = str(action.get("status") or "pending")
@@ -3341,7 +3387,7 @@ class Handler(BaseHTTPRequestHandler):
                         )
                         return
                     # 服务重启后残留的 executing：超过 5 分钟允许重新领取
-                    updated = assistant_session.parse_time(action.get("updated_at")) if hasattr(assistant_session, "parse_time") else None
+                    updated = assistant_session.parse_time(action.get("updated_at"))
                     if updated is not None and time.time() - updated < 300:
                         self._json(
                             409,
@@ -3357,11 +3403,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if assistant_session.action_expired(action):
                 assistant_session.update_pending(session, action_id, status="expired")
-                assistant_session.save(session)
+                assistant_session.save_merged(session)
                 self._json(409, {"ok": False, "error": "action_expired", "detail": "确认卡已过期，请重新提问"})
                 return
             provided_hash = str(body.get("args_hash") or "").strip()
-            if provided_hash and provided_hash != action.get("args_hash"):
+            expected_hash = str(action.get("args_hash") or "").strip()
+            if not provided_hash or not expected_hash or provided_hash != expected_hash:
                 self._json(
                     409,
                     {"ok": False, "error": "args_mismatch", "detail": "参数与提案不一致，请重新提问"},
@@ -3482,7 +3529,7 @@ class Handler(BaseHTTPRequestHandler):
                     status="executing",
                     started_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 )
-                assistant_session.save(session)
+                assistant_session.save_merged(session)
                 _assistant_inflight.add(claim_key)
             try:
                 result = self._call_local_api(
@@ -3495,21 +3542,25 @@ class Handler(BaseHTTPRequestHandler):
                 executed_ok = bool(result.get("ok")) and not (
                     isinstance(data, dict) and data.get("ok") is False
                 )
-                assistant_session.record_tool_result(
-                    session,
-                    call_id=str(action.get("call_id") or ""),
-                    result=data,
-                )
-                assistant_session.update_pending(
-                    session,
-                    action_id,
-                    status="executed" if executed_ok else "failed",
-                    executed_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    result_summary=(data.get("message") if isinstance(data, dict) else None)
-                    or ("执行成功" if executed_ok else "执行失败"),
-                    result=data,
-                )
-                assistant_session.save(session)
+
+                def _finish_action(current: dict) -> dict:
+                    assistant_session.record_tool_result(
+                        current,
+                        call_id=str(action.get("call_id") or ""),
+                        result=data,
+                    )
+                    assistant_session.update_pending(
+                        current,
+                        action_id,
+                        status="executed" if executed_ok else "failed",
+                        executed_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        result_summary=(data.get("message") if isinstance(data, dict) else None)
+                        or ("执行成功" if executed_ok else "执行失败"),
+                        result=data,
+                    )
+                    return current
+
+                session = assistant_session.update(cid, _finish_action)
             finally:
                 with _assistant_action_lock:
                     _assistant_inflight.discard(claim_key)
@@ -3537,7 +3588,8 @@ class Handler(BaseHTTPRequestHandler):
                 for row in cont.pop("pending_actions_full", None) or []:
                     assistant_session.put_pending(session, row)
                 assistant_session.clean_expired_pending(session)
-                assistant_session.save(session)
+                assistant_session.save_merged(session)
+                session = assistant_session.load(cid)
                 if cont.get("ok") is False:
                     reply = (
                         "操作已执行，但模型总结暂不可用："

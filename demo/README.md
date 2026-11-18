@@ -1,6 +1,7 @@
 # ComputeDeck 宣传展板
 
 全屏纵向 scroll-snap 演示页（中文），适合投屏与 GitHub Pages。
+叙事对齐现网：看板五子页、助手 FAB 确认卡、终端左右工作台。
 
 ## 本地预览
 
