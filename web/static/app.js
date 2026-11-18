@@ -795,6 +795,8 @@ function showSteps(steps, title) {
       .join(""),
     { meta: `${steps.length} 步 · ${title || "动作"}` }
   );
+}
+
 async function api(path, options = {}) {
   const { timeoutMs = 600000, ...fetchOpts } = options;
   const headers = { "Content-Type": "application/json", ...(fetchOpts.headers || {}) };
