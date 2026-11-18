@@ -1175,16 +1175,13 @@ hr {
   margin: 0;
 }
 
-.console-dock-hint {
-  margin: 2px 0 0;
+.console-wrap.idle,
+.console-wrap[hidden] {
+  display: none;
 }
 
 .console-wrap.collapsed {
   padding-top: 4px;
-}
-
-.console-wrap.collapsed .console-dock-hint {
-  display: none;
 }
 
 .ops-panel .panel-h h2,
@@ -1250,19 +1247,6 @@ hr {
   max-height: 360px;
 }
 
-.console-activity {
-  margin: 0;
-  padding: 0 10px 8px;
-  color: var(--console-ink);
-  border-top: 1px solid color-mix(in srgb, var(--console-ink) 16%, transparent);
-}
-
-.console-activity > summary {
-  cursor: pointer;
-  padding: 8px 2px;
-  color: color-mix(in srgb, var(--console-ink) 78%, transparent);
-}
-
 .console,
 .log {
   font-family: var(--mono);
@@ -1273,12 +1257,8 @@ hr {
   padding: 12px;
 }
 
-.log {
-  min-height: 80px;
-  max-height: 160px;
-  padding: 0 2px 4px;
-  background: transparent;
-  color: color-mix(in srgb, var(--console-ink) 82%, transparent);
+.log[hidden] {
+  display: none !important;
 }
 
 .console {

@@ -602,9 +602,17 @@ function setMarkdown(el, text) {
   bindCopyButtons(el);
 }
 
+function showConsoleDock() {
+  const wrap = $("batch-console-wrap") || document.querySelector(".console-wrap");
+  if (!wrap) return;
+  wrap.hidden = false;
+  wrap.classList.remove("idle");
+}
+
 function revealConsole() {
   const wrap = $("batch-console-wrap") || document.querySelector(".console-wrap");
   if (!wrap) return;
+  showConsoleDock();
   if (wrap.classList.contains("collapsed")) {
     wrap.classList.remove("collapsed");
     const toggle = $("btn-console-toggle");
@@ -631,11 +639,18 @@ function setConsoleMeta(text) {
   if (meta) meta.textContent = text;
 }
 
+function consoleDockOpen() {
+  const wrap = $("batch-console-wrap");
+  return !!(wrap && !wrap.hidden && !wrap.classList.contains("idle"));
+}
+
 function markConsoleUnread() {
   const badge = $("console-unread");
   const wrap = $("batch-console-wrap");
-  const collapsed = wrap?.classList.contains("collapsed");
-  if (badge && (collapsed || !consoleVisible())) badge.hidden = false;
+  if (!badge) return;
+  if (!consoleDockOpen() || wrap?.classList.contains("collapsed") || !consoleVisible()) {
+    badge.hidden = false;
+  }
 }
 
 function writeConsoleHtml(html, { empty = false, meta = "", reveal = false } = {}) {
@@ -645,8 +660,13 @@ function writeConsoleHtml(html, { empty = false, meta = "", reveal = false } = {
   el.innerHTML = html;
   if (meta) setConsoleMeta(meta);
   else setConsoleMeta(empty ? "空" : `已更新 · ${new Date().toLocaleTimeString()}`);
-  if (reveal) revealConsole();
-  else markConsoleUnread();
+  if (reveal || consoleDockOpen()) {
+    if (reveal) revealConsole();
+    else {
+      showConsoleDock();
+      markConsoleUnread();
+    }
+  } else markConsoleUnread();
 }
 
 function writeConsoleText(text, { empty = false, meta = "", reveal = false } = {}) {
@@ -656,8 +676,13 @@ function writeConsoleText(text, { empty = false, meta = "", reveal = false } = {
   el.textContent = text || "(empty)";
   if (meta) setConsoleMeta(meta);
   else setConsoleMeta(empty ? "空" : `已更新 · ${new Date().toLocaleTimeString()}`);
-  if (reveal) revealConsole();
-  else markConsoleUnread();
+  if (reveal || consoleDockOpen()) {
+    if (reveal) revealConsole();
+    else {
+      showConsoleDock();
+      markConsoleUnread();
+    }
+  } else markConsoleUnread();
 }
 
 function resultOk(item) {
@@ -770,27 +795,6 @@ function showSteps(steps, title) {
       .join(""),
     { meta: `${steps.length} 步 · ${title || "动作"}` }
   );
-}
-
-async function seedConsole() {
-  try {
-    const doctor = await api("/api/doctor");
-    const lines = [];
-    lines.push(doctor.ok ? "Doctor OK" : "Doctor FAIL");
-    for (const issue of doctor.issues || []) lines.push(`! ${issue}`);
-    for (const note of (doctor.notes || []).slice(0, 12)) lines.push(`· ${note}`);
-    lines.push("");
-    lines.push("执行结果会显示在这里。");
-    writeConsoleText(lines.join("\n"), { meta: doctor.ok ? "Doctor OK" : "Doctor 有问题" });
-    log(doctor.ok ? "自检通过" : "自检有问题，详见执行输出");
-  } catch (err) {
-    writeConsoleText(
-      `自检失败：${err.message || err}\n\n点「一键连通」或上方运维卡片查看输出。`,
-      { meta: "Doctor 失败" }
-    );
-  }
-}
-
 async function api(path, options = {}) {
   const { timeoutMs = 600000, ...fetchOpts } = options;
   const headers = { "Content-Type": "application/json", ...(fetchOpts.headers || {}) };
@@ -918,7 +922,6 @@ async function enterConsoleAfterAuth() {
     await refresh(false);
     await loadSetup();
     await loadQuality();
-    await seedConsole();
     hideConsoleUnread();
   } catch (err) {
     log(String(err.message || err));
@@ -3427,7 +3430,7 @@ async function runToolkit(action, extra = {}) {
     if (data.toolkits) renderToolkits(data.toolkits);
     if (data.overview) applyOverview(data.overview);
     if (data.result?.rc === 0) toastOk(`${label}完成`);
-    else toastBad(`${label}有失败，详见执行输出`);
+    else toastBad(`${label}有失败，详见输出`);
   } catch (err) {
     writeConsoleText(String(err.message || err), { meta: `toolkits ${action}` });
     actionError(label, err);
@@ -3787,7 +3790,7 @@ function renderQuality(q) {
   set(
     "quality-updated",
     q.summary ||
-    (q.updated_at ? `更新于 ${q.updated_at}` : "完成「全量同步」或「一键连通」后更新评分")
+    (q.updated_at ? `更新于 ${q.updated_at}` : "完成「全量同步」后更新评分")
   );
 
 
@@ -5819,7 +5822,7 @@ async function boot() {
           starting: "LiteLLM 启动中，稍后刷新状态",
           unmanaged: "端口已有 LiteLLM（外部运行，非本工具管理）",
           port_conflict: "端口被其它进程占用，LiteLLM 未启动",
-          failed: "LiteLLM 启动失败，详见执行输出",
+          failed: "LiteLLM 启动失败，详见输出",
           missing: "未找到 litellm 二进制 / 启动脚本",
         }[row.phase];
         await refreshIngressStatus();
@@ -6254,10 +6257,7 @@ async function boot() {
   });
 
   document.getElementById("btn-clear-console")?.addEventListener("click", () => {
-    writeConsoleText("已清空。在「批量命令」或工具栈探测 / 安装后会再次出现输出。", {
-      empty: true,
-      meta: "已清空",
-    });
+    writeConsoleText("暂无输出", { empty: true, meta: "已清空" });
     const activity = $("log");
     if (activity) activity.textContent = "就绪";
   });
@@ -6325,7 +6325,6 @@ async function boot() {
   restoreAiAnalyze();
 
   if (state.auth && state.auth.enabled && !state.auth.authenticated) {
-    writeConsoleText("控制台已锁定，请先登录。", { meta: "等待登录", empty: true });
     return;
   }
 
@@ -6337,7 +6336,6 @@ async function boot() {
   try {
     await refresh(false);
     await loadQuality();
-    await seedConsole();
     hideConsoleUnread();
     await loadAssistantStatus();
     // 未打开面板也同步 pending，刷新后 FAB 红点仍能提示待确认操作。
@@ -6345,8 +6343,9 @@ async function boot() {
     refreshRemoteStatus().catch(() => { });
   } catch (err) {
     log(String(err.message || err));
-    writeConsoleText(`初始化失败：${err.message || err}\n\n可以点「一键连通」重试。`, {
+    writeConsoleText(`初始化失败：${err.message || err}`, {
       meta: "初始化失败",
+      reveal: true,
     });
   } finally {
     setBusy(false);

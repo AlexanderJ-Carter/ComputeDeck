@@ -7,8 +7,8 @@
   <title>ComputeDeck</title>
   <link rel="icon" href="/static/logo.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/vendor/xterm/xterm-6.1.0.css" />
-  <link rel="stylesheet" href="/static/tokens.css?v=__UI_VERSION__.dash29" />
-  <link rel="stylesheet" href="/static/style.css?v=__UI_VERSION__.dash29" />
+  <link rel="stylesheet" href="/static/tokens.css?v=__UI_VERSION__.dash30" />
+  <link rel="stylesheet" href="/static/style.css?v=__UI_VERSION__.dash30" />
   <script src="/static/theme-boot.js?v=__UI_VERSION__"></script>
 </head>
 
@@ -86,7 +86,7 @@
           <span id="busy-indicator" class="chip chip--info" role="status" aria-live="polite" hidden>执行中…</span>
           <span class="console-unread-wrap" role="status" aria-live="polite">
             <button type="button" id="console-unread" class="chip warn console-unread" hidden
-              data-keep-enabled="1">有新输出</button>
+              data-keep-enabled="1">新输出</button>
           </span>
           <span id="auth-session-chip" class="chip chip--neutral" hidden data-keep-enabled="1"></span>
           <button id="btn-logout" class="ghost tiny" data-keep-enabled="1" hidden>退出</button>
@@ -1474,11 +1474,10 @@ gpu-control ui --background</pre>
         </div>
       </section>
 
-      <section class="console-wrap panel collapsed" id="batch-console-wrap" aria-label="执行输出坞">
+      <section class="console-wrap panel collapsed idle" id="batch-console-wrap" hidden aria-label="输出">
         <div class="panel-h">
           <div>
-            <h2>执行输出</h2>
-            <p class="meta console-dock-hint">远程命令 / 批跑 / 探测的 stdout 落在这里（不是审计日志）。默认折叠，有更新时顶栏亮「有新输出」。</p>
+            <h2>输出</h2>
           </div>
           <div class="btn-row">
             <span class="meta" id="console-meta">就绪</span>
@@ -1488,11 +1487,8 @@ gpu-control ui --background</pre>
           </div>
         </div>
         <div class="console-body">
-          <div id="console" class="console empty">尚无输出。在「批量命令」跑命令，或探测 / 安装工具栈后会出现在这里。</div>
-          <details class="fold console-activity">
-            <summary>活动记录 <span class="meta">短时事件流 · 不是审计</span></summary>
-            <div id="log" class="log">就绪</div>
-          </details>
+          <div id="console" class="console empty">暂无输出</div>
+          <div id="log" class="log" hidden>就绪</div>
         </div>
       </section>
     </div>
@@ -1652,7 +1648,7 @@ gpu-control ui --background</pre>
   </div>
   <script src="/static/vendor/xterm/xterm-6.1.0.min.js"></script>
   <script src="/static/xterm-fit.js?v=__UI_VERSION__"></script>
-  <script src="/static/app.js?v=__UI_VERSION__.dash29"></script>
+  <script src="/static/app.js?v=__UI_VERSION__.dash30"></script>
 </body>
 
 </html>
