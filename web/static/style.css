@@ -2416,8 +2416,11 @@ code {
   .action-grid,
   .quality-kpis,
   .api-mosaic,
-  .preset-grid {
-    grid-template-columns: 1fr;
+  .preset-grid,
+  .ingress-kpis,
+  .toolkit-kpis,
+  .secrets-cabinet {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .action-card {
@@ -2433,7 +2436,18 @@ code {
     align-items: flex-start;
   }
 
+  .console-body > .console {
+    min-height: 140px;
+    max-height: 260px;
+  }
 
+  .console-wrap > .panel-h .btn-row {
+    flex-wrap: wrap;
+  }
+
+  .assistant-approval {
+    margin-left: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -6418,6 +6432,30 @@ a[aria-disabled="true"]:hover {
 
 .assistant-approval[data-state="armed"] {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--bad) 26%, transparent);
+}
+
+.assistant-approval.is-current {
+  outline: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+}
+
+.assistant-approval:not(.is-current)[data-state="pending"],
+.assistant-approval:not(.is-current)[data-state="armed"] {
+  opacity: 0.82;
+}
+
+.assistant-approval-foot-meta {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.assistant-approval-ttl {
+  font-size: 10.5px;
+}
+
+.assistant-approval-ttl[data-urgent="1"] {
+  color: var(--bad);
+  font-weight: 600;
 }
 
 .assistant-approval[data-state="done"] {

@@ -6817,6 +6817,7 @@ const assistantState = {
   threadRendered: false,
   restorePromise: null,
   generation: 0,
+  ttlTimer: null,
 };
 try {
   assistantState.conversationId = localStorage.getItem(ASSISTANT_CONV_KEY) || null;
@@ -7344,6 +7345,52 @@ function assistantActionSignature(row) {
   }
 }
 
+function formatApprovalTtl(expiresAt) {
+  const end = Date.parse(String(expiresAt || ""));
+  if (!Number.isFinite(end)) return "";
+  const sec = Math.max(0, Math.floor((end - Date.now()) / 1000));
+  if (sec <= 0) return "已过期";
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m > 0 ? `${m}分${String(s).padStart(2, "0")}秒后过期` : `${s}秒后过期`;
+}
+
+function ensureAssistantApprovalTicker() {
+  if (assistantState.ttlTimer) return;
+  assistantState.ttlTimer = setInterval(() => {
+    tickAssistantApprovals();
+  }, 1000);
+}
+
+function tickAssistantApprovals() {
+  const actives = [
+    ...document.querySelectorAll(
+      '.assistant-approval[data-state="pending"], .assistant-approval[data-state="armed"]'
+    ),
+  ];
+  actives.forEach((card, index) => {
+    card.classList.toggle("is-current", index === 0);
+    const ttl = card.querySelector(".assistant-approval-ttl");
+    const exp = card.dataset.expiresAt;
+    if (!ttl || !exp) return;
+    const left = Date.parse(exp) - Date.now();
+    if (!Number.isFinite(left)) return;
+    if (left <= 0) {
+      ttl.textContent = "已过期";
+      settleAssistantPending(card.dataset.actionId);
+      markAssistantApproval(card, "expired", "确认卡已过期，未执行任何操作");
+      retireAssistantApproval(card);
+      assistantState.pending = (assistantState.pending || []).filter(
+        (row) => String(row.id) !== String(card.dataset.actionId)
+      );
+      updateAssistantFabDot();
+      return;
+    }
+    ttl.textContent = formatApprovalTtl(exp);
+    ttl.dataset.urgent = left < 60000 ? "1" : "0";
+  });
+}
+
 function assistantApprovalCard(row) {
   const risk = row.risk || "write";
   const target = assistantTargetText(row);
@@ -7357,6 +7404,8 @@ function assistantApprovalCard(row) {
   card.dataset.state = "pending";
   card.dataset.actionId = row.id;
   card.dataset.signature = assistantActionSignature(row);
+  if (row.expires_at) card.dataset.expiresAt = String(row.expires_at);
+  const ttlText = row.expires_at ? formatApprovalTtl(row.expires_at) : "";
   card.innerHTML = `
     <div class="assistant-approval-h">
       <span class="assistant-approval-icon" aria-hidden="true"></span>
@@ -7369,12 +7418,17 @@ function assistantApprovalCard(row) {
     ${warnings}
     <details class="assistant-approval-args"><summary>查看参数</summary><pre>${escapeHtml(JSON.stringify(args, null, 2))}</pre></details>
     <div class="assistant-approval-foot">
-      <span class="assistant-approval-hint">${risk === "destructive" ? "破坏性操作：需要点两次确认" : "确认后才会执行"}</span>
+      <div class="assistant-approval-foot-meta">
+        <span class="assistant-approval-hint">${risk === "destructive" ? "破坏性操作：需要点两次确认" : "确认后才会执行"}</span>
+        ${ttlText ? `<span class="assistant-approval-ttl meta">${escapeHtml(ttlText)}</span>` : ""}
+      </div>
       <div class="btn-row">
         <button type="button" class="ghost tiny" data-approval-reject>拒绝</button>
-        <button type="button" class="${risk === "destructive" ? "danger" : "primary"} tiny" data-approval-allow>${risk === "destructive" ? "允许…" : "允许"}</button>
+        <button type="button" class="${risk === "destructive" ? "danger" : "primary"} tiny" data-approval-allow tabindex="0">${risk === "destructive" ? "允许…" : "允许"}</button>
       </div>
     </div>`;
+  // 不预聚焦「允许」，避免误触；打开卡时焦点落在标题。
+  card.tabIndex = -1;
   card.querySelector("[data-approval-reject]")?.addEventListener("click", () => rejectAssistantPending(row, card));
   card.querySelector("[data-approval-allow]")?.addEventListener("click", () => {
     if (card.dataset.state === "running") return;
@@ -7385,6 +7439,7 @@ function assistantApprovalCard(row) {
     }
     runAssistantPending(row, card);
   });
+  ensureAssistantApprovalTicker();
   return card;
 }
 
@@ -7418,7 +7473,17 @@ function syncAssistantPending(pending) {
   }
   updateAssistantFabDot();
   setAssistantApprovalsBusy(Boolean(assistantState.executingAction));
-  if (appended) scrollAssistantThread(true);
+  tickAssistantApprovals();
+  ensureAssistantApprovalTicker();
+  if (appended) {
+    scrollAssistantThread(true);
+    const current = thread.querySelector(".assistant-approval.is-current");
+    try {
+      current?.focus({ preventScroll: true });
+    } catch (_) {
+      /* ignore */
+    }
+  }
 }
 
 function settleAssistantPending(actionId) {
