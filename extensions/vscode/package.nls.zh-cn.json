@@ -35,15 +35,16 @@
   "computedeck.command.jobStop": "停止 Job",
   "computedeck.command.jobRestart": "重启 Job",
   "computedeck.command.installMcp": "注册 MCP Server",
-  "computedeck.command.openWalkthrough": "打开上手引导",
+  "computedeck.command.openWalkthrough": "打开上手指南",
+  "computedeck.command.openGuide": "打开上手指南（窗口）",
   "computedeck.walkthrough.title": "开始使用 ComputeDeck",
-  "computedeck.walkthrough.description": "连接控制面，读懂集群树，然后在 VS Code 里开终端、跑诊断、部署 Job。",
+  "computedeck.walkthrough.description": "五步上手：连接 → 工作台与看板窗口 → 节点 → Job → MCP / 小助手。CodeLab 无原生 Walkthrough 时会打开同内容的指南窗口。",
   "computedeck.walkthrough.connect.title": "连接控制面",
   "computedeck.walkthrough.connect.description": "填写控制面地址并登录；Remote SSH 场景通常就是 127.0.0.1。\n[密码登录](command:computedeck.login)\n[设置 API Token](command:computedeck.setToken)",
   "computedeck.walkthrough.connect.alt": "连接 ComputeDeck 控制面",
-  "computedeck.walkthrough.cluster.title": "读懂集群树",
-  "computedeck.walkthrough.cluster.description": "侧栏保留节点/Job 导航；KPI、助手、公告与常用操作在「工作台」编辑器窗口。\n[打开工作台](command:computedeck.openWorkbench)",
-  "computedeck.walkthrough.cluster.alt": "ComputeDeck 集群树",
+  "computedeck.walkthrough.cluster.title": "工作台与看板窗口",
+  "computedeck.walkthrough.cluster.description": "侧栏只做导航；工作台看 KPI / 操作，看板等页面在编辑器窗口打开（不自动跳系统浏览器）。\n[打开工作台](command:computedeck.openWorkbench)\n[打开看板](command:computedeck.openDashboard)\n[上手指南窗口](command:computedeck.openGuide)",
+  "computedeck.walkthrough.cluster.alt": "ComputeDeck 工作台与窗口",
   "computedeck.walkthrough.nodes.title": "节点终端与诊断",
   "computedeck.walkthrough.nodes.description": "右键或行内按钮打开 SSH 终端、跑只读诊断、隔离或腾空节点。\n[节点操作](command:computedeck.nodeMenu)",
   "computedeck.walkthrough.nodes.alt": "节点操作",
@@ -63,5 +64,5 @@
   "computedeck.config.uiOpenMode.external": "始终用系统浏览器（仅当你明确需要时）。",
   "computedeck.command.openAssistant": "打开小助手",
   "computedeck.command.openNotices": "打开监管公告",
-  "computedeck.welcome.disconnected": "还没连上控制面。在 control 仓库打开时会自动读本机 Token。\n[使用本机 Token](command:computedeck.useLocalCredentials)\n[密码登录](command:computedeck.login)\n[打开工作台](command:computedeck.openWorkbench)\n[打开看板](command:computedeck.openDashboard)\n[打开上手引导](command:computedeck.openWalkthrough)"
+  "computedeck.welcome.disconnected": "还没连上控制面。在 control 仓库打开时会自动读本机 Token。\n[使用本机 Token](command:computedeck.useLocalCredentials)\n[密码登录](command:computedeck.login)\n[打开上手指南](command:computedeck.openWalkthrough)\n[打开工作台](command:computedeck.openWorkbench)\n[打开看板](command:computedeck.openDashboard)"
 }

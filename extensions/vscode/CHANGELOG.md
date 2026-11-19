@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.15
+
+- Getting Started：优先原生 Walkthrough；CodeLab 等环境回落「上手指南」编辑器窗口（同五步内容）
+- 控制面嵌入地址经 `asExternalUri` 转换，修复 CodeLab 里 iframe 直连 `127.0.0.1` 被拒
+- 首次激活提示打开上手指南；侧栏节点默认折叠；命令「打开上手指南（窗口）」
+
 ## 1.2.14
 
 - 控制面页面默认在编辑器窗口打开（`uiOpenMode=editor`）；不再自动跳系统浏览器

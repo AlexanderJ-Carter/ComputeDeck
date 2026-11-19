@@ -36,14 +36,15 @@
   "computedeck.command.jobRestart": "Restart Job",
   "computedeck.command.installMcp": "Register MCP Server",
   "computedeck.command.openWalkthrough": "Open Getting Started",
+  "computedeck.command.openGuide": "Open Getting Started Guide (Window)",
   "computedeck.walkthrough.title": "Get Started with ComputeDeck",
-  "computedeck.walkthrough.description": "Connect to the control plane, read the cluster tree, then open terminals, run diagnostics, and deploy jobs from VS Code.",
+  "computedeck.walkthrough.description": "Five steps: connect → workbench & dashboard window → nodes → jobs → MCP / assistant. On CodeLab without native Walkthrough, the same guide opens in an editor panel.",
   "computedeck.walkthrough.connect.title": "Connect to the Control Plane",
   "computedeck.walkthrough.connect.description": "Set the control plane URL and sign in. With Remote SSH this is usually 127.0.0.1.\n[Password Login](command:computedeck.login)\n[Set API Token](command:computedeck.setToken)",
   "computedeck.walkthrough.connect.alt": "Connect to the ComputeDeck control plane",
-  "computedeck.walkthrough.cluster.title": "Read the Cluster Tree",
-  "computedeck.walkthrough.cluster.description": "Sidebar keeps node/job navigation; KPIs, assistant, notices, and common actions live in the Workbench editor panel.\n[Open Workbench](command:computedeck.openWorkbench)",
-  "computedeck.walkthrough.cluster.alt": "ComputeDeck cluster tree",
+  "computedeck.walkthrough.cluster.title": "Workbench and Dashboard Window",
+  "computedeck.walkthrough.cluster.description": "Sidebar is navigation only. Use the Workbench for KPIs/actions; open dashboard pages in an editor window (never auto-jumps to the system browser).\n[Open Workbench](command:computedeck.openWorkbench)\n[Open Dashboard](command:computedeck.openDashboard)\n[Guide Window](command:computedeck.openGuide)",
+  "computedeck.walkthrough.cluster.alt": "ComputeDeck workbench and windows",
   "computedeck.walkthrough.nodes.title": "Node Terminals and Diagnostics",
   "computedeck.walkthrough.nodes.description": "Use the context menu or inline buttons to open an SSH terminal, run read-only diagnostics, cordon, or free a node.\n[Node Actions](command:computedeck.nodeMenu)",
   "computedeck.walkthrough.nodes.alt": "Node actions",
@@ -63,5 +64,5 @@
   "computedeck.config.uiOpenMode.external": "Always use the system browser (only when you explicitly want that).",
   "computedeck.command.openAssistant": "Open Assistant",
   "computedeck.command.openNotices": "Open Notices",
-  "computedeck.welcome.disconnected": "Control plane not connected. On the control host, local Token is used automatically.\n[Use Local Token](command:computedeck.useLocalCredentials)\n[Password Login](command:computedeck.login)\n[Open Workbench](command:computedeck.openWorkbench)\n[Open Dashboard](command:computedeck.openDashboard)\n[Open Getting Started](command:computedeck.openWalkthrough)"
+  "computedeck.welcome.disconnected": "Control plane not connected. On the control host, local Token is used automatically.\n[Use Local Token](command:computedeck.useLocalCredentials)\n[Password Login](command:computedeck.login)\n[Open Getting Started](command:computedeck.openWalkthrough)\n[Open Workbench](command:computedeck.openWorkbench)\n[Open Dashboard](command:computedeck.openDashboard)"
 }

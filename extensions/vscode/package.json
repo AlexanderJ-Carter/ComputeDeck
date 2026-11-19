@@ -2,7 +2,7 @@
   "name": "computedeck-vscode",
   "displayName": "%computedeck.displayName%",
   "description": "%computedeck.description%",
-  "version": "1.2.14",
+  "version": "1.2.15",
   "publisher": "computedeck",
   "license": "AGPL-3.0-only",
   "icon": "media/icon.png",
@@ -191,6 +191,12 @@
         "title": "%computedeck.command.openWalkthrough%",
         "category": "%computedeck.category%",
         "icon": "$(book)"
+      },
+      {
+        "command": "computedeck.openGuide",
+        "title": "%computedeck.command.openGuide%",
+        "category": "%computedeck.category%",
+        "icon": "$(book)"
       }
     ],
     "walkthroughs": [
@@ -210,6 +216,7 @@
             "completionEvents": [
               "onCommand:computedeck.login",
               "onCommand:computedeck.setToken",
+              "onCommand:computedeck.useLocalCredentials",
               "onCommand:computedeck.refresh"
             ]
           },
@@ -222,7 +229,9 @@
               "altText": "%computedeck.walkthrough.cluster.alt%"
             },
             "completionEvents": [
-              "onCommand:computedeck.refresh"
+              "onCommand:computedeck.openWorkbench",
+              "onCommand:computedeck.openDashboard",
+              "onCommand:computedeck.openGuide"
             ]
           },
           {
@@ -264,7 +273,9 @@
             },
             "completionEvents": [
               "onCommand:computedeck.installMcp",
-              "onCommand:computedeck.openDashboard"
+              "onCommand:computedeck.openDashboard",
+              "onCommand:computedeck.openAssistant",
+              "onCommand:computedeck.openWorkbench"
             ]
           }
         ]

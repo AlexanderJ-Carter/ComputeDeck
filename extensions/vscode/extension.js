@@ -17,6 +17,8 @@ let pollTimer;
 let mcpEmitter;
 let workbenchPanel;
 let controlUiPanel;
+let guidePanel;
+let extensionContext;
 
 class ApiError extends Error {
   constructor(message, status, data) {
@@ -451,7 +453,7 @@ class ClusterProvider {
       });
     });
     sections.push(
-      makeItem(t('节点'), vscode.TreeItemCollapsibleState.Expanded, {
+      makeItem(t('节点'), vscode.TreeItemCollapsibleState.Collapsed, {
         description: t('{0} 台 · {1} 离线', nodes.length, summary.nodes_offline ?? 0),
         iconPath: new vscode.ThemeIcon('server'),
         children: nodeRows.length ? nodeRows : [makeItem(t('暂无节点'), vscode.TreeItemCollapsibleState.None)],
@@ -633,6 +635,16 @@ function controlUiUrl(hash = '') {
   return `${base}/#/${String(hash).replace(/^\/+/, '')}`;
 }
 
+async function resolveUiUrl(hash = '') {
+  const local = controlUiUrl(hash);
+  try {
+    const external = await vscode.env.asExternalUri(vscode.Uri.parse(local));
+    return external.toString(true);
+  } catch (_) {
+    return local;
+  }
+}
+
 function pageTitleForUrl(url) {
   const hash = String(url).split('#')[1] || '/actions';
   const id = hash.replace(/^\/?/, '').split('/')[0] || 'actions';
@@ -737,7 +749,7 @@ function showControlUiEditor(url, title) {
 }
 
 async function openControlUi(hash = '', title) {
-  const url = controlUiUrl(hash);
+  const url = await resolveUiUrl(hash);
   const mode = String(config().get('uiOpenMode', 'editor') || 'editor');
 
   if (mode === 'external') {
@@ -763,7 +775,7 @@ async function openControlUi(hash = '', title) {
 }
 
 async function openControlUiExternal(hash = '') {
-  await vscode.env.openExternal(vscode.Uri.parse(controlUiUrl(hash)));
+  await vscode.env.openExternal(vscode.Uri.parse(await resolveUiUrl(hash)));
 }
 
 async function pickControlPage() {
@@ -773,6 +785,285 @@ async function pickControlPage() {
   );
   if (!picked) return;
   await openControlUi(picked.page.hash, t('ComputeDeck · {0}', picked.page.label));
+}
+
+const GUIDE_STEPS = [
+  {
+    id: 'connect',
+    title: '1. 连接控制面',
+    file: '01-connect.md',
+    actions: [
+      { label: '使用本机 Token', command: 'computedeck.useLocalCredentials' },
+      { label: '密码登录', command: 'computedeck.login' },
+      { label: '打开设置', command: 'workbench.action.openSettings', args: ['computedeck'] },
+      { label: '刷新集群', command: 'computedeck.refresh' },
+    ],
+  },
+  {
+    id: 'workbench',
+    title: '2. 工作台与窗口',
+    file: '02-cluster.md',
+    actions: [
+      { label: '打开工作台', command: 'computedeck.openWorkbench' },
+      { label: '打开看板', command: 'computedeck.openDashboard' },
+      { label: '选择页面…', command: 'computedeck.openPage' },
+    ],
+  },
+  {
+    id: 'nodes',
+    title: '3. 节点终端与诊断',
+    file: '03-nodes.md',
+    actions: [
+      { label: '节点探活', command: 'computedeck.liveness' },
+      { label: '节点操作', command: 'computedeck.nodeMenu' },
+      { label: '测试 SSH', command: 'computedeck.testSSH' },
+    ],
+  },
+  {
+    id: 'jobs',
+    title: '4. 部署与启停 Job',
+    file: '04-jobs.md',
+    actions: [
+      { label: '部署 Job', command: 'computedeck.deployJob' },
+      { label: '运行自检', command: 'computedeck.runDoctor' },
+    ],
+  },
+  {
+    id: 'mcp',
+    title: '5. MCP · 小助手 · 公告',
+    file: '05-mcp.md',
+    actions: [
+      { label: '注册 MCP', command: 'computedeck.installMcp' },
+      { label: '打开小助手', command: 'computedeck.openAssistant' },
+      { label: '打开监管公告', command: 'computedeck.openNotices' },
+    ],
+  },
+];
+
+function readGuideMarkdown(fileName) {
+  if (!extensionContext) return '';
+  const uri = vscode.Uri.joinPath(extensionContext.extensionUri, 'media', 'walkthrough', fileName);
+  try {
+    return fs.readFileSync(uri.fsPath, 'utf8');
+  } catch (_) {
+    return '';
+  }
+}
+
+function markdownToGuideHtml(md) {
+  const escaped = String(md || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  const lines = escaped.split(/\r?\n/);
+  const html = [];
+  let inList = false;
+  const flushList = () => {
+    if (inList) {
+      html.push('</ul>');
+      inList = false;
+    }
+  };
+  for (const line of lines) {
+    const heading = line.match(/^(#{1,3})\s+(.*)$/);
+    if (heading) {
+      flushList();
+      const level = heading[1].length;
+      html.push(`<h${level}>${heading[2]}</h${level}>`);
+      continue;
+    }
+    const li = line.match(/^[-*]\s+(.*)$/);
+    if (li) {
+      if (!inList) {
+        html.push('<ul>');
+        inList = true;
+      }
+      html.push(`<li>${li[1].replace(/`([^`]+)`/g, '<code>$1</code>')}</li>`);
+      continue;
+    }
+    if (!line.trim()) {
+      flushList();
+      continue;
+    }
+    flushList();
+    html.push(
+      `<p>${line
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(
+          /\[([^\]]+)\]\(command:([^)]+)\)/g,
+          '<button type="button" data-cmd="$2">$1</button>'
+        )}</p>`
+    );
+  }
+  flushList();
+  return html.join('\n');
+}
+
+function buildGuideHtml(webview, stepIndex) {
+  const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const idx = Math.max(0, Math.min(GUIDE_STEPS.length - 1, Number(stepIndex) || 0));
+  const step = GUIDE_STEPS[idx];
+  const body = markdownToGuideHtml(readGuideMarkdown(step.file));
+  const nav = GUIDE_STEPS.map(
+    (s, i) =>
+      `<button type="button" class="step${i === idx ? ' active' : ''}" data-step="${i}">${s.title}</button>`
+  ).join('');
+  const actions = (step.actions || [])
+    .map(
+      (a) =>
+        `<button type="button" class="primary" data-cmd="${a.command}" data-args='${JSON.stringify(a.args || [])}'>${a.label}</button>`
+    )
+    .join('');
+  const csp = [
+    `default-src 'none'`,
+    `style-src ${webview.cspSource} 'unsafe-inline'`,
+    `script-src 'nonce-${nonce}'`,
+  ].join('; ');
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="${csp}" />
+  <title>ComputeDeck 上手指南</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0; display: grid; grid-template-columns: 220px minmax(0, 1fr);
+      min-height: 100vh; font: 13px/1.5 var(--vscode-font-family);
+      color: var(--vscode-foreground); background: var(--vscode-editor-background);
+    }
+    aside {
+      border-right: 1px solid var(--vscode-widget-border, rgba(127,127,127,.35));
+      padding: 14px 10px; background: color-mix(in srgb, var(--vscode-editor-background) 92%, var(--vscode-foreground) 4%);
+    }
+    aside h1 { margin: 0 0 10px; font-size: 14px; padding: 0 6px; }
+    aside .step {
+      display: block; width: 100%; text-align: left; margin: 0 0 6px;
+      border: 0; background: transparent; color: inherit; border-radius: 6px;
+      padding: 8px 10px; cursor: pointer; font: inherit;
+    }
+    aside .step:hover { background: var(--vscode-list-hoverBackground); }
+    aside .step.active {
+      background: var(--vscode-list-activeSelectionBackground);
+      color: var(--vscode-list-activeSelectionForeground);
+    }
+    main { padding: 18px 22px 28px; overflow: auto; }
+    main h1, main h2, main h3 { margin: 0.4em 0 0.35em; }
+    main p, main li { margin: 0.35em 0; }
+    main ul { padding-left: 1.2em; }
+    main code {
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: 12px; padding: 0 4px; border-radius: 4px;
+      background: color-mix(in srgb, var(--vscode-editor-background) 80%, var(--vscode-foreground) 12%);
+    }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 8px; }
+    button.primary, main button {
+      appearance: none; border: 1px solid var(--vscode-button-border, transparent);
+      background: var(--vscode-button-background); color: var(--vscode-button-foreground);
+      border-radius: 6px; padding: 6px 12px; font: inherit; cursor: pointer;
+    }
+    main button {
+      background: var(--vscode-button-secondaryBackground);
+      color: var(--vscode-button-secondaryForeground);
+      margin: 0 4px 4px 0;
+    }
+    .pager { display: flex; gap: 8px; margin-top: 18px; }
+    .hint { opacity: .7; font-size: 12px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <aside>
+    <h1>上手指南</h1>
+    ${nav}
+  </aside>
+  <main>
+    <div id="body">${body}</div>
+    <div class="actions">${actions}</div>
+    <div class="pager">
+      <button type="button" class="primary" id="prev" ${idx === 0 ? 'disabled' : ''}>上一步</button>
+      <button type="button" class="primary" id="next">${idx >= GUIDE_STEPS.length - 1 ? '完成' : '下一步'}</button>
+    </div>
+    <p class="hint">支持原生 Walkthrough 的环境也可从欢迎页打开同一套步骤；CodeLab 下用本窗口更稳。</p>
+  </main>
+  <script nonce="${nonce}">
+    const vscode = acquireVsCodeApi();
+    const step = ${idx};
+    document.querySelectorAll('[data-step]').forEach((el) => {
+      el.addEventListener('click', () => vscode.postMessage({ command: 'goto', step: Number(el.dataset.step) }));
+    });
+    document.querySelectorAll('[data-cmd]').forEach((el) => {
+      el.addEventListener('click', () => {
+        let args = [];
+        try { args = JSON.parse(el.dataset.args || '[]'); } catch (_) {}
+        vscode.postMessage({ command: 'run', id: el.dataset.cmd, args });
+      });
+    });
+    document.getElementById('prev').addEventListener('click', () => vscode.postMessage({ command: 'goto', step: step - 1 }));
+    document.getElementById('next').addEventListener('click', () => {
+      if (step >= ${GUIDE_STEPS.length - 1}) vscode.postMessage({ command: 'done' });
+      else vscode.postMessage({ command: 'goto', step: step + 1 });
+    });
+  </script>
+</body>
+</html>`;
+}
+
+function showGuide(stepIndex = 0) {
+  const idx = Math.max(0, Math.min(GUIDE_STEPS.length - 1, Number(stepIndex) || 0));
+  if (guidePanel) {
+    guidePanel.reveal(vscode.ViewColumn.Active, false);
+    guidePanel.webview.html = buildGuideHtml(guidePanel.webview, idx);
+    return;
+  }
+  guidePanel = vscode.window.createWebviewPanel(
+    'computedeck.guide',
+    t('ComputeDeck 上手指南'),
+    vscode.ViewColumn.Active,
+    { enableScripts: true, retainContextWhenHidden: true }
+  );
+  guidePanel.webview.html = buildGuideHtml(guidePanel.webview, idx);
+  guidePanel.onDidDispose(() => {
+    guidePanel = undefined;
+  });
+  guidePanel.webview.onDidReceiveMessage(async (msg) => {
+    if (!msg || !msg.command) return;
+    if (msg.command === 'goto') {
+      showGuide(msg.step);
+      return;
+    }
+    if (msg.command === 'done') {
+      if (extensionContext) {
+        await extensionContext.globalState.update('computedeck.guideCompleted', true);
+      }
+      vscode.window.showInformationMessage(t('上手指南已完成。可随时从侧栏或命令面板再打开。'));
+      guidePanel?.dispose();
+      return;
+    }
+    if (msg.command === 'run' && msg.id) {
+      await vscode.commands.executeCommand(msg.id, ...(Array.isArray(msg.args) ? msg.args : []));
+    }
+  });
+}
+
+async function openGettingStarted() {
+  const walkthroughId = extensionContext
+    ? `${extensionContext.extension.id}#computedeck.getStarted`
+    : 'computedeck.computedeck-vscode#computedeck.getStarted';
+  try {
+    await vscode.commands.executeCommand('workbench.action.openWalkthrough', walkthroughId, false);
+    if (extensionContext) {
+      await extensionContext.globalState.update('computedeck.guideOpened', true);
+    }
+    return 'walkthrough';
+  } catch (_) {
+    // CodeLab / 部分发行版没有 Walkthrough UI。
+  }
+  showGuide(0);
+  if (extensionContext) {
+    await extensionContext.globalState.update('computedeck.guideOpened', true);
+  }
+  return 'guide';
 }
 
 function workbenchSnapshot() {
@@ -1085,6 +1376,7 @@ function showWorkbench() {
       openAssistant: 'computedeck.openAssistant',
       openNotices: 'computedeck.openNotices',
       openWalkthrough: 'computedeck.openWalkthrough',
+      openGuide: 'computedeck.openGuide',
       runDoctor: 'computedeck.runDoctor',
       liveness: 'computedeck.liveness',
       testSSH: 'computedeck.testSSH',
@@ -1443,15 +1735,11 @@ function registerCommands(context) {
     await openControlUiExternal('/#/actions');
   });
   cmd('computedeck.openWalkthrough', async () => {
-    const walkthroughId = `${context.extension.id}#computedeck.getStarted`;
-    try {
-      await vscode.commands.executeCommand('workbench.action.openWalkthrough', walkthroughId, false);
-      return;
-    } catch (_) {
-      // CodeLab / 部分 VS Code 发行版没有 Walkthrough 命令，回落到 markdown 预览。
-    }
-    const guide = vscode.Uri.joinPath(context.extensionUri, 'media', 'walkthrough', '01-connect.md');
-    await vscode.commands.executeCommand('markdown.showPreview', guide);
+    await openGettingStarted();
+  });
+  cmd('computedeck.openGuide', async () => {
+    showGuide(0);
+    await context.globalState.update('computedeck.guideOpened', true);
   });
   cmd('computedeck.login', async () => {
     const password = await vscode.window.showInputBox({
@@ -1598,6 +1886,7 @@ function startPolling() {
 }
 
 function activate(context) {
+  extensionContext = context;
   output = vscode.window.createOutputChannel('ComputeDeck');
   client = new ComputeDeckClient(context);
   provider = new ClusterProvider(client);
@@ -1630,6 +1919,17 @@ function activate(context) {
     output.appendLine(t('将自动使用本机 API Token（无需粘贴）'));
   }
   provider.refresh(false).catch(() => { });
+
+  if (!context.globalState.get('computedeck.guidePrompted')) {
+    context.globalState.update('computedeck.guidePrompted', true);
+    const open = t('打开上手指南');
+    vscode.window
+      .showInformationMessage(t('欢迎使用 ComputeDeck：可用上手指南了解工作台、节点与看板窗口。'), open)
+      .then((choice) => {
+        if (choice === open) return openGettingStarted();
+        return undefined;
+      });
+  }
 }
 
 function deactivate() {

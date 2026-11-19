@@ -19,12 +19,15 @@
 - 状态栏：`CD 4/4 节点 · 12/16 空闲`；点击打开工作台
 - 一键诊断：自检、节点探活、测试 SSH；自动注册 MCP Server（`gc_*`）
 
-## 2. 上手引导（Walkthrough）
+## 2. 上手指南（Walkthrough + 窗口）
 
-命令面板 → `ComputeDeck: 打开上手引导`，或侧栏标题栏书本图标。
+命令面板 → `ComputeDeck: 打开上手指南`，或侧栏标题栏书本图标。
 
-五步：连接控制面 → 侧栏与工作台 → 节点终端与诊断 → 部署与启停 Job → MCP 与控制面窗口。  
-媒体在 `extensions/vscode/media/walkthrough/`。
+- **有原生 Walkthrough 的 VS Code / Cursor**：走欢迎页式五步 Walkthrough  
+- **CodeLab 等无 Walkthrough UI**：自动打开同内容的 **上手指南窗口**（也可直接 `打开上手指南（窗口）`）
+
+五步：连接控制面 → 工作台与看板窗口 → 节点终端与诊断 → 部署与启停 Job → MCP / 小助手 / 公告。  
+媒体在 `extensions/vscode/media/walkthrough/`。首次激活会提示打开指南。
 
 ## 3. 安装
 
