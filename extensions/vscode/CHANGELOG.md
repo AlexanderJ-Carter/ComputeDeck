@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.1
+
+- Marketplace 元数据（homepage / bugs / pricing）与 README 截图
+- 发布流程支持 VS Code Marketplace OIDC Trusted Publishing
+
 ## 1.3.0
 
 - 与产品 1.3.0 对齐：自定义五分钟上手、登录票据免密、免密状态提示

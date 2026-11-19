@@ -4,6 +4,8 @@
 
 ComputeDeck 是一套多节点算力控制面：节点、任务、模型和推理入口共用同一份状态。这个插件是它在 VS Code / Cursor 里的客户端，重点解决“边写代码边看集群”的日常操作。
 
+![五分钟上手](https://raw.githubusercontent.com/AlexanderJ-Carter/ComputeDeck/main/extensions/vscode/media/screenshot-guide.png)
+
 ## 能做什么
 
 | 入口 | 用途 |
@@ -75,8 +77,8 @@ npm run package     # 产出 VSIX
 - `package.nls*.json` / `l10n/`：中英文文案；
 - `media/`：图标与活动栏图标。
 
-更多：[docs/vscode插件.md](../../docs/vscode插件.md) · [接入拓扑与鉴权](../../docs/接入拓扑与鉴权.md) · [产品故事](../../docs/产品故事.md)。
+更多：https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/docs/vscode插件.md · https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/docs/接入拓扑与鉴权.md · https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/docs/产品故事.md。
 
 ## 许可
 
-AGPL-3.0-only，见 [LICENSE](LICENSE)。
+AGPL-3.0-only，见 https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/LICENSE。

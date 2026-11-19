@@ -1,0 +1,21 @@
+[Unit]
+Description=ComputeDeck watchdog (restart unhealthy Jobs)
+Documentation=https://github.com/AlexanderJ-Carter/ComputeDeck
+After=network-online.target computedeck-ui.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=computedeck
+Group=computedeck
+WorkingDirectory=/opt/computedeck
+Environment=PYTHONUNBUFFERED=1
+# 改成你的默认 Job；也可以重复 --job 监控多个
+ExecStart=/opt/computedeck/bin/gpu-control watchdog --job shell-job --interval 60
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

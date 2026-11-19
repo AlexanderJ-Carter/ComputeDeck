@@ -1,0 +1,22 @@
+[Unit]
+Description=ComputeDeck control plane (Web UI / API)
+Documentation=https://github.com/AlexanderJ-Carter/ComputeDeck
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=computedeck
+Group=computedeck
+WorkingDirectory=/opt/computedeck
+Environment=PYTHONUNBUFFERED=1
+Environment=GPU_CONTROL_UI_HOST=127.0.0.1
+Environment=GPU_CONTROL_UI_PORT=8787
+ExecStart=/opt/computedeck/.venv/bin/python web/server.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

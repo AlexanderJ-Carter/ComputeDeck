@@ -64,6 +64,7 @@ nav:
       - 文档首页: index.md
       - 产品故事: 产品故事.md
       - 开始使用: 开始使用.md
+      - 配置指南: 配置指南.md
       - 部署总览: 部署总览.md
       - 上手手册: 手册.md
   - 生产与运维:
@@ -86,6 +87,7 @@ nav:
       - HTTP API: api/index.md
       - OpenAPI / Swagger: api/openapi.md
       - 打包与发布: 打包与发布.md
+      - 发布与账号: 发布与账号.md
       - 演示页域名: 自定义域名.md
   - 开发:
       - 容器部署: develop/docker.md

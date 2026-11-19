@@ -1,14 +1,29 @@
 name: Publish VS Code extension
 
-# 手动发布到 Open VSX（Cursor / Windsurf / VSCodium / CodeLab 等使用该市场）。
-# 需要仓库 Secret：OVSX_PAT（open-vsx.org → Settings → Access Tokens）。
-# 发布前先在 open-vsx.org 创建并认领命名空间 computedeck。
-# 正式 VS Code Marketplace 不在本工作流内：其 PAT 方案将于 2026-12-01 停用，
-# 后续改走 Trusted Publishing（OIDC），或手动上传 VSIX。
+# 手动发布扩展。
+# - openvsx：Cursor / Windsurf / VSCodium / CodeLab 使用的市场，需要 Secret OVSX_PAT。
+# - marketplace：官方 VS Code Marketplace，使用 GitHub OIDC Trusted Publishing。
+#
+# Marketplace 前置：
+#   1. 在 https://marketplace.visualstudio.com/manage 创建发布者 computedeck；
+#   2. 在发布者设置里创建 Trusted Publishing 策略：
+#      repository owner=AlexanderJ-Carter, repository=ComputeDeck,
+#      workflow=vscode-publish.yml, environment 留空；
+#   3. 运行本工作流，选择 marketplace 或 both。
+#
+# Open VSX 前置：
+#   1. 用 GitHub 登录 open-vsx.org，关联 Eclipse 账号并同意 Publisher Agreement；
+#   2. Settings → Access Tokens 生成 Token，写入仓库 Secret OVSX_PAT；
+#   3. 创建 / 认领命名空间 computedeck。
 
 on:
   workflow_dispatch:
     inputs:
+      registry:
+        description: "发布到哪个市场"
+        type: choice
+        options: [openvsx, marketplace, both]
+        default: openvsx
       confirm:
         description: "输入 publish 才会真正上传"
         required: true
@@ -23,7 +38,7 @@ concurrency:
 
 jobs:
   openvsx:
-    if: inputs.confirm == 'publish'
+    if: inputs.confirm == 'publish' && (inputs.registry == 'openvsx' || inputs.registry == 'both')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -50,3 +65,22 @@ jobs:
             exit 1
           fi
           npx --yes ovsx@1.4.0 publish "computedeck-vscode-${VERSION}.vsix" -p "$OVSX_PAT"
+
+  marketplace:
+    if: inputs.confirm == 'publish' && (inputs.registry == 'marketplace' || inputs.registry == 'both')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Publish with Trusted Publishing (OIDC)
+        working-directory: extensions/vscode
+        run: |
+          npx --yes @vscode/vsce@4.1.1 publish --oidc
