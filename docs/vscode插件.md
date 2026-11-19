@@ -1,94 +1,41 @@
 # VS Code 插件（ComputeDeck）
 
-插件适合「边写代码边看集群、顺手开终端 / 部署」：侧栏做导航，**工作台**与**控制面页面**都在 IDE 窗口内打开。  
-主控 / 隧道 / OIDC / SSO 总图见 [接入拓扑与鉴权](接入拓扑与鉴权.md)。
+**小白请先看：[开始使用](开始使用.md)。**
 
-源码：[extensions/vscode/](https://github.com/AlexanderJ-Carter/ComputeDeck/tree/main/extensions/vscode)
+插件让你在写代码的窗口里看集群、开终端、部署任务。完整大屏网页仍用「打开完整看板」。
 
-当前扩展版本见 `extensions/vscode/package.json`；发版时与仓库根 `VERSION` 对齐（见 [打包与发布](打包与发布.md)）。分发形态为 **VSIX**，不发 npm。
+源码：`extensions/vscode/`。发版形态是 **VSIX**（不发 npm）。版本见 `extensions/vscode/package.json`。
 
-## 1. 功能
+## 你会用到的几个入口
 
-- **工作台**（编辑器旁 Webview）：集群 KPI、小助手 / MCP 状态、监管公告摘要、常用操作；一键打开各控制面页面
-- **侧栏集群树**（保持精简）：
-  - 打开工作台
-  - 集群总览（默认折叠）、节点、Job、队列与租约、入口
-  - 节点 / Job 行内：终端、诊断、启停、腾空
-- **接入说明**：主控 / 远程 / 被控怎么连、鉴权与免密；CodeLab 完整看板用 Simple Browser / 平台打开代理 URL（不硬嵌易失败的 iframe）
-- **控制面页面**：看板等完整 Web UI 经 Simple Browser 或接入说明打开
-- 状态栏：`CD 4/4 节点 · 12/16 空闲`；点击打开工作台
-- 一键诊断：自检、节点探活、测试 SSH；自动注册 MCP Server（`gc_*`）
+| 入口 | 干什么 |
+|------|--------|
+| 左侧 ComputeDeck | 看节点 / Job |
+| 工作台 | 空闲卡、公告、常用按钮 |
+| 怎么用 | 白话说明：怎么连、何时要密码 |
+| 打开完整看板 | 打开网页大屏 |
+| 五分钟上手 | 分步引导 |
 
-## 2. 上手指南（Walkthrough + 窗口）
-
-命令面板 → `ComputeDeck: 打开上手指南`，或侧栏标题栏书本图标。
-
-- **有原生 Walkthrough 的 VS Code / Cursor**：走欢迎页式五步 Walkthrough  
-- **CodeLab 等无 Walkthrough UI**：自动打开同内容的 **上手指南窗口**（也可直接 `打开上手指南（窗口）`）
-
-五步：连接控制面 → 工作台与看板窗口 → 节点终端与诊断 → 部署与启停 Job → MCP / 小助手 / 公告。  
-媒体在 `extensions/vscode/media/walkthrough/`。首次激活会提示打开指南。
-
-## 3. 安装
+## 安装
 
 ```bash
 cd extensions/vscode && npm run package
 code --install-extension computedeck-vscode-*.vsix
-# 然后 Developer: Reload Window
+# 然后：Developer: Reload Window
 ```
 
-开发模式：`code --extensionDevelopmentPath="$PWD"`（在 `extensions/vscode`）。
+预览：`./scripts/preview_extension.sh`
 
-连真实控制面预览：
-
-```bash
-./scripts/preview_extension.sh
-# 或 CONTROL_HOST=<主控> ./scripts/preview_extension.sh --api http://127.0.0.1:8787
-```
-
-CI：`.github/workflows/vscode.yml` 在 `extensions/vscode/**` 变更时打包 VSIX；打 `v*` tag 时附加到 Release。
-
-## 3.1 图标与本地化
-
-- 市场图标：`media/icon.png`；活动栏：`media/activitybar.svg`
-- 贡献点：`package.nls.json`（默认中文）+ `package.nls.zh-cn.json` + `package.nls.en.json`
-- 运行时英文：`l10n/bundle.l10n.en.json`
-
-## 4. 连接与设置
+## 设置（一般不用改）
 
 | 设置 | 默认 | 说明 |
-|---|---|---|
-| `computedeck.apiBase` | `http://127.0.0.1:8787` | 控制面地址；Remote SSH 时通常为本机 |
-| `computedeck.uiOpenMode` | `editor` | `editor` / `auto` / `simpleBrowser` / `external`。默认编辑器窗口，不自动外跳 |
-| `computedeck.autoLocalAuth` | `true` | 本机控制面仓库自动读 `ui_api_token` |
-| `computedeck.controlRoot` | 空 | 手动指定控制面仓库路径 |
-| `computedeck.pollIntervalSec` | `30` | 刷新间隔 |
-| `computedeck.statusBar` | `true` | 状态栏开关 |
-| `computedeck.mcpPath` | `${workspaceFolder}/bin/gpu-control-mcp` | MCP 可执行文件 |
-| `computedeck.sshUser` | 空 | 节点终端默认 SSH 用户 |
+|------|------|------|
+| `computedeck.apiBase` | `http://127.0.0.1:8787` | 总控地址；在总控上保持默认 |
+| `computedeck.autoLocalAuth` | `true` | 自动用本机密钥，少输密码 |
+| `computedeck.uiOpenMode` | `auto` | 怎么打开大屏；CodeLab 会先给「怎么用」 |
 
-鉴权优先级：本机 `config/local/secrets/ui_api_token` → 环境变量 `GPU_CONTROL_API_TOKEN` → 命令「设置 API Token」/「密码登录」。
+## 和网页的分工
 
-相关命令：
-
-- `打开工作台` · `打开看板` · `打开控制面页面` · `打开小助手` · `打开监管公告`
-- `在系统浏览器打开看板`（显式外开，默认流程不会走到这里）
-
-## 5. MCP / Copilot
-
-插件注册 `computedeck.mcp`，启动 `bin/gpu-control-mcp`，并注入：
-
-```text
-GPU_CONTROL_API_BASE=<computedeck.apiBase>
-GPU_CONTROL_API_TOKEN=<本机或 SecretStorage 中的 token>
-```
-
-## 6. 与 Web 的分工
-
-| 场景 | 推荐 |
-|---|---|
-| 写代码时看节点 / Job、开终端、跑诊断、点开看板页 | VS Code 插件（窗口内） |
-| 大屏投屏、系统浏览器书签 | 显式「在系统浏览器打开」或 `uiOpenMode=external` |
-| Agent 自动操作 | MCP（插件可自动注册） |
-
-插件不重复实现整套 Web UI，而是把同一控制面嵌进 IDE 窗口；不硬编码节点 / Job 名，数据来自控制面 API。
+- **插件**：日常看节点、终端、诊断、部署  
+- **网页大屏**：图表、小助手长对话、复杂配置  
+- **细节文档**：[接入拓扑与鉴权](接入拓扑与鉴权.md)

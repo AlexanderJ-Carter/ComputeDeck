@@ -13,8 +13,8 @@
   "computedeck.config.sshUser": "Default SSH user for node terminals. Leave empty to use ansible_user from nodes.json.",
   "computedeck.command.refresh": "Refresh Cluster Status",
   "computedeck.command.openWorkbench": "Open Workbench",
-  "computedeck.command.openAccess": "Open Access Guide",
-  "computedeck.command.openDashboard": "Open Dashboard",
+  "computedeck.command.openAccess": "How to Use",
+  "computedeck.command.openDashboard": "Open Full Dashboard",
   "computedeck.command.openPage": "Open Control Plane Page",
   "computedeck.command.openExternalBrowser": "Open Dashboard in System Browser",
   "computedeck.command.login": "Password Login",
@@ -36,10 +36,10 @@
   "computedeck.command.jobStop": "Stop Job",
   "computedeck.command.jobRestart": "Restart Job",
   "computedeck.command.installMcp": "Register MCP Server",
-  "computedeck.command.openWalkthrough": "Open Getting Started",
-  "computedeck.command.openGuide": "Open Getting Started Guide (Window)",
-  "computedeck.walkthrough.title": "Get Started with ComputeDeck",
-  "computedeck.walkthrough.description": "Five steps: connect → workbench & dashboard window → nodes → jobs → MCP / assistant. On CodeLab without native Walkthrough, the same guide opens in an editor panel.",
+  "computedeck.command.openWalkthrough": "5-Minute Getting Started",
+  "computedeck.command.openGuide": "5-Minute Guide (Window)",
+  "computedeck.walkthrough.title": "ComputeDeck in 5 Minutes",
+  "computedeck.walkthrough.description": "Connect → cluster → nodes → jobs → assistant. Plain language, no jargon required.",
   "computedeck.walkthrough.connect.title": "Connect to the Control Plane",
   "computedeck.walkthrough.connect.description": "Set the control plane URL and sign in. With Remote SSH this is usually 127.0.0.1.\n[Password Login](command:computedeck.login)\n[Set API Token](command:computedeck.setToken)",
   "computedeck.walkthrough.connect.alt": "Connect to the ComputeDeck control plane",
@@ -66,5 +66,5 @@
   "computedeck.config.uiOpenMode.external": "Always open the proxied URL in the system/platform browser.",
   "computedeck.command.openAssistant": "Open Assistant",
   "computedeck.command.openNotices": "Open Notices",
-  "computedeck.welcome.disconnected": "Control plane not connected. On the control host, local Token is used automatically.\n[Use Local Token](command:computedeck.useLocalCredentials)\n[Password Login](command:computedeck.login)\n[Open Getting Started](command:computedeck.openWalkthrough)\n[Open Workbench](command:computedeck.openWorkbench)\n[Open Dashboard](command:computedeck.openDashboard)"
+  "computedeck.welcome.disconnected": "Not connected yet. On the control host this usually signs in automatically.\n[Use Local Credentials](command:computedeck.useLocalCredentials)\n[Password Login](command:computedeck.login)\n[How to Use](command:computedeck.openAccess)\n[Open Workbench](command:computedeck.openWorkbench)\n[5-Minute Getting Started](command:computedeck.openWalkthrough)"
 }

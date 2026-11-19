@@ -716,7 +716,7 @@ function buildAccessHubHtml(webview, state) {
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ComputeDeck 接入</title>
+  <title>怎么用 ComputeDeck</title>
   <style>
     :root {
       color-scheme: light dark;
@@ -727,26 +727,26 @@ function buildAccessHubHtml(webview, state) {
     * { box-sizing: border-box; }
     body {
       margin: 0; padding: 22px 24px 36px;
-      font: 13px/1.5 var(--vscode-font-family);
+      font: 14px/1.55 var(--vscode-font-family);
       color: var(--vscode-foreground);
       background:
         radial-gradient(900px 360px at 100% -20%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 55%),
         var(--vscode-editor-background);
     }
-    .shell { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
-    h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
-    .sub { margin: 6px 0 0; opacity: .68; font-size: 12px; }
+    .shell { max-width: 720px; margin: 0 auto; display: grid; gap: 14px; }
+    h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -.02em; }
+    .sub { margin: 8px 0 0; opacity: .72; font-size: 13px; }
     .pill {
       display: inline-flex; align-items: center; gap: 6px;
-      border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px;
+      border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px;
       background: var(--soft); font-size: 12px;
     }
     .dot { width: 7px; height: 7px; border-radius: 50%; background: #94a3b8; }
     .dot.on { background: #16a34a; } .dot.off { background: #dc2626; }
-    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
     button {
       appearance: none; font: inherit; cursor: pointer; border-radius: 8px;
-      border: 1px solid var(--line); padding: 7px 12px;
+      border: 1px solid var(--line); padding: 8px 14px;
       background: var(--vscode-button-secondaryBackground);
       color: var(--vscode-button-secondaryForeground);
     }
@@ -755,125 +755,60 @@ function buildAccessHubHtml(webview, state) {
       background: var(--vscode-button-background, var(--accent));
       color: var(--vscode-button-foreground, #f0fdfa);
     }
-    button.ghost { background: transparent; }
-    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-    @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
     .card {
       border: 1px solid var(--line); border-radius: 12px; background: var(--soft);
-      padding: 14px 14px 12px; display: grid; gap: 8px; align-content: start;
+      padding: 16px 16px 14px;
     }
-    .card h2 { margin: 0; font-size: 14px; font-weight: 700; }
-    .card p, .card li { margin: 0; font-size: 12.5px; opacity: .86; }
-    .card ul { margin: 0; padding-left: 1.1em; display: grid; gap: 4px; }
-    .card .tag {
-      justify-self: start; font-size: 11px; font-weight: 650;
-      border-radius: 999px; padding: 2px 8px; border: 1px solid var(--line);
-    }
-    .tag.ok { color: #166534; background: color-mix(in srgb, #22c55e 12%, transparent); }
-    .tag.warn { color: #9a3412; background: color-mix(in srgb, #f97316 12%, transparent); }
-    table {
-      width: 100%; border-collapse: collapse; font-size: 12.5px;
-      border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
-      background: var(--soft);
-    }
-    th, td { padding: 10px 12px; text-align: left; border-top: 1px solid var(--line); vertical-align: top; }
-    th { background: color-mix(in srgb, var(--soft) 70%, var(--vscode-foreground) 4%); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; opacity: .72; border-top: 0; }
-    code {
-      font-family: var(--vscode-editor-font-family, monospace); font-size: 12px;
-      padding: 1px 5px; border-radius: 4px;
-      background: color-mix(in srgb, var(--vscode-editor-background) 78%, var(--vscode-foreground) 12%);
-    }
-    .callout {
-      border: 1px solid color-mix(in srgb, #0f766e 30%, var(--line));
-      background: color-mix(in srgb, #0f766e 8%, var(--soft));
-      border-radius: 12px; padding: 12px 14px; font-size: 12.5px;
-    }
+    .card h2 { margin: 0 0 8px; font-size: 15px; font-weight: 700; }
+    .card ol, .card ul { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+    .card li { margin: 0; }
+    .muted { opacity: .65; font-size: 12px; margin-top: 10px; }
     .embed-wrap {
       border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #fff;
-      min-height: 360px;
     }
     .embed-wrap iframe { border: 0; width: 100%; height: 70vh; display: block; }
-    .muted { opacity: .65; }
-    .url { word-break: break-all; font-size: 12px; }
   </style>
 </head>
 <body>
   <div class="shell">
     <header>
-      <div class="pill"><span class="dot ${state.apiOk ? 'on' : 'off'}"></span>${state.apiOk ? '插件 API 已连接' : '插件 API 未连接'}</div>
-      <h1 style="margin-top:10px">接入 · 鉴权 · 打开看板</h1>
-      <p class="sub">先分清三条线：客户端→主控（HTTP）、主控→被控（SSH）、人怎么打开完整 Web UI。</p>
+      <div class="pill"><span class="dot ${state.apiOk ? 'on' : 'off'}"></span>${state.apiOk ? '已经连上，可以直接用' : '还没连上，先看下面第 1 步'}</div>
+      <h1 style="margin-top:12px">怎么用 ComputeDeck</h1>
+      <p class="sub">不用记术语。日常就三件事：看机器、开大屏、需要时再登录。</p>
       <div class="actions" id="topActions"></div>
     </header>
 
-    <section class="grid">
-      <article class="card">
-        <span class="tag ok">主控 control</span>
-        <h2>控制机怎么连</h2>
-        <ul>
-          <li>唯一控制面：UI/API <code>:8787</code>、调度、租约、入口</li>
-          <li>CodeLab / Remote SSH 坐在主控上时，插件 <code>apiBase=127.0.0.1:8787</code></li>
-          <li>本机有仓库 + <code>ui_api_token</code> → <strong>插件免密</strong></li>
-        </ul>
-        <p class="muted">当前 API：<code>${state.apiBase || ''}</code></p>
-      </article>
-      <article class="card">
-        <span class="tag ${state.uiKind === 'web' ? 'warn' : 'ok'}">远程 / IDE</span>
-        <h2>远程怎么连</h2>
-        <ul>
-          <li>人在笔记本：SSH 隧道 <code>-L 8787:127.0.0.1:8787</code></li>
-          <li>CodeLab Web：插件 API 走扩展宿主本机；完整看板需端口代理 URL</li>
-          <li>Webview 直嵌 <code>/proxy/8787</code> 常被拒 — 请用下方「Simple Browser / 平台打开」</li>
-        </ul>
-      </article>
-      <article class="card">
-        <span class="tag ok">被控 workers</span>
-        <h2>被控怎么连</h2>
-        <ul>
-          <li>不跑控制面，不登录 UI</li>
-          <li>主控用 Ansible/SSH（<code>nodes.json</code> 用户与密钥）管理</li>
-          <li><strong>天然免密</strong>（密钥信任），与 password/OIDC 无关</li>
-        </ul>
-      </article>
+    <section class="card">
+      <h2>日常怎么用</h2>
+      <ol>
+        <li><strong>看集群</strong>：左侧 ComputeDeck，或点「打开工作台」。</li>
+        <li><strong>看完整大屏</strong>：点「打开完整看板」（会在编辑器里打开网页）。</li>
+        <li><strong>连不上大屏</strong>：点「用浏览器打开」；左侧还能刷集群就说明总控是好的。</li>
+      </ol>
     </section>
 
-    <section>
-      <table>
-        <thead><tr><th>谁</th><th>凭证</th><th>能否免密</th></tr></thead>
-        <tbody>
-          <tr>
-            <td>插件 / MCP（主控本机）</td>
-            <td><code>config/local/secrets/ui_api_token</code></td>
-            <td>${state.passwordlessPlugin ? '✅ 当前可免密' : '需 Token / 密码登录'}</td>
-          </tr>
-          <tr>
-            <td>浏览器 Session</td>
-            <td>password / OIDC Cookie</td>
-            <td>否（完整看板登录态）</td>
-          </tr>
-          <tr>
-            <td>被控节点</td>
-            <td>SSH key</td>
-            <td>✅ 免 UI 密码</td>
-          </tr>
-          <tr>
-            <td>当前鉴权模式</td>
-            <td colspan="2"><code>${state.authMode || '—'}</code> · Token 文件 ${state.apiTokenConfigured ? '已配置' : '未配置'} · 密码 ${state.passwordConfigured ? '已配置' : '未配置'}</td>
-          </tr>
-        </tbody>
-      </table>
+    <section class="card">
+      <h2>三种机器，各干什么</h2>
+      <ul>
+        <li><strong>总控机</strong>（你现在多半就在这台）：管调度、网页、插件。在这台电脑上用插件，一般<strong>不用输密码</strong>。</li>
+        <li><strong>GPU 干活机</strong>：真正跑任务的机器。你不用单独登录它们，总控会自动连过去。</li>
+        <li><strong>你自己的笔记本</strong>（如果没直接坐在总控上）：先用远程桌面 / CodeLab / SSH 进到总控，再按上面两步用。</li>
+      </ul>
     </section>
 
-    <section class="callout">
-      <strong>你截图里的「连接被拒绝」</strong>：侧栏能刷集群，说明扩展宿主访问 <code>127.0.0.1:8787</code> 正常；
-      看板 iframe 访问的是 CodeLab 代理 <code>${state.browserUrl || ''}</code>，在 Webview 里经常 TCP 被拒。
-      完整看板请用 <strong>Simple Browser</strong> 或平台打开代理 URL，不要依赖嵌入 iframe。
-      <div class="url muted" style="margin-top:8px">本地：${state.localUrl || ''} · 浏览器：${state.browserUrl || ''}</div>
+    <section class="card">
+      <h2>什么时候要输密码？</h2>
+      <ul>
+        <li><strong>插件 / 侧栏 / 工作台</strong>：在总控上打开仓库时，多数情况自动登录。${state.passwordlessPlugin ? '你现在就是这种。' : '若提示未连接，点「使用本机密钥」或「密码登录」。'}</li>
+        <li><strong>完整大屏网页</strong>：第一次可能要登录一次；之后一段时间内不用再输。</li>
+        <li><strong>GPU 干活机</strong>：不用你输网页密码。</li>
+      </ul>
+      <p class="muted">当前状态：${state.apiOk ? '插件已连上' : '插件未连上'} · ${state.passwordlessPlugin ? '免密可用' : '可能需要登录一次'}</p>
     </section>
 
     ${
       state.tryEmbed && safeEmbed
-        ? `<section class="embed-wrap"><iframe src="${safeEmbed}" title="ComputeDeck embed"></iframe></section>`
+        ? `<section class="embed-wrap"><iframe src="${safeEmbed}" title="ComputeDeck"></iframe></section>`
         : ''
     }
   </div>
@@ -887,13 +822,11 @@ function buildAccessHubHtml(webview, state) {
       b.addEventListener('click', () => vscode.postMessage({ command }));
       actions.append(b);
     }
-    btn('Simple Browser 打开', 'simpleBrowser', true);
-    btn('平台打开代理 URL', 'openExternal');
-    btn('复制代理 URL', 'copyUrl');
+    btn('打开完整看板', 'simpleBrowser', true);
     btn('打开工作台', 'openWorkbench');
-    btn('尝试嵌入（不推荐）', 'embed');
-    btn('上手指南', 'openWalkthrough');
-    btn('刷新状态', 'refresh');
+    btn('用浏览器打开', 'openExternal');
+    btn('五分钟上手', 'openWalkthrough');
+    btn('刷新', 'refresh');
   </script>
 </body>
 </html>`;
@@ -903,7 +836,7 @@ function showAccessHub(opts = {}) {
   const profile = accessProfile();
   const state = {
     ...profile,
-    title: opts.title || t('ComputeDeck 接入'),
+    title: opts.title || t('怎么用 ComputeDeck'),
     hash: opts.hash || '/#/actions',
     localUrl: opts.localUrl || controlUiUrl(opts.hash || '/#/actions'),
     browserUrl: opts.browserUrl || '',
@@ -1571,7 +1504,7 @@ function buildWorkbenchHtml(webview) {
 
     <section class="notices" style="border-style:solid">
       <div class="notices-h">
-        <h3>接入速览</h3>
+        <h3>先看这里</h3>
         <div class="btn-row" id="accessActions"></div>
       </div>
       <div class="empty" id="accessBox" style="padding:12px 14px">加载中…</div>
@@ -1674,9 +1607,9 @@ function buildWorkbenchHtml(webview) {
         : (state.error || '检查 apiBase / Token');
       el('heroActions').replaceChildren(
         btn('刷新', 'refresh', 'ghost'),
-        btn('接入说明', 'openAccess', 'primary'),
-        btn('打开看板', 'openDashboard', 'ghost'),
-        btn('上手指南', 'openWalkthrough', 'ghost')
+        btn('怎么用', 'openAccess', 'primary'),
+        btn('打开完整看板', 'openDashboard', 'ghost'),
+        btn('五分钟上手', 'openWalkthrough', 'ghost')
       );
       const access = state.access || {};
       const accessBox = el('accessBox');
@@ -1685,11 +1618,11 @@ function buildWorkbenchHtml(webview) {
         const title = document.createElement('div');
         title.className = 'notice-title';
         title.textContent = access.passwordlessPlugin
-          ? '主控本机：插件 API 已免密（ui_api_token）'
-          : '主控 API 需 Token / 密码；被控节点仍走 SSH 免密';
+          ? '已自动登录，可直接用侧栏和工作台'
+          : '若刷不出集群，点「怎么用」里的登录按钮';
         const detail = document.createElement('div');
         detail.className = 'notice-detail';
-        detail.textContent = '客户端→主控 HTTP · 主控→被控 SSH · 完整 Web 看板在 CodeLab 请用接入页的 Simple Browser（不要硬嵌 /proxy/8787 iframe）';
+        detail.textContent = '完整大屏点「打开完整看板」；打不开再用「用浏览器打开」。';
         accessBox.append(title, detail);
       }
       el('kpiMore').textContent = connected
@@ -1730,8 +1663,8 @@ function buildWorkbenchHtml(webview) {
         btn('腾空节点', 'freeNode', 'danger')
       );
       el('accessActions').replaceChildren(
-        btn('接入说明', 'openAccess', 'primary'),
-        btn('Simple Browser', 'openDashboard', 'ghost')
+        btn('怎么用', 'openAccess', 'primary'),
+        btn('打开完整看板', 'openDashboard', 'ghost')
       );
       el('noticeActions').replaceChildren(
         btn(unread > 0 ? ('查看全部 · ' + unread) : '打开公告页', 'openNotices', 'ghost')
@@ -2174,7 +2107,7 @@ function registerCommands(context) {
     const hash = '/#/actions';
     showAccessHub({
       hash,
-      title: t('ComputeDeck 接入'),
+      title: t('怎么用 ComputeDeck'),
       localUrl: controlUiUrl(hash),
       browserUrl: await resolveUiUrl(hash),
       tryEmbed: false,
@@ -2383,11 +2316,11 @@ function activate(context) {
 
   if (!context.globalState.get('computedeck.guidePrompted')) {
     context.globalState.update('computedeck.guidePrompted', true);
-    const open = t('打开上手指南');
+    const open = t('怎么用');
     vscode.window
-      .showInformationMessage(t('欢迎使用 ComputeDeck：可用上手指南了解工作台、节点与看板窗口。'), open)
+      .showInformationMessage(t('欢迎使用 ComputeDeck。点「怎么用」看三步就会。'), open)
       .then((choice) => {
-        if (choice === open) return openGettingStarted();
+        if (choice === open) return vscode.commands.executeCommand('computedeck.openAccess');
         return undefined;
       });
   }

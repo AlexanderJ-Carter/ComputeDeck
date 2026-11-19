@@ -1,16 +1,7 @@
-## 工作台与看板窗口
+## 看集群、开大屏
 
-侧栏 **ComputeDeck** 只做导航，避免挤满：
+- **左侧**：只负责找节点、Job。
+- **工作台**：看空闲卡、公告、常用按钮。[打开工作台](command:computedeck.openWorkbench)
+- **完整大屏**：图表、小助手等。[打开完整看板](command:computedeck.openDashboard)
 
-1. **打开工作台** — 编辑器旁面板：KPI、小助手 / MCP、公告摘要、常用操作、各页面入口
-2. **集群总览 / 节点 / Job…** — 需要时再展开；节点默认折叠
-3. **打开看板** — 控制面页面在 **编辑器窗口** 打开（CodeLab 会走端口转发地址，不是浏览器里的 `127.0.0.1`）
-
-推荐路径：
-
-- [打开工作台](command:computedeck.openWorkbench)
-- [打开看板](command:computedeck.openDashboard)
-- [选择控制面页面](command:computedeck.openPage)
-- [上手指南窗口](command:computedeck.openGuide)（CodeLab 无原生 Walkthrough 时用这个）
-
-状态栏 `CD …` 点击也是打开工作台。完整看板、小助手、配置都在 IDE 窗口内，不自动跳系统浏览器。
+大屏打不开时，用 [怎么用](command:computedeck.openAccess) 里的「用浏览器打开」。左侧还能刷集群，就说明总控是好的。
