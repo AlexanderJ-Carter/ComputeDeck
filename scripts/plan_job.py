@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """规划一次多机任务：把多台小卡机组合成一个作业。
 
-例如两台 4 卡机：``gpu-control plan --gpus 8 --job train-job`` 会给出
+例如两台 4 卡机：``gpu-control plan-job --gpus 8 --job train-job`` 会给出
 rank / MASTER_ADDR / NPROC_PER_NODE 和告警。这里只做只读规划，不启动任务。
 """
 
@@ -85,9 +85,17 @@ def build_plan(
     if len(selected) > 1 and not (job or {}).get("distributed"):
         warnings.append("多节点任务需要 distributed=true 的 Job 模板")
     master = rows[0]["host"] if rows else ""
-    nproc = int((job or {}).get("gpus_per_node") or (rows[0]["gpus"] if rows else 0) or 0)
+    job_gpus = int((job or {}).get("gpus_per_node") or 0)
+    counts = {row["gpus"] for row in rows if row["gpus"] > 0}
+    nproc = rows[0]["gpus"] if len(counts) == 1 and rows else job_gpus
+    if job_gpus and any(row["gpus"] != job_gpus for row in rows):
+        warnings.append(
+            f"Job 要求每节点 {job_gpus} 卡，选中节点实际为 {sorted({row['gpus'] for row in rows})} 卡；"
+            "请把 Job 的 gpus_per_node 改成每节点实际卡数"
+        )
+    job_matches = not job_gpus or all(row["gpus"] == job_gpus for row in rows)
     return {
-        "ok": bool(selected) and total >= requested_gpus and (len(selected) == 1 or distributed),
+        "ok": bool(selected) and total >= requested_gpus and (len(selected) == 1 or distributed) and job_matches,
         "requested_gpus": requested_gpus,
         "selected_gpus": total,
         "nodes": rows,

@@ -2,7 +2,7 @@
   "name": "computedeck-vscode",
   "displayName": "%computedeck.displayName%",
   "description": "%computedeck.description%",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "publisher": "computedeck",
   "license": "AGPL-3.0-only",
   "icon": "media/icon.png",

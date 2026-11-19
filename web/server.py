@@ -1440,7 +1440,7 @@ SETUP_GUIDE = [
         "title": "多机协同",
         "body": "两台 4 卡机可以组成一个 8 卡作业；先规划 rank / MASTER_ADDR，再部署。显存不会合并。",
         "cli": [
-            "gpu-control plan --gpus 8 --job train-job",
+            "gpu-control plan-job --gpus 8 --job train-job",
             "gpu-control deploy train-job --nodes gpu-1,gpu-2 --gpus 8",
         ],
     },
@@ -1597,7 +1597,7 @@ def build_setup_status() -> dict:
             "title": "多机协同",
             "ok": nodes_count >= 2 and bool(distributed_jobs),
             "detail": (
-                f"{nodes_count} 个节点 + {len(distributed_jobs)} 个 distributed Job；可用 gpu-control plan --gpus 8 规划"
+                f"{nodes_count} 个节点 + {len(distributed_jobs)} 个 distributed Job；可用 gpu-control plan-job --gpus 8 规划"
                 if nodes_count >= 2 and distributed_jobs
                 else "需要至少 2 个节点和一个 distributed=true 的 Job"
             ),

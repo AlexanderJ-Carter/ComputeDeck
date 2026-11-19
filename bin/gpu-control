@@ -1621,7 +1621,7 @@ def cmd_auth(args: argparse.Namespace) -> int:
     return run_python("auth_ops.py", *cmd).returncode
 
 
-def cmd_plan(args: argparse.Namespace) -> int:
+def cmd_plan_job(args: argparse.Namespace) -> int:
     """规划多机任务：多台小卡机组合成一个作业。"""
     ensure_runtime()
     cmd = ["--gpus", str(args.gpus)]
@@ -2370,13 +2370,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_auth.add_argument("--base", dest="pair_base", default=None, help="pair：控制面外部地址")
     p_auth.set_defaults(func=cmd_auth)
 
-    p_plan = sub.add_parser("plan", help="规划多机任务（例如 2×4 卡组成 8 卡作业）")
-    p_plan.add_argument("--gpus", type=int, required=True)
-    p_plan.add_argument("--job", default="")
-    p_plan.add_argument("--nodes", default="", help="逗号分隔节点名；省略则自动选空闲")
-    p_plan.add_argument("--include-unverified", action="store_true")
-    p_plan.add_argument("--json", action="store_true")
-    p_plan.set_defaults(func=cmd_plan)
+    p_plan_job = sub.add_parser("plan-job", help="规划多机任务（例如 2×4 卡组成 8 卡作业）")
+    p_plan_job.add_argument("--gpus", type=int, required=True)
+    p_plan_job.add_argument("--job", default="")
+    p_plan_job.add_argument("--nodes", default="", help="逗号分隔节点名；省略则自动选空闲")
+    p_plan_job.add_argument("--include-unverified", action="store_true")
+    p_plan_job.add_argument("--json", action="store_true")
+    p_plan_job.set_defaults(func=cmd_plan_job)
 
     p_bench = sub.add_parser("bench", help="控制面 API / 静态资源基准")
     p_bench.add_argument("--base", default="http://127.0.0.1:8787")
