@@ -18,6 +18,10 @@ _BODY: dict[str, dict[str, Any]] = {
         "required": ["password"],
         "properties": {"password": {"type": "string", "description": "管理密码"}},
     },
+    "auth_exchange": {
+        "type": "object",
+        "properties": {"target": {"type": "string", "description": "登录后跳转的站内路径，默认 /#/actions"}},
+    },
     "config_write": {
         "type": "object",
         "required": ["data"],
@@ -361,6 +365,20 @@ def http_endpoints() -> list[dict[str, Any]]:
         {"method": "GET", "path": "/api/health", "summary": "UI 健康检查", "group": "meta", "auth": "public"},
         {"method": "GET", "path": "/api/auth/status", "summary": "鉴权状态（公开）", "group": "auth", "auth": "public"},
         {"method": "GET", "path": "/api/auth/me", "summary": "当前登录主体", "group": "auth"},
+        {
+            "method": "POST",
+            "path": "/api/auth/exchange",
+            "summary": "用 Bearer Token / Session 换一次性登录票据（插件打开看板）",
+            "group": "auth",
+            "body": "auth_exchange",
+        },
+        {
+            "method": "GET",
+            "path": "/auth/consume",
+            "summary": "一次性票据换 Session 并跳转（浏览器）",
+            "group": "auth",
+            "auth": "public",
+        },
         {
             "method": "POST",
             "path": "/api/auth/login",
@@ -766,7 +784,10 @@ def http_endpoints() -> list[dict[str, Any]]:
 def cli_commands() -> list[dict[str, str]]:
     """常用 CLI 命令摘要。"""
     return [
-        {"cmd": "gpu-control doctor", "summary": "配置自检"},
+        {"cmd": "gpu-control doctor", "summary": "配置自检（含 TLS / nginx 漂移）"},
+        {"cmd": "gpu-control tls init|show|check", "summary": "入口 TLS 证书"},
+        {"cmd": "gpu-control auth pair", "summary": "一次性远程配对链接"},
+        {"cmd": "gpu-control bench", "summary": "控制面 API / 静态资源基准"},
         {"cmd": "gpu-control diagnose check|repair", "summary": "一键检测 / 安全修复"},
         {"cmd": "gpu-control logs [--limit N] [--kind oneclick]", "summary": "运行日志"},
         {"cmd": "gpu-control overview", "summary": "总览"},
@@ -967,7 +988,7 @@ def openapi_payload() -> dict[str, Any]:
             "title": "ComputeDeck (gpu-control)",
             "version": _version(),
             "description": (
-                "ComputeDeck 多节点 GPU 控制面 HTTP API（CLI/服务名 gpu-control）。\n\n"
+                "ComputeDeck 多节点算力控制面 HTTP API（CLI/服务名 gpu-control）。\n\n"
                 f"**鉴权**：mode=`{auth['mode']}`；"
                 f"{auth['note']}\n\n"
                 "交互文档：`/api/docs` · 机器目录：`/api` · Agent：`docs/ai-接入.md`"

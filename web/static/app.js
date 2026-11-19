@@ -34,15 +34,15 @@ const VIEW_TITLE = {
 
 /** 每页一句话目的：显示在标题下方，避免用户猜这页该做什么 */
 const VIEW_META = {
-  actions: { group: "总览", purpose: "一眼看清集群状态；具体操作去对应页面" },
-  cluster: { group: "集群", purpose: "哪台空闲、哪台异常；隔离、探活或打开终端" },
-  workloads: { group: "集群", purpose: "部署 Job、启停任务、队列与租约" },
-  endpoints: { group: "集群", purpose: "把推理端口暴露成稳定入口；Edge / LiteLLM / 远程接入" },
-  models: { group: "资源", purpose: "拉取与校验模型，再把参数交给任务" },
-  toolkits: { group: "资源", purpose: "探测与安装训练 / 推理依赖" },
-  ops: { group: "运维", purpose: "对多节点执行命令与 Python 脚本" },
-  terminal: { group: "运维", purpose: "连上单台节点的 SSH 终端" },
-  config: { group: "系统", purpose: "左侧按日常配置 / 检查 / 接入与参考分页；保存后刷新就绪状态" },
+  actions: { group: "总览", purpose: "集群状态总览；具体操作在对应页面" },
+  cluster: { group: "集群", purpose: "查看每台机器的状态，可隔离、探活或打开终端" },
+  workloads: { group: "集群", purpose: "部署和启停任务，管理排队与占卡" },
+  endpoints: { group: "集群", purpose: "配置推理入口和远程访问" },
+  models: { group: "资源", purpose: "下载并校验模型文件" },
+  toolkits: { group: "资源", purpose: "检查或安装训练、推理依赖" },
+  ops: { group: "运维", purpose: "在多台机器上批量执行命令" },
+  terminal: { group: "运维", purpose: "在浏览器里登录单台机器" },
+  config: { group: "系统", purpose: "修改集群配置、检查环境、接入 AI 与查看参考" },
 };
 
 /** 顶层导航分组：现在每一项都是独立页面，不再共用子页签 */
@@ -911,14 +911,15 @@ async function refreshAuthStatus() {
       : "OpenID Connect";
   }
   if (hint && data.enabled) {
+    const days = Math.max(1, Math.round(Number(data.session_ttl_hours || 168) / 24));
     if (data.mode === "oidc") {
       hint.textContent = oidcReady
-        ? `模式 OIDC · 会话 ${data.session_ttl_hours || 168}h`
-        : "模式 OIDC，但尚未配齐 issuer/client_id（见 cluster.control.auth.oidc）";
+        ? `企业登录（OIDC） · 登录后保持 ${days} 天`
+        : "已启用 OIDC，但 issuer / client_id 还没配齐（见 cluster.control.auth.oidc）";
     } else {
       hint.textContent = data.password_configured
-        ? `模式 ${data.mode} · 会话 ${data.session_ttl_hours || 168}h`
-        : "已启用鉴权，但尚未设置密码（gpu-control auth set-password）";
+        ? `密码登录 · 登录后保持 ${days} 天`
+        : "鉴权已开启，但还没有设置密码（gpu-control auth set-password）";
     }
   }
   const pwInput = document.getElementById("auth-password");
@@ -1171,7 +1172,7 @@ function renderFreshnessBanner(data) {
     root.hidden = false;
     root.dataset.tone = "warn";
     if (titleEl) titleEl.textContent = `${stale.length} 个节点快照过期`;
-    if (detailEl) detailEl.textContent = `${stale.join("、")}；自动巡检会拉取 GPU 快照，也可点「刷新 GPU」。`;
+    if (detailEl) detailEl.textContent = `${stale.join("、")}；自动巡检会拉取 GPU 快照，也可以点「刷新占用」。`;
     return;
   }
   if (summary.nodes_unknown) {
@@ -1436,7 +1437,7 @@ function renderPool(overview) {
   const mosaic = document.getElementById("api-mosaic");
   if (!endpoints.length) {
     mosaic.innerHTML =
-      '<div class="empty-state"><strong>暂无上游推理端点</strong><p>先启动 Job 或刷新 GPU 快照，按当前 api.base_port 生成上游。</p></div>';
+      '<div class="empty-state"><strong>暂无上游推理端点</strong><p>先启动 Job 或更新 GPU 快照，会按当前 api.base_port 生成上游。</p></div>';
   } else {
     const groups = new Map();
     for (const ep of endpoints) {
@@ -2242,7 +2243,7 @@ function renderNodes(nodes) {
   if (!root) return;
   if (!nodes?.length) {
     root.innerHTML =
-      '<div class="empty-state"><strong>暂无节点快照</strong><p>先在「配置 → 配置向导 → 节点清单」添加节点，再刷新 GPU。</p></div>';
+      '<div class="empty-state"><strong>暂无节点快照</strong><p>先在「配置 → 配置向导 → 节点清单」添加节点，再更新 GPU 占用。</p></div>';
     renderDrawer();
     return;
   }
@@ -3207,7 +3208,7 @@ function applyOverview(data) {
     strategy === "inference-pool"
       ? "多节点 API 水平扩展"
       : strategy === "multi-node"
-        ? "多节点 GPU 控制面"
+        ? "多节点算力控制面"
         : strategy;
   const ctrl = data.control || {};
   const ctrlHost = ctrl.host || ctrl.ansible_host || "";
@@ -3814,9 +3815,9 @@ function renderQuality(q) {
     if (!el) return;
     el.textContent = `${text}${ageLabel(item)}`;
     el.title = !item || !item.total
-      ? `${label} 尚未探测；点「全部复检」重新采集`
+      ? `${label} 尚未探测；点「重新检测」重新采集`
       : item.fresh === false
-        ? `${label} 最近一次采集在${item.age_sec != null ? formatAgeSec(item.age_sec) + "前" : "未知时间"}，数据已过期；点「全部复检」更新`
+        ? `${label} 最近一次采集在${item.age_sec != null ? formatAgeSec(item.age_sec) + "前" : "未知时间"}，数据已过期；点「重新检测」更新`
         : `${label} 数据在有效期内`;
   };
   const sshText = ssh.total ? `${ssh.ok_count ?? 0}/${ssh.total}` : "未探测";
@@ -3861,15 +3862,15 @@ async function runAllHealthChecks() {
         results.push(`${name}✓`);
       } catch (err) {
         results.push(`${name}✗`);
-        log(`复检 ${name}: ${err.message || err}`);
+        log(`检测 ${name}: ${err.message || err}`);
       }
     }
     await loadQuality();
     await refresh(false, { light: true }).catch(() => { });
     const failed = results.filter((x) => x.endsWith("✗"));
-    if (failed.length) toastBad(`部分复检失败：${results.join(" ")}`);
-    else toastOk(`复检完成：${results.join(" ")}`);
-    log(`全部复检：${results.join(" ")}`);
+    if (failed.length) toastBad(`部分检测失败：${results.join(" ")}`);
+    else toastOk(`检测完成：${results.join(" ")}`);
+    log(`重新检测：${results.join(" ")}`);
   } finally {
     setBusy(false);
     if (btn) btn.disabled = false;
@@ -5796,7 +5797,7 @@ async function boot() {
     if (jump) setView(jump.dataset.viewJump);
   });
   document.getElementById("btn-full-sync").addEventListener("click", () => runOneclick("full-sync"));
-  on("btn-load-quality", "click", () => runAllHealthChecks().catch((err) => actionError("全部复检", err)));
+  on("btn-load-quality", "click", () => runAllHealthChecks().catch((err) => actionError("重新检测", err)));
   on("btn-quick-refresh", "click", () => {
     const btn = $("btn-refresh");
     if (btn) btn.click();
@@ -7179,12 +7180,70 @@ function appendAssistantStreamingMsg() {
   body.innerHTML = assistantThinkingHtml();
   const steps = document.createElement("div");
   steps.className = "assistant-steps";
+  steps.dataset.expanded = "true";
   steps.hidden = true;
+  steps.innerHTML = `<button type="button" class="assistant-steps-toggle" aria-expanded="true">
+      <span class="assistant-steps-summary">工具步骤</span>
+      <span class="assistant-steps-action">收起</span>
+    </button>
+    <div class="assistant-steps-list"></div>`;
+  const toggle = steps.querySelector(".assistant-steps-toggle");
+  toggle?.addEventListener("click", () => {
+    const expanded = steps.dataset.expanded !== "false";
+    steps.dataset.expanded = expanded ? "false" : "true";
+    toggle.setAttribute("aria-expanded", expanded ? "false" : "true");
+    const action = steps.querySelector(".assistant-steps-action");
+    if (action) action.textContent = expanded ? "展开" : "收起";
+  });
   wrap.append(body, steps);
   el.appendChild(wrap);
   thread.appendChild(el);
   scrollAssistantThread(true);
   return el;
+}
+
+function assistantStepsList(stepsEl) {
+  return stepsEl?.querySelector(".assistant-steps-list") || stepsEl;
+}
+
+function assistantStepsStatus(stepsEl) {
+  const rows = [...(stepsEl?.querySelectorAll(".assistant-step") || [])];
+  const count = (state) => rows.filter((row) => row.dataset.state === state).length;
+  return {
+    total: rows.length,
+    failed: count("failed") + count("expired") + count("rejected"),
+    pending: count("pending") + count("armed"),
+    running: count("running"),
+    done: count("done"),
+  };
+}
+
+function updateAssistantStepsSummary(stepsEl, { autoCollapse = false } = {}) {
+  if (!stepsEl) return;
+  const { total, failed, pending, running, done } = assistantStepsStatus(stepsEl);
+  if (!total) {
+    stepsEl.remove();
+    return;
+  }
+  const summary = stepsEl.querySelector(".assistant-steps-summary");
+  if (summary) {
+    summary.textContent = failed
+      ? `${total} 步 · ${failed} 个失败`
+      : running
+        ? `执行中 · ${total} 步`
+        : pending
+          ? `${total} 步 · ${pending} 个待确认`
+          : `已执行 ${total} 步`;
+    summary.dataset.tone = failed ? "bad" : running || pending ? "warn" : done === total ? "ok" : "";
+  }
+  const busy = running > 0 || pending > 0;
+  if (autoCollapse && !busy && total > 2) {
+    stepsEl.dataset.expanded = "false";
+    const toggle = stepsEl.querySelector(".assistant-steps-toggle");
+    if (toggle) toggle.setAttribute("aria-expanded", "false");
+    const action = stepsEl.querySelector(".assistant-steps-action");
+    if (action) action.textContent = "展开";
+  }
 }
 
 function appendAssistantStep(stepsEl, label, state, actionId = "") {
@@ -7194,10 +7253,12 @@ function appendAssistantStep(stepsEl, label, state, actionId = "") {
   row.className = "assistant-step";
   row.dataset.state = state;
   if (actionId) row.dataset.actionId = actionId;
+  const meta = state === "done" ? "" : ASSISTANT_APPROVAL_STATUS[state] || "已执行";
   row.innerHTML = `<span class="assistant-step-icon" aria-hidden="true"></span>
     <span class="assistant-step-label">${escapeHtml(label || "工具")}</span>
-    <span class="assistant-step-meta">${ASSISTANT_APPROVAL_STATUS[state] || "已执行"}</span>`;
-  stepsEl.appendChild(row);
+    <span class="assistant-step-meta">${meta}</span>`;
+  assistantStepsList(stepsEl).appendChild(row);
+  updateAssistantStepsSummary(stepsEl);
   scrollAssistantThread();
 }
 
@@ -7327,7 +7388,8 @@ function markAssistantStepForAction(actionId, state, text) {
   if (!row) return;
   row.dataset.state = state;
   const meta = row.querySelector(".assistant-step-meta");
-  if (meta) meta.textContent = text || ASSISTANT_APPROVAL_STATUS[state] || "";
+  if (meta) meta.textContent = text || (state === "done" ? "" : ASSISTANT_APPROVAL_STATUS[state] || "");
+  updateAssistantStepsSummary(row.closest(".assistant-steps"));
 }
 
 function markAssistantApproval(card, state, text) {
@@ -8307,7 +8369,7 @@ async function sendAssistant(text) {
         warn.textContent = String(data.warning);
         bubble.appendChild(warn);
       }
-      if (bubbleSteps && !bubbleSteps.children.length) bubbleSteps.remove();
+      if (bubbleSteps) updateAssistantStepsSummary(bubbleSteps, { autoCollapse: true });
       scrollAssistantThread();
     } else {
       appendAssistantMsg("bot", reply, { markdown: true, warning: data?.warning });

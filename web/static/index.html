@@ -5,10 +5,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ComputeDeck</title>
-  <link rel="icon" href="static/logo.svg" type="image/svg+xml" />
+  <link rel="icon" href="static/logo.svg?v=__UI_VERSION__.dash38" type="image/svg+xml" />
   <link rel="stylesheet" href="static/vendor/xterm/xterm-6.1.0.css" />
-  <link rel="stylesheet" href="static/tokens.css?v=__UI_VERSION__.dash35" />
-  <link rel="stylesheet" href="static/style.css?v=__UI_VERSION__.dash35" />
+  <link rel="stylesheet" href="static/tokens.css?v=__UI_VERSION__.dash38" />
+  <link rel="stylesheet" href="static/style.css?v=__UI_VERSION__.dash38" />
   <script src="static/theme-boot.js?v=__UI_VERSION__"></script>
 </head>
 
@@ -16,7 +16,7 @@
   <div class="layout">
     <aside class="rail">
       <div class="rail-brand">
-        <img class="logo" src="static/logo.svg" width="42" height="42" alt="ComputeDeck" />
+        <img class="logo" src="static/logo.svg?v=__UI_VERSION__.dash38" width="42" height="42" alt="ComputeDeck" />
         <div>
           <div class="logo-title">ComputeDeck</div>
           <div class="logo-sub" id="ui-version">v__UI_VERSION__</div>
@@ -66,9 +66,9 @@
     <div class="main">
       <header class="topbar">
         <div class="topbar-copy">
-          <p class="eyebrow" id="strategy-line">GPU 控制面</p>
+          <p class="eyebrow" id="strategy-line">算力控制面</p>
           <h1 id="view-title" aria-live="polite">看板</h1>
-          <p class="page-purpose" id="view-purpose">一眼看清集群状态；具体操作去对应页面</p>
+          <p class="page-purpose" id="view-purpose">集群状态总览；具体操作在对应页面</p>
         </div>
         <div class="topbar-actions">
           <label class="switch" title="自动刷新总览">
@@ -78,7 +78,7 @@
           </label>
           <button id="btn-doctor" class="ghost" data-keep-enabled="1" data-action="1">自检</button>
           <button id="btn-api-health" class="ghost" data-keep-enabled="1" data-action="1">探测 API</button>
-          <button id="btn-refresh" class="primary" data-keep-enabled="1" data-action="1">刷新 GPU</button>
+          <button id="btn-refresh" class="primary" data-keep-enabled="1" data-action="1">刷新占用</button>
           <button type="button" id="btn-notices" class="ghost notices-bell" data-keep-enabled="1" aria-expanded="false"
             aria-controls="notices-pop" title="公告">
             公告<span id="notices-badge" class="notices-badge" hidden>0</span>
@@ -103,7 +103,7 @@
           </div>
           <div class="btn-row">
             <button type="button" id="btn-liveness-check" class="ghost tiny" data-keep-enabled="1">立即探活</button>
-            <button type="button" id="btn-fresh-refresh" class="ghost tiny" data-keep-enabled="1">刷新 GPU</button>
+            <button type="button" id="btn-fresh-refresh" class="ghost tiny" data-keep-enabled="1">刷新占用</button>
           </div>
         </div>
         <nav class="page-toc" id="dash-toc" aria-label="看板子页" role="tablist">
@@ -137,7 +137,7 @@
                 <header class="panel-h">
                   <h2 id="dash-health-title">集群健康</h2>
                   <button id="btn-load-quality" class="ghost tiny" data-keep-enabled="1"
-                    title="重新采集 SSH / API / 互通 / 主机指标后重算">全部复检</button>
+                    title="重新采集 SSH / API / 互通 / 主机指标后重算">重新检测</button>
                 </header>
                 <p class="meta" id="quality-updated">同步后更新评分与资源</p>
                 <div class="quality-kpis">
@@ -197,7 +197,7 @@
                 <h3>集群运维</h3>
                 <div class="toolbar dash-ops">
                   <button id="btn-quick-refresh" class="primary" data-action="1"
-                    title="采集全部节点的 GPU 快照（Ansible，可能数十秒）">刷新 GPU</button>
+                    title="采集全部节点的 GPU 快照（Ansible，可能数十秒）">刷新占用</button>
                   <button id="btn-quick-health" class="ghost" data-action="1" title="探测各节点推理 API 健康并更新端点池">探测
                     API</button>
                   <button class="ghost" data-oneclick="diagnose" data-action="1"
@@ -310,7 +310,7 @@
                 <button id="btn-toolkit-probe" class="ghost tiny" data-keep-enabled="1" data-action="1">探测</button>
               </div>
             </div>
-            <p class="meta">按捆绑或单包装依赖；默认打全部节点，可先选一台再探测 / 安装。</p>
+            <p class="meta">可以按套件安装，也可以单独装某一项；默认对全部节点操作，也可以先选一台再探测或安装。</p>
             <div class="toolkit-section-label">捆绑安装</div>
             <div id="toolkit-bundles" class="chip-row toolkit-bundle-row"></div>
             <div class="toolkit-section-label">工具目录</div>
@@ -1119,7 +1119,7 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
                 <div>
                   <p class="config-page-kicker">配置 · 5 / 6</p>
                   <h2 id="config-title-auth">鉴权与访问</h2>
-                  <p class="meta">浏览器用密码或 OIDC（企业 SSO）；脚本 / MCP / 插件用 API Token。公网或非回环绑定前必须开启鉴权。外层还可加 Cloudflare Access，不替代本页配置。</p>
+                  <p class="meta">浏览器用密码或 OIDC（企业 SSO）；从插件打开的看板用一次性票据换 Session。脚本 / MCP / 插件用 API Token。公网或非回环绑定前必须开启鉴权。外层还可加 Cloudflare Access，不替代本页配置。</p>
                 </div>
                 <div class="btn-row">
                   <a class="ghost tiny" href="/help/接入拓扑与鉴权/" target="_blank" rel="noopener">拓扑与鉴权</a>
@@ -1133,6 +1133,14 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
                     <button id="btn-save-auth" class="primary tiny" data-keep-enabled="1">保存</button>
                   </div>
                 </div>
+                <details class="fold" open>
+                  <summary>谁能免密</summary>
+                  <div class="kv"><b>主控本机 · 插件</b> <span>自动读本机 Token，免密</span></div>
+                  <div class="kv"><b>主控本机 · 看板</b> <span>从插件点开走一次性票据；直接输网址要密码 / OIDC</span></div>
+                  <div class="kv"><b>笔记本 / 内网 / 公网</b> <span>浏览器需要密码或 OIDC；外层还可加 Access / Tailscale</span></div>
+                  <div class="kv"><b>工作节点</b> <span>不需要网页密码，只走 SSH</span></div>
+                  <p class="meta">票据 90 秒有效、只能使用一次；它只解决“插件已登录、看板又弹登录”，不会让其他设备免密。</p>
+                </details>
                 <div class="auth-password-box">
                   <div class="kv"><b>登录密码</b> <span id="auth-password-state">检测中…</span></div>
                   <div class="kv"><b>OAuth / OIDC</b> <span id="auth-oidc-state">检测中…</span></div>
@@ -1233,18 +1241,18 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
                   </header>
                   <div class="remote-scenario-grid">
                     <article class="remote-scenario">
-                      <h3>本机总控</h3>
-                      <p>已在总控机上（含 CodeLab）时，打开 <code>http://127.0.0.1:8787</code>。VS Code 插件一般会自动用本机密钥登录，不用粘贴。</p>
+                      <h3>本机主控</h3>
+                      <p>已在主控机上（含 CodeLab）时，打开 <code>http://127.0.0.1:8787</code>。VS Code 插件一般会自动用本机密钥登录，不用粘贴。</p>
                     </article>
                     <article class="remote-scenario">
                       <h3>SSH 端口转发</h3>
-                      <p>笔记本访问总控时最稳妥：</p>
+                      <p>笔记本访问主控时最稳妥：</p>
                       <pre class="snippet remote-snippet" id="remote-ssh-snippet">ssh -N -L 8787:127.0.0.1:8787 &lt;control&gt;</pre>
-                      <p class="meta">然后浏览器打开本机 8787；插件把总控地址指到隧道。</p>
+                      <p class="meta">然后浏览器打开本机 8787；插件把主控地址指到隧道。</p>
                     </article>
                     <article class="remote-scenario">
-                      <h3>IDE 远程进总控</h3>
-                      <p>工作区在总控仓库时，插件默认连本机 8787，并自动用本机密钥，一般不用再做端口转发。不会用就点插件里的「怎么用」。</p>
+                      <h3>IDE 远程进主控</h3>
+                      <p>工作区在主控仓库里时，插件默认连接本机 8787 并使用本机密钥，一般不需要端口转发。接入方式见插件里的「怎么用」。</p>
                     </article>
                     <article class="remote-scenario">
                       <h3>集群外团队</h3>
@@ -1429,7 +1437,7 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
                 <div>
                   <p class="config-page-kicker">参考</p>
                   <h2 id="config-title-docs">文档手册</h2>
-                  <p class="meta">上手步骤与常用命令；完整手册在控制面 /help，不另开宣传站。</p>
+                  <p class="meta">上手步骤与常用命令。完整手册在控制面 /help。</p>
                 </div>
               </header>
               <div class="panel">
@@ -1458,11 +1466,11 @@ gpu-control ui --background</pre>
                 <div class="btn-row doc-entry-row">
                   <a class="btn ghost" href="/help/" target="_blank" rel="noopener">打开手册</a>
                   <a class="btn ghost" href="/api/docs" target="_blank" rel="noopener">API 试调</a>
-                  <a class="btn ghost" href="/api" target="_blank" rel="noopener">能力目录</a>
+                  <a class="btn ghost" href="/api" target="_blank" rel="noopener">接口目录</a>
                 </div>
-                <p class="meta" style="margin-top:10px">端口心智：控制面 <code>:8787</code> · 推理主入口 <code>:18080</code>（Edge）·
+                <p class="meta" style="margin-top:10px">端口说明：控制面 <code>:8787</code> · 推理主入口 <code>:18080</code>（Edge）·
                   可选
-                  LiteLLM <code>:4000</code>。节点 GPU 端口只给入口当上游。</p>
+                  LiteLLM <code>:4000</code>。节点的 GPU 端口只给入口当上游。</p>
                 <p class="meta">快捷键：<kbd>1</kbd>–<kbd>9</kbd> 切页 · <kbd>←</kbd>/<kbd>→</kbd> 翻页 ·
                   <kbd>r</kbd> 刷新 · <kbd>h</kbd> 探测 API · <kbd>?</kbd> 帮助。
                 </p>
@@ -1474,7 +1482,7 @@ gpu-control ui --background</pre>
                 <div>
                   <p class="config-page-kicker">参考</p>
                   <h2 id="config-title-raw">高级配置</h2>
-                  <p class="meta">只在排查路径与查找顺序时使用；日常配置请回到左侧分页。</p>
+                  <p class="meta">这一页只用来查路径和查找顺序；日常配置请回到左侧分页。</p>
                 </div>
               </header>
               <div class="panel">
@@ -1620,7 +1628,7 @@ gpu-control ui --background</pre>
         <dt><kbd>←</kbd> <kbd>→</kbd></dt>
         <dd>上一页 / 下一页</dd>
         <dt><kbd>r</kbd></dt>
-        <dd>刷新 GPU 快照</dd>
+        <dd>更新 GPU 快照</dd>
         <dt><kbd>h</kbd></dt>
         <dd>探测 API 健康</dd>
         <dt><kbd>?</kbd></dt>
@@ -1647,20 +1655,21 @@ gpu-control ui --background</pre>
       <div id="auth-password-box">
         <label class="field">
           <span>密码</span>
-          <input id="auth-password" type="password" minlength="8" placeholder="管理员密码" autocomplete="current-password"
+          <input id="auth-password" type="password" minlength="8" placeholder="控制面密码" autocomplete="current-password"
             required />
         </label>
-        <button type="submit" class="primary" id="auth-submit" data-keep-enabled="1">进入控制台</button>
+        <button type="submit" class="primary" id="auth-submit" data-keep-enabled="1">登录</button>
       </div>
       <p class="meta bad" id="auth-error" hidden></p>
-      <p class="meta">API / MCP 可用
-        <code>Authorization: Bearer &lt;token&gt;</code>（<code>gpu-control auth issue-token</code>）
+      <p class="meta">从 ComputeDeck 插件打开时通常会自动登录；如果看到这一页，回插件重新点「打开完整看板」。</p>
+      <p class="meta">脚本和 MCP 客户端使用
+        <code>Authorization: Bearer &lt;token&gt;</code>，Token 由 <code>gpu-control auth issue-token</code> 生成。
       </p>
     </form>
   </div>
   <script src="static/vendor/xterm/xterm-6.1.0.min.js"></script>
   <script src="static/xterm-fit.js?v=__UI_VERSION__"></script>
-  <script src="static/app.js?v=__UI_VERSION__.dash35"></script>
+  <script src="static/app.js?v=__UI_VERSION__.dash38"></script>
 </body>
 
 </html>

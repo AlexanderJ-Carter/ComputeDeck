@@ -1,6 +1,6 @@
 # 贡献指南
 
-**ComputeDeck**（命令：`gpu-control`）是多节点 GPU 控制面，配置驱动，方便在不同集群间复用。
+**ComputeDeck**（命令：`gpu-control`）是多节点算力控制面，配置驱动，方便在不同集群间复用。
 
 仓库：<https://github.com/AlexanderJ-Carter/ComputeDeck>  
 参与前请阅读 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) 与 [GOVERNANCE.md](GOVERNANCE.md)。

@@ -53,7 +53,7 @@
   <text x="460" y="346" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="11" fill="#64748b">leases · queue · endpoint health · runlog</text>
 
   <g filter="url(#shadow)"><rect x="700" y="100" width="228" height="300" rx="14" fill="#fff" stroke="#e2e8f0"/></g>
-  <text x="814" y="132" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="14" font-weight="700" fill="#334155">GPU Workers</text>
+  <text x="814" y="132" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="14" font-weight="700" fill="#334155">Worker Nodes</text>
   <rect x="720" y="156" width="188" height="52" rx="10" fill="#fff7ed" stroke="#fdba74"/>
   <text x="814" y="178" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="13" font-weight="600" fill="#9a3412">gpu-1</text>
   <text x="814" y="196" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="11" fill="#c2410c">Job · train / serve</text>

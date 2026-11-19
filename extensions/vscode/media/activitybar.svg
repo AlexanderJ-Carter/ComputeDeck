@@ -1,7 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" role="img" aria-hidden="true">
-  <!-- Stacked compute deck — monochrome currentColor for activity bar theming -->
-  <rect x="4" y="4.5" width="16" height="4" rx="1.25" fill="currentColor"/>
-  <rect x="5.5" y="10" width="13" height="4" rx="1.25" fill="currentColor" opacity="0.82"/>
-  <rect x="7" y="15.5" width="10" height="4" rx="1.25" fill="currentColor" opacity="0.64"/>
-  <circle cx="17.25" cy="6.5" r="1.2" fill="currentColor"/>
+  <!-- Stacked compute layers wired to nodes; monochrome for activity bar theming -->
+  <rect x="3" y="5" width="11" height="3.2" rx="1.1" fill="currentColor"/>
+  <rect x="4.4" y="10.2" width="10" height="3.2" rx="1.1" fill="currentColor" opacity="0.82"/>
+  <rect x="5.8" y="15.4" width="8.6" height="3.2" rx="1.1" fill="currentColor" opacity="0.64"/>
+  <path d="M17.4 6.6V17.4" stroke="currentColor" stroke-width="1.2" stroke-opacity="0.45" stroke-dasharray="1.6 1.8" stroke-linecap="round"/>
+  <circle cx="17.4" cy="6.6" r="1.5" fill="currentColor"/>
+  <circle cx="17.4" cy="11.8" r="1.15" fill="currentColor" opacity="0.9"/>
+  <circle cx="17.4" cy="17.4" r="1.15" fill="currentColor" opacity="0.7"/>
 </svg>

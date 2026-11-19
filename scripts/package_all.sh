@@ -16,6 +16,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PY="${PYTHON:-$ROOT/.venv/bin/python}"
 VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
+EXT_VERSION="$("$PY" -c 'import json; print(json.load(open("'$ROOT'/extensions/vscode/package.json"))["version"])' 2>/dev/null || echo "$VERSION")"
 IMAGE_BASE="${IMAGE_BASE:-ghcr.io/alexanderj-carter/computedeck}"
 OUT="${OUT_DIR:-$ROOT/dist/$VERSION}"
 WITH_IMAGE=1
@@ -53,7 +54,12 @@ fi
 
 if [[ "$WITH_CHECK" == "1" ]]; then
   echo "== 版本一致性 + 离线检查 =="
-  "$PY" scripts/release_notes.py --check "$VERSION"
+  if [[ "$EXT_VERSION" != "$VERSION" ]]; then
+    echo "!! 扩展版本 $EXT_VERSION ≠ 产品版本 $VERSION（本地打包允许，发版前会收束）" >&2
+    "$PY" scripts/release_notes.py --check "$VERSION" --allow-extension-mismatch
+  else
+    "$PY" scripts/release_notes.py --check "$VERSION"
+  fi
   ./scripts/check.sh
 fi
 
@@ -67,7 +73,7 @@ git archive --format=tar.gz --prefix="computedeck-$VERSION/" -o "$SRC" HEAD
 echo "   $SRC"
 
 echo "== VS Code 扩展（VSIX） =="
-VSIX="$OUT/computedeck-vscode-$VERSION.vsix"
+VSIX="$OUT/computedeck-vscode-$EXT_VERSION.vsix"
 (
   cd extensions/vscode
   npx --yes @vscode/vsce package --allow-missing-repository --out "$VSIX"
@@ -112,6 +118,31 @@ if [[ "$WITH_IMAGE" == "1" ]]; then
   fi
 fi
 
+echo "== 构建清单 =="
+MANIFEST="$OUT/manifest.json"
+"$PY" - "$OUT" "$VERSION" "$EXT_VERSION" <<'PY'
+import json, os, sys, subprocess
+from datetime import datetime, timezone
+from pathlib import Path
+
+out_dir, version, ext_version = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+try:
+    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+except Exception:
+    commit = "unknown"
+doc = {
+    "product": "ComputeDeck",
+    "cli": "gpu-control",
+    "version": version,
+    "extension_version": ext_version,
+    "commit": commit,
+    "built_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "artifacts": sorted(p.name for p in out_dir.iterdir() if p.is_file() and p.name != "SHA256SUMS"),
+}
+(out_dir / "manifest.json").write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+PY
+echo "   $MANIFEST"
+
 echo "== 校验和 =="
 SUMS="$OUT/SHA256SUMS"
 : > "$SUMS"
@@ -128,6 +159,9 @@ SUMS="$OUT/SHA256SUMS"
   done
 )
 echo "   $SUMS"
+
+echo "== 校验产物 =="
+"$PY" scripts/verify_release.py "$OUT"
 
 echo
 echo "== 完成 =="

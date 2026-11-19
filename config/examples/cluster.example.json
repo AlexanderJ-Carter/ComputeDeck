@@ -96,7 +96,15 @@
     "nginx_listen": 18080,
     "litellm_upstream": "nodes",
     "nginx_upstream": "litellm",
-    "litellm_edge_url": ""
+    "litellm_edge_url": "",
+    "nginx": {
+      "apply_path": "",
+      "ui_url": "",
+      "test_cmd": "nginx -t",
+      "reload_cmd": "nginx -s reload",
+      "sync_interval_sec": 15,
+      "backup": true
+    }
   },
   "watchdog": {
     "enabled": true,

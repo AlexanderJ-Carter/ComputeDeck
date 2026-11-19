@@ -30,3 +30,10 @@ services:
       # 本机 HTTP 默认 0；反代 HTTPS 时设 GPU_CONTROL_UI_SECURE=1
       GPU_CONTROL_UI_SECURE: "${GPU_CONTROL_UI_SECURE:-0}"
     restart: unless-stopped
+    init: true
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -18,7 +18,9 @@ import os
 import re
 import secrets
 import shutil
+import signal
 import subprocess
+import sys
 import time
 from pathlib import Path
 from urllib.parse import quote, urlparse
@@ -28,10 +30,9 @@ from paths import LOCAL_DIR, PROJECT_DIR, SCRIPTS_DIR, STATE_DIR, VENV_PYTHON, c
 from process_util import pid_alive, pid_matches, terminate_pid
 from render_gateway import build_payload, write_artifacts
 
-import sys
-
 sys.path.insert(0, str(PROJECT_DIR / "lib"))
 from ingress_tls import normalize_ingress, probe_tls, public_base_url  # noqa: E402
+from nginx_ops import apply_text, file_sha256, normalize_settings, normalize_text, run_command, sha256_text, status_for  # noqa: E402
 
 EDGE_PID = STATE_DIR / "ingress-edge.pid"
 EDGE_LOG = STATE_DIR / "ingress-edge.log"
@@ -42,6 +43,9 @@ LITELLM_RUNTIME = STATE_DIR / "gateway" / "litellm-runtime.yaml"
 LITELLM_START_STATE = STATE_DIR / "gateway" / "litellm-start.json"
 OUT_DIR = STATE_DIR / "gateway"
 LITELLM_MASTER_KEY_FILE = LOCAL_DIR / "secrets" / "litellm_master_key"
+NGINX_SYNC_PID = STATE_DIR / "ingress-nginx-sync.pid"
+NGINX_SYNC_LOG = STATE_DIR / "ingress-nginx-sync.log"
+NGINX_SYNC_STATE = STATE_DIR / "gateway" / "nginx-sync.json"
 
 
 def litellm_master_key_path() -> Path:
@@ -980,6 +984,19 @@ def status_payload() -> dict:
         litellm_public = f"http://{control['host']}:{litellm_port}"
     nginx_bin = shutil.which("nginx")
     artifact = OUT_DIR / "nginx-inference-pool.conf"
+    nginx_settings = _nginx_settings(gateway)
+    nginx_apply_path = str(nginx_settings.get("apply_path") or "").strip()
+    try:
+        artifact_text = artifact.read_text(encoding="utf-8") if artifact.is_file() else None
+    except OSError:
+        artifact_text = None
+    nginx_config = (
+        status_for(nginx_apply_path, artifact_text)
+        if nginx_apply_path
+        else {"path": "", "exists": False, "applied_hash": None, "expected_hash": sha256_text(artifact_text or ""), "in_sync": False}
+    )
+    nginx_sync_pid = _read_pid(NGINX_SYNC_PID)
+    nginx_sync_state = _read_nginx_state()
     ll_probe = _litellm_probe(gateway)
     litellm_listen_ok = _port_open("127.0.0.1", litellm_port)
     litellm_phase = _litellm_phase(
@@ -1010,6 +1027,24 @@ def status_payload() -> dict:
         artifact=artifact,
     )
     companions.append(_tls_companion(tls_status, ingress))
+    for row in companions:
+        if row.get("id") != "nginx":
+            continue
+        if nginx_apply_path:
+            in_sync = bool(nginx_config.get("in_sync"))
+            row.update(
+                state="applied" if in_sync else "drift",
+                label="配置已生效" if in_sync else "配置待应用",
+                ok=in_sync,
+                severity="ok" if in_sync else "warn",
+                detail=(
+                    f"{nginx_apply_path} · {(nginx_config.get('applied_hash') or 'missing')[:8]}"
+                    + (" · 自动跟随中" if nginx_sync_pid else "")
+                ),
+                action=None if in_sync else "gpu-control gateway nginx --apply",
+            )
+        elif nginx_bin:
+            row["detail"] = f"{nginx_bin} · 未配置 apply_path（只生成片段）"
     if edge_running:
         scheme = "https" if tls_status.get("ready") else "http"
         for row in companions:
@@ -1125,13 +1160,29 @@ def status_payload() -> dict:
             "path": nginx_bin,
             "artifact": str(artifact),
             "artifact_exists": artifact.is_file(),
+            "apply_path": nginx_apply_path or None,
+            "ui_url": str(nginx_settings.get("ui_url") or "").strip() or None,
+            "in_sync": bool(nginx_config.get("in_sync")),
+            "applied_hash": nginx_config.get("applied_hash"),
+            "config_hash": nginx_config.get("expected_hash"),
+            "auto_sync": bool(nginx_settings.get("auto_sync")),
+            "interval_sec": int(nginx_settings.get("interval_sec") or 15),
+            "sync_running": bool(nginx_sync_pid),
+            "sync_pid": nginx_sync_pid,
+            "last_sync": nginx_sync_state,
             "listen": int(gateway.get("nginx_listen") or ingress["port"]),
             "role": "alternative",
             "needed": kind == "nginx",
             "hint": (
                 "本集群用内置 Edge，无需安装 nginx"
-                if kind in {"edge", "both", "all"}
-                else "include state/gateway/nginx-inference-pool.conf 后 reload"
+                if kind in {"edge", "both", "all"} and not nginx_apply_path
+                else (
+                    "未配置 gateway.nginx.apply_path：当前只生成片段"
+                    if not nginx_apply_path
+                    else "配置与渲染结果一致"
+                    if nginx_config.get("in_sync")
+                    else "配置有变更未应用：gpu-control gateway nginx --apply"
+                )
             ),
         },
         "artifacts": sorted(p.name for p in OUT_DIR.glob("*")) if OUT_DIR.is_dir() else [],
@@ -1394,7 +1445,7 @@ def cmd_ensure(args: argparse.Namespace) -> int:
     if kind in {"edge", "litellm", "both", "all"}:
         _append_litellm_start(kind, gateway, results)
     if kind == "nginx":
-        results.append(cmd_nginx_apply_inner())
+        results.append(cmd_nginx_apply_inner(apply=True, listen=ingress["port"]))
     status = status_payload()
     ok = _results_ok(results) if results else status.get("ok", False)
     print(
@@ -1688,7 +1739,7 @@ def cmd_start(args: argparse.Namespace) -> int:
     if kind in {"edge", "litellm", "both", "all"}:
         _append_litellm_start(kind, gateway, results)
     if kind == "nginx":
-        results.append(cmd_nginx_apply_inner())
+        results.append(cmd_nginx_apply_inner(apply=True, listen=ingress["port"]))
     ok = _results_ok(results) if results else False
     print(json.dumps({"ok": ok, "kind": kind, "results": results, "status_hint": "gpu-control gateway status"}, ensure_ascii=False, indent=2))
     return 0 if ok else 1
@@ -1703,39 +1754,255 @@ def cmd_stop(args: argparse.Namespace) -> int:
             EDGE_STATUS.unlink()
     if kind in {"litellm", "both", "all"}:
         results.append(_stop_pidfile(LITELLM_PID, "litellm", expected=("litellm",)))
+    if kind in {"nginx-sync", "all"}:
+        results.append(_stop_pidfile(NGINX_SYNC_PID, "nginx-sync", expected=("gateway_ops.py",)))
     print(json.dumps({"ok": True, "results": results}, ensure_ascii=False, indent=2))
     return 0
 
 
-def cmd_nginx_apply_inner() -> dict:
+def _nginx_settings(gateway: dict | None = None) -> dict:
+    settings = normalize_settings(gateway if gateway is not None else _gateway_cfg())
+    raw_path = str(settings.get("apply_path") or "").strip()
+    if raw_path:
+        resolved = Path(expand_path(raw_path))
+        if not resolved.is_absolute():
+            resolved = PROJECT_DIR / resolved
+        settings["apply_path"] = str(resolved)
+    return settings
+
+
+def _render_nginx(listen: int | None = None) -> tuple[dict, str]:
+    payload = build_payload(listen=listen)
+    return payload, str((payload.get("snippets") or {}).get("nginx") or "")
+
+
+def _write_nginx_state(state: dict) -> None:
+    NGINX_SYNC_STATE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = NGINX_SYNC_STATE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, NGINX_SYNC_STATE)
+
+
+def _read_nginx_state() -> dict:
+    try:
+        return json.loads(NGINX_SYNC_STATE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def cmd_nginx_apply_inner(*, apply: bool = False, dry_run: bool = False, listen: int | None = None) -> dict:
+    """渲染并（可选）把 nginx 片段应用为系统配置。"""
+    payload, text = _render_nginx(listen)
     artifact = OUT_DIR / "nginx-inference-pool.conf"
-    if not artifact.is_file():
-        write_artifacts(build_payload())
-    nginx = shutil.which("nginx")
-    if not nginx:
-        return {
-            "ok": True,
-            "name": "nginx",
-            "applied": False,
-            "artifact": str(artifact),
-            "hint": "nginx 未安装：可用内置 edge（gpu-control gateway start --kind edge），或安装 nginx 后 include 该 conf",
-        }
-    # Non-root friendly: only validate syntax if a full config exists; otherwise report path.
-    return {
+    write_artifacts(payload)
+    settings = _nginx_settings()
+    apply_path = str(settings.get("apply_path") or "").strip()
+    base = {
         "ok": True,
         "name": "nginx",
-        "applied": False,
-        "binary": nginx,
         "artifact": str(artifact),
-        "hint": f"在 nginx.conf http{{}} 中 include {artifact}; 然后 nginx -t && nginx -s reload",
+        "sha256": sha256_text(normalize_text(text)),
+        "apply_path": apply_path or None,
+        "changed": False,
+        "applied": False,
+        "reloaded": False,
+        "upstreams": len(payload.get("upstreams") or []),
     }
+    if not apply_path:
+        base["hint"] = (
+            "只生成了片段。要自动生效，先配置 gateway.nginx.apply_path 指向 nginx 已 include 的文件，"
+            "再执行 gpu-control gateway nginx --apply"
+        )
+        return base
+    if not apply:
+        current = status_for(apply_path, text)
+        base.update(
+            changed=not current["in_sync"],
+            in_sync=current["in_sync"],
+            applied_hash=current["applied_hash"],
+            hint=(
+                "配置已是最新"
+                if current["in_sync"]
+                else "配置与当前渲染结果不一致；执行 gpu-control gateway nginx --apply 生效"
+            ),
+        )
+        return base
+    result = apply_text(apply_path, text, settings, dry_run=dry_run)
+    result.update(
+        name="nginx",
+        artifact=str(artifact),
+        apply_path=apply_path,
+        upstreams=len(payload.get("upstreams") or []),
+    )
+    _write_nginx_state(
+        {
+            "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "ok": bool(result.get("ok")),
+            "changed": bool(result.get("changed")),
+            "applied": bool(result.get("applied")),
+            "reloaded": bool(result.get("reloaded")),
+            "sha256": result.get("sha256"),
+            "path": apply_path,
+            "error": result.get("error"),
+            "upstreams": len(payload.get("upstreams") or []),
+            "mode": "apply",
+        }
+    )
+    return result
+
+
+def cmd_nginx_watch(args: argparse.Namespace) -> int:
+    """按固定间隔重渲染，配置变化时才校验并 reload。"""
+    settings = _nginx_settings()
+    apply_path = str(settings.get("apply_path") or "").strip()
+    if not apply_path:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": "未配置 gateway.nginx.apply_path",
+                    "hint": "先指定 nginx 已 include 的文件路径，再启动自动跟随",
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 2
+    try:
+        interval = max(5, int(getattr(args, "interval", None) or settings.get("interval_sec") or 15))
+    except (TypeError, ValueError):
+        interval = 15
+    reload_only = bool(getattr(args, "reload_only", False))
+    if getattr(args, "background", False):
+        if _read_pid(NGINX_SYNC_PID) is not None:
+            print(json.dumps({"ok": True, "already_running": True, "pid": _read_pid(NGINX_SYNC_PID)}, ensure_ascii=False, indent=2))
+            return 0
+        cmd = [sys.executable, str(Path(__file__).resolve()), "nginx", "--watch", "--interval", str(interval)]
+        if getattr(args, "listen", None):
+            cmd.extend(["--listen", str(args.listen)])
+        if reload_only:
+            cmd.append("--reload-only")
+        with NGINX_SYNC_LOG.open("a", encoding="utf-8") as log:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(PROJECT_DIR),
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        NGINX_SYNC_PID.write_text(f"{proc.pid}\n", encoding="utf-8")
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "pid": proc.pid,
+                    "path": apply_path,
+                    "interval_sec": interval,
+                    "log": str(NGINX_SYNC_LOG),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    stopping = {"value": False}
+
+    def _stop(*_args):
+        stopping["value"] = True
+
+    signal.signal(signal.SIGTERM, _stop)
+    signal.signal(signal.SIGINT, _stop)
+    mode = "reload-only" if reload_only else "watch"
+    print(f"nginx sync ({mode}): {apply_path} every {interval}s (pid {os.getpid()})", flush=True)
+    loaded_hash = None  # 启动后先对齐一次，确保共享配置已经加载
+    while not stopping["value"]:
+        try:
+            if reload_only:
+                current_hash = file_sha256(apply_path)
+                if current_hash and current_hash != loaded_hash:
+                    test_cmd = str(settings.get("test_cmd") or "").strip()
+                    test = run_command(test_cmd, timeout=30) if test_cmd else {"ok": True}
+                    reload_result = {"ok": False, "error": "跳过 reload"}
+                    if test.get("ok"):
+                        reload_cmd = str(settings.get("reload_cmd") or "").strip()
+                        reload_result = run_command(reload_cmd, timeout=30) if reload_cmd else {"ok": True}
+                    ok = bool(test.get("ok") and reload_result.get("ok"))
+                    loaded_hash = current_hash
+                    result = {
+                        "ok": ok,
+                        "changed": True,
+                        "applied": False,
+                        "reloaded": bool(reload_result.get("ok")),
+                        "sha256": current_hash,
+                        "error": (
+                            None
+                            if ok
+                            else f"nginx 校验失败：{test.get('stderr') or test.get('error')}"
+                            if not test.get("ok")
+                            else f"reload 失败：{reload_result.get('stderr') or reload_result.get('error')}"
+                        ),
+                    }
+                    print(
+                        f"{time.strftime('%H:%M:%S')} file changed → "
+                        f"{'reload' if ok else 'failed'} err={result['error'] or '-'}",
+                        flush=True,
+                    )
+                else:
+                    result = {"ok": True, "changed": False, "applied": False, "reloaded": False}
+                payload = {}
+            else:
+                payload, text = _render_nginx(getattr(args, "listen", None))
+                result = apply_text(apply_path, text, settings)
+                if result.get("changed"):
+                    write_artifacts(payload)
+                    print(
+                        f"{time.strftime('%H:%M:%S')} {'reload' if result.get('reloaded') else 'apply-failed'} "
+                        f"upstreams={len(payload.get('upstreams') or [])} err={result.get('error') or '-'}",
+                        flush=True,
+                    )
+            _write_nginx_state(
+                {
+                    "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "ok": bool(result.get("ok")),
+                    "changed": bool(result.get("changed")),
+                    "applied": bool(result.get("applied")),
+                    "reloaded": bool(result.get("reloaded")),
+                    "sha256": result.get("sha256"),
+                    "path": apply_path,
+                    "error": result.get("error"),
+                    "upstreams": len((payload or {}).get("upstreams") or []),
+                    "mode": mode,
+                }
+            )
+        except Exception as err:  # noqa: BLE001 - 常驻进程不能因单轮失败退出
+            _write_nginx_state(
+                {
+                    "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "ok": False,
+                    "path": apply_path,
+                    "error": str(err),
+                    "mode": mode,
+                }
+            )
+            print(f"{time.strftime('%H:%M:%S')} sync error: {err}", flush=True)
+        deadline = time.time() + interval
+        while not stopping["value"] and time.time() < deadline:
+            time.sleep(0.5)
+    print("nginx sync: stopped", flush=True)
+    return 0
 
 
 def cmd_nginx(args: argparse.Namespace) -> int:
-    write_artifacts(build_payload(listen=args.listen))
-    result = cmd_nginx_apply_inner()
+    if getattr(args, "watch", False):
+        return cmd_nginx_watch(args)
+    result = cmd_nginx_apply_inner(
+        apply=bool(getattr(args, "apply", False)),
+        dry_run=bool(getattr(args, "dry_run", False)),
+        listen=getattr(args, "listen", None),
+    )
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0
+    return 0 if result.get("ok") else 1
 
 
 def cmd_install_litellm_fragment(_: argparse.Namespace) -> int:
@@ -1789,11 +2056,21 @@ def main() -> int:
     p_start.set_defaults(func=cmd_start)
 
     p_stop = sub.add_parser("stop", help="停止入口进程")
-    p_stop.add_argument("--kind", choices=["edge", "litellm", "both", "all"], default="all")
+    p_stop.add_argument("--kind", choices=["edge", "litellm", "both", "nginx-sync", "all"], default="all")
     p_stop.set_defaults(func=cmd_stop)
 
-    p_nginx = sub.add_parser("nginx", help="写出 nginx conf 并给出 apply 提示")
+    p_nginx = sub.add_parser("nginx", help="渲染 nginx conf；可校验、reload 或持续跟随节点变化")
     p_nginx.add_argument("--listen", type=int, default=None)
+    p_nginx.add_argument("--apply", action="store_true", help="写入 gateway.nginx.apply_path 并 reload")
+    p_nginx.add_argument("--dry-run", action="store_true", help="只报告将写入的内容，不落盘")
+    p_nginx.add_argument("--watch", action="store_true", help="持续重渲染，变化时才校验并 reload")
+    p_nginx.add_argument(
+        "--reload-only",
+        action="store_true",
+        help="配合 --watch：不渲染，只监听 apply_path 文件变化并 reload（多台 nginx 共享配置时用）",
+    )
+    p_nginx.add_argument("--background", action="store_true", help="配合 --watch，后台运行并写 pid")
+    p_nginx.add_argument("--interval", type=int, default=None, help="--watch 的轮询秒数，默认读配置")
     p_nginx.set_defaults(func=cmd_nginx)
 
     p_ll = sub.add_parser("install-litellm", help="写出/安装 LiteLLM model_list 片段")

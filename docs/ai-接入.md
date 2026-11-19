@@ -1,8 +1,8 @@
 # AI / API / MCP 接入
 
-**ComputeDeck**（命令行 / MCP：`gpu-control`）给 Cursor、Claude Code、Codex、Continue、Windsurf 或其他 Agent 调配置、启停 Job、腾空节点、排队占卡时，按本页接入。
+如果要用 Cursor、Claude Code、Codex、Continue、Windsurf 或其他 Agent 修改配置、启停 Job、腾空节点或排队占卡，按本页接入。
 
-权威机器契约：`GET /api` · `GET /api/openapi.json` · 浏览器 `/api/docs`。  
+机器可读的权威契约：`GET /api` · `GET /api/openapi.json` · 浏览器 `/api/docs`。  
 仓库约定：[AGENTS.md](https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/AGENTS.md)；Claude Code：[CLAUDE.md](https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/CLAUDE.md)；Cursor Skill：[gpu-control/SKILL.md](https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/.cursor/skills/gpu-control/SKILL.md)。
 
 ## 鉴权
@@ -26,15 +26,17 @@ gpu-control auth status
 
 ## 控制面里的接入向导
 
-配置页有两块直接服务于 AI / MCP 接入：
+配置页有两处与 AI / MCP 接入相关。
 
-- **配置 → 就绪检查**：配置页左侧分为「配置 / 检查与接入 / 参考」三组，一次只显示一页；「就绪检查」汇总主控与鉴权、SSH 与节点、Job 与模型、入口与 LiteLLM、AI 与 MCP 状态，可跳回对应分页，或点「重新检测」重新读取。
-- **配置 → AI / MCP**：
-  - API 接入：Base URL、鉴权模式、Token 是否已配置；「测试 API」同时检查 `/api/health` 与 `/api`。
-  - MCP 接入：检查 `bin/gpu-control-mcp` 与 `mcp` 依赖；选择客户端后「复制 MCP 配置」会生成 / 轮换 Token 并复制可粘贴的 JSON / TOML。
-  - AI 助手：显示是否就绪、当前模型，直接打开设置。
+「配置 → 就绪检查」把主控与鉴权、SSH 与节点、Job 与模型、入口与 LiteLLM、AI 与 MCP 的状态汇总到一页。发现异常时可以直接跳到对应分页，也可以点「重新检测」重新读取。
 
-「让 AI 指导」会把当前步骤状态发给助手；助手读取 setup / overview / doctor 后给出下一步操作，只读操作直接执行，写操作先确认。
+「配置 → AI / MCP」分三部分：
+
+- API 接入检查 Base URL、鉴权模式和 Token 是否已配置；「测试 API」会同时请求 `/api/health` 和 `/api`。
+- MCP 接入检查 `bin/gpu-control-mcp` 和 `mcp` 依赖。选择客户端后，「复制 MCP 配置」会生成或轮换 Token，并复制可直接粘贴的 JSON 或 TOML。
+- AI 助手显示是否就绪和当前模型，也可以从这里打开设置。
+
+「让 AI 指导」会把当前步骤的状态交给助手。助手读取 setup、overview 和 doctor 后给出下一步操作，只读操作直接执行，写操作先确认。
 
 ---
 
@@ -59,9 +61,9 @@ open http://127.0.0.1:8787/api/docs
 
 ### 工具怎么选
 
-1. 有一等 `gc_*` → 用它（参数结构化，少拼 CLI）。
+1. 有对应的 `gc_*` 工具时优先使用，参数已经结构化，不必拼接 CLI。
 2. 调度 / 排障 / 入口 / 节点：`gc_queue` · `gc_lease` · `gc_diagnose` · `gc_gateway` · `gc_node`。
-3. 其余冷门子命令才用 `gc_cli`；完整路径表或 body → `gc_api_catalog` / `/api/openapi.json`。
+3. 冷门子命令再用 `gc_cli`；需要完整路径表或请求体时查 `gc_api_catalog` 或 `/api/openapi.json`。
 
 ### 交付形态
 
@@ -143,7 +145,7 @@ POST /api/assistant/execute
 
 ## 3. MCP（任意 Agent）
 
-同一 stdio 入口：`bin/gpu-control-mcp`。适用于 **Cursor / Claude Code / Codex / Continue / Windsurf** 以及其他支持 MCP 的客户端，不绑死某一 IDE。
+同一 stdio 入口：`bin/gpu-control-mcp`。适用于 **Cursor / Claude Code / Codex / Continue / Windsurf** 以及其他支持 MCP 的客户端，不依赖特定 IDE。
 
 主控安装：
 
@@ -188,10 +190,12 @@ Cursor 片段示例：
 
 容器里跑控制面时：MCP 进程仍建议在**宿主机**指向仓库/挂载树里的 `bin/gpu-control-mcp`，并用 `GPU_CONTROL_API_BASE=http://127.0.0.1:8787` 打到已映射的 UI；容器内调试用 `docker compose exec` 跑 CLI。
 
-教学与风险：MCP `instructions` 与 `GET /api/assistant/policy` 同源（`lib/assistant_policy.py`）。  
+MCP 给 Agent 的说明和风险分级来自同一份定义：`lib/assistant_policy.py`，同时用于 `instructions` 和 `GET /api/assistant/policy`。  
 UI 小助手：设置面板填 Base URL / 模型 / Key（`POST /api/assistant/config`，可 `POST /api/assistant/models` 下拉）；`POST /api/assistant/chat` 调 OpenAI 兼容上游；未配则引导去设置。
 
-一等工具（31）：`gc_overview` · `gc_liveness` · `gc_doctor` · `gc_diagnose` · `gc_get_jobs` · `gc_job_logs` · `gc_api_catalog` · `gc_metrics_history` · `gc_logs` · `gc_auth_status` · `gc_get_config` · `gc_queue` · `gc_lease` · `gc_gateway` · `gc_node` · `gc_deploy` · `gc_free_node` · `gc_job_action` · `gc_procs` · `gc_models` · `gc_toolkits` · `gc_exec_preset` · `gc_exec` · `gc_put_config` · `gc_notices` · `gc_resources_refresh` · `gc_probe_run` · `gc_metrics_refresh` · `gc_install_template` · `gc_remote` · `gc_cli`。
+MCP 直接工具（23 个）：`gc_overview` · `gc_liveness` · `gc_doctor` · `gc_diagnose` · `gc_get_jobs` · `gc_api_catalog` · `gc_auth_status` · `gc_get_config` · `gc_queue` · `gc_lease` · `gc_gateway` · `gc_node` · `gc_deploy` · `gc_free_node` · `gc_job_action` · `gc_procs` · `gc_models` · `gc_toolkits` · `gc_exec_preset` · `gc_exec` · `gc_put_config` · `gc_remote` · `gc_cli`。
+
+网页小助手另有 8 个便捷工具：`gc_job_logs` · `gc_logs` · `gc_metrics_history` · `gc_metrics_refresh` · `gc_notices` · `gc_probe_run` · `gc_resources_refresh` · `gc_install_template`。它们对应的 HTTP 接口也都在 `GET /api` 里；MCP 客户端可以用 `gc_cli` 或直接调 HTTP。
 
 说明：
 

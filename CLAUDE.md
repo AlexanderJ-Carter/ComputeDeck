@@ -1,6 +1,6 @@
 # Claude Code — ComputeDeck
 
-本仓库是多节点 GPU 控制面 **ComputeDeck**（CLI / MCP：`gpu-control`）。
+本仓库是多节点算力控制面 **ComputeDeck**（CLI / MCP：`gpu-control`）。
 
 ## 先读
 

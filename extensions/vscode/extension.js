@@ -28,6 +28,7 @@ class ApiError extends Error {
   }
 }
 
+// ── API 客户端 ─────────────────────────────────────────────
 class ComputeDeckClient {
   constructor(context) {
     this.context = context;
@@ -218,6 +219,14 @@ class ComputeDeckClient {
   authStatus() {
     return this.request('/api/auth/status', { timeoutMs: 10000 });
   }
+
+  exchangeTicket(target) {
+    return this.request('/api/auth/exchange', {
+      method: 'POST',
+      body: { target: target || '/#/actions' },
+      timeoutMs: 6000,
+    });
+  }
 }
 
 function config() {
@@ -325,6 +334,7 @@ function makeItem(label, collapsibleState, extra = {}) {
   return item;
 }
 
+// ── 侧栏树 ─────────────────────────────────────────────────
 class ClusterProvider {
   constructor(deckClient) {
     this.client = deckClient;
@@ -387,7 +397,7 @@ class ClusterProvider {
       if (localToken && fs.existsSync(localToken)) {
         children.push(
           makeItem(t('使用本机密钥'), vscode.TreeItemCollapsibleState.None, {
-            description: t('总控上一般点这个就能连'),
+            description: t('主控上一般点这个就能连'),
             iconPath: new vscode.ThemeIcon('key'),
             command: { command: 'computedeck.useLocalCredentials', title: t('使用本机密钥') },
           })
@@ -395,12 +405,12 @@ class ClusterProvider {
       }
       children.push(
         makeItem(t('怎么用'), vscode.TreeItemCollapsibleState.None, {
-          description: t('三步说明'),
+          description: t('连接、登录和看板说明'),
           iconPath: new vscode.ThemeIcon('question'),
           command: { command: 'computedeck.openAccess', title: t('怎么用') },
         }),
         makeItem(t('五分钟上手'), vscode.TreeItemCollapsibleState.None, {
-          description: t('跟着点一遍'),
+          description: t('分步引导'),
           iconPath: new vscode.ThemeIcon('book'),
           command: { command: 'computedeck.openWalkthrough', title: t('五分钟上手') },
         })
@@ -503,7 +513,7 @@ class ClusterProvider {
     );
 
     const queueRows = [
-      makeItem(t('等待中的排队'), vscode.TreeItemCollapsibleState.None, {
+      makeItem(t('等待调度'), vscode.TreeItemCollapsibleState.None, {
         description: String(queue.filter((x) => (x.status || '') === 'pending').length),
         iconPath: new vscode.ThemeIcon('list-ordered'),
       }),
@@ -623,7 +633,7 @@ function updateStatusBar(data, error) {
   const unread = Number(data.notices?.unread || 0);
   const assistantReady = Boolean(data.assistant?.ready);
   const warn = offline > 0 || unread > 0;
-  statusBar.text = `${warn ? '$(warning)' : '$(pulse)'} ${t('CD {0}/{1} 节点 · {2}/{3} 空闲', online, total, free, gpuTotal)}${unread > 0 ? t(' · {0} 公告', unread) : ''
+  statusBar.text = `${warn ? '$(warning)' : '$(pulse)'} ${t('{0}/{1} 节点 · {2}/{3} 空闲', online, total, free, gpuTotal)}${unread > 0 ? t(' · {0} 公告', unread) : ''
     }`;
   statusBar.tooltip = new vscode.MarkdownString(
     [
@@ -644,6 +654,7 @@ function updateStatusBar(data, error) {
   statusBar.command = 'computedeck.openWorkbench';
 }
 
+// ── 看板链接与一次性登录票据 ─────────────────────────────────
 const CONTROL_PAGES = [
   { id: 'actions', label: '看板', hash: '/#/actions' },
   { id: 'cluster', label: '节点', hash: '/#/cluster' },
@@ -675,6 +686,37 @@ async function resolveUiUrl(hash = '') {
     return external.toString(true);
   } catch (_) {
     return local;
+  }
+}
+
+function buildConsumeUrl(baseUrl, code, next) {
+  try {
+    const url = new URL(baseUrl);
+    url.hash = '';
+    url.search = '';
+    url.pathname = `${url.pathname.replace(/\/+$/, '')}/auth/consume`;
+    const params = new URLSearchParams({ code: String(code || '') });
+    params.set('next', next || '/#/actions');
+    url.search = params.toString();
+    return url.toString();
+  } catch (_) {
+    return baseUrl;
+  }
+}
+
+/**
+ * 浏览器打开看板前，先用插件手里的 Bearer Token 换一次性票据。
+ * 换不到（未登录 / 鉴权关闭 / 旧控制面）就退回原地址，至少还能显示登录页。
+ */
+async function dashboardUrlWithTicket(browserUrl, hash) {
+  const targetUrl = browserUrl || controlUiUrl(hash);
+  try {
+    const data = await client.exchangeTicket(hash || '/#/actions');
+    if (!data || data.auth_disabled || !data.code) return targetUrl;
+    return buildConsumeUrl(targetUrl, data.code, hash || '/#/actions');
+  } catch (err) {
+    if (output) output.appendLine(t('打开看板：未换取登录票据（{0}）', (err && err.message) || err));
+    return targetUrl;
   }
 }
 
@@ -769,6 +811,7 @@ function buildAccessHubHtml(webview, state) {
     .shell { max-width: 720px; margin: 0 auto; display: grid; gap: 14px; }
     h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -.02em; }
     .sub { margin: 8px 0 0; opacity: .72; font-size: 13px; }
+    .pills { display: flex; flex-wrap: wrap; gap: 6px; }
     .pill {
       display: inline-flex; align-items: center; gap: 6px;
       border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px;
@@ -776,7 +819,8 @@ function buildAccessHubHtml(webview, state) {
     }
     .dot { width: 7px; height: 7px; border-radius: 50%; background: #94a3b8; }
     .dot.on { background: #16a34a; } .dot.off { background: #dc2626; }
-    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .action-label { margin: 16px 0 -2px; font-size: 12px; opacity: .6; }
     button {
       appearance: none; font: inherit; cursor: pointer; border-radius: 8px;
       border: 1px solid var(--line); padding: 8px 14px;
@@ -805,10 +849,15 @@ function buildAccessHubHtml(webview, state) {
 <body>
   <div class="shell">
     <header>
-      <div class="pill"><span class="dot ${state.apiOk ? 'on' : 'off'}"></span>${state.apiOk ? '已经连上，可以直接用' : '还没连上，先看下面第 1 步'}</div>
+      <div class="pills">
+        <div class="pill"><span class="dot ${state.apiOk ? 'on' : 'off'}"></span>${state.apiOk ? '已经连上，可以直接用' : '还没连上，先看下面第 1 步'}</div>
+        <div class="pill">${state.passwordlessPlugin ? '本机插件 · 免密' : '本机插件 · 需要登录一次'}</div>
+      </div>
       <h1 style="margin-top:12px">怎么用 ComputeDeck</h1>
       <p class="sub">日常主要用到三处：左侧看机器，完整看板看图表和助手，偶尔登录一次。</p>
       <div class="actions" id="topActions"></div>
+      <p class="action-label">连接</p>
+      <div class="actions" id="authActions"></div>
     </header>
 
     <section class="card">
@@ -822,17 +871,18 @@ function buildAccessHubHtml(webview, state) {
 
     <section class="card">
       <h2>主控、工作节点和个人电脑</h2>
-      <p>你多半在总控机上。这台机器负责调度、网页和插件，用插件时通常不需要输密码。</p>
+      <p>你多半在主控机上。这台机器负责调度、网页和插件，用插件时通常不需要输密码。</p>
       <p>GPU 工作节点只负责跑任务，由主控通过 SSH 连接，不需要单独登录它们的网页。</p>
-      <p>如果人不在总控机旁边，先用远程桌面、CodeLab 或 SSH 连过去，再按上面的步骤操作。</p>
+      <p>如果人不在主控机旁边，先用远程桌面、CodeLab 或 SSH 连过去，再按上面的步骤操作。</p>
     </section>
 
     <section class="card">
       <h2>什么时候需要登录</h2>
       <ul>
-        <li><strong>插件侧栏和工作台</strong>：在总控机上打开仓库时通常会自动登录。${state.passwordlessPlugin ? '你现在就是这种情况。' : '如果提示未连接，点「使用本机密钥」或「密码登录」。'}</li>
-        <li><strong>完整看板网页</strong>：第一次打开可能需要登录一次；之后一段时间内不用再输。</li>
-        <li><strong>GPU 工作节点</strong>：不需要输入网页密码。</li>
+        <li><strong>插件侧栏和工作台</strong>：在主控机上打开仓库时通常会自动读取本机 Token。${state.passwordlessPlugin ? '你现在就是这种情况。' : '如果提示未连接，点「使用本机密钥」或「密码登录」。'}</li>
+        <li><strong>完整看板</strong>：从插件点开时，会自动换一张一次性登录票据，不用再输密码；直接在浏览器输入网址仍然需要密码或 OIDC。</li>
+        <li><strong>其他设备</strong>：笔记本、内网或公网直接访问网页，需要密码 / 企业登录；票据只在装了插件的主控本机上可用。</li>
+        <li><strong>GPU 工作节点</strong>：不需要输入网页密码，只走 SSH。</li>
       </ul>
       <p class="muted">当前状态：${state.apiOk ? '插件已连上' : '插件未连上'} · ${state.passwordlessPlugin ? '免密可用' : '可能需要登录一次'}</p>
     </section>
@@ -862,11 +912,13 @@ function buildAccessHubHtml(webview, state) {
     }
     btn('打开完整看板', 'simpleBrowser', true);
     btn('打开工作台', 'openWorkbench');
-    btn('使用本机密钥', 'useLocalCredentials');
-    btn('密码登录', 'login');
-    btn('用浏览器打开', 'openExternal');
     btn('五分钟上手', 'openWalkthrough');
-    btn('刷新', 'refresh');
+    const auth = document.getElementById('authActions');
+    btn('刷新', 'refresh', false, auth);
+    btn('使用本机密钥', 'useLocalCredentials', false, auth);
+    btn('密码登录', 'login', false, auth);
+    btn('用浏览器打开', 'openExternal', false, auth);
+    btn('复制看板地址', 'copyUrl', false, auth);
     const ai = document.getElementById('aiActions');
     ${state.assistantReady
       ? "btn('打开小助手', 'openAssistant', true, ai); btn('改配置', 'configureAssistant', false, ai);"
@@ -875,6 +927,18 @@ function buildAccessHubHtml(webview, state) {
   </script>
 </body>
 </html>`;
+}
+
+function accessHubSignature(state) {
+  return JSON.stringify({
+    apiOk: !!state.apiOk,
+    passwordless: !!state.passwordlessPlugin,
+    assistantReady: !!state.assistantReady,
+    assistantModel: state.assistantModel || '',
+    localUrl: state.localUrl || '',
+    browserUrl: state.browserUrl || '',
+    tryEmbed: !!state.tryEmbed,
+  });
 }
 
 function showAccessHub(opts = {}) {
@@ -894,6 +958,7 @@ function showAccessHub(opts = {}) {
     controlUiPanel.reveal(vscode.ViewColumn.Beside, false);
     controlUiPanel.webview.html = buildAccessHubHtml(controlUiPanel.webview, state);
     controlUiPanel._cdAccess = state;
+    controlUiPanel._cdSig = accessHubSignature(state);
     return;
   }
   controlUiPanel = vscode.window.createWebviewPanel(
@@ -903,6 +968,7 @@ function showAccessHub(opts = {}) {
     { enableScripts: true, retainContextWhenHidden: true }
   );
   controlUiPanel._cdAccess = state;
+  controlUiPanel._cdSig = accessHubSignature(state);
   controlUiPanel.webview.html = buildAccessHubHtml(controlUiPanel.webview, state);
   controlUiPanel.onDidDispose(() => {
     controlUiPanel = undefined;
@@ -911,15 +977,17 @@ function showAccessHub(opts = {}) {
     const cur = controlUiPanel?._cdAccess || state;
     if (!msg || !msg.command) return;
     if (msg.command === 'simpleBrowser') {
+      const targetUrl = await dashboardUrlWithTicket(cur.browserUrl || cur.localUrl, cur.hash);
       try {
-        await vscode.commands.executeCommand('simpleBrowser.show', cur.browserUrl || cur.localUrl);
+        await vscode.commands.executeCommand('simpleBrowser.show', targetUrl);
       } catch (_) {
-        await vscode.env.openExternal(vscode.Uri.parse(cur.browserUrl || cur.localUrl));
+        await vscode.env.openExternal(vscode.Uri.parse(targetUrl));
       }
       return;
     }
     if (msg.command === 'openExternal') {
-      await vscode.env.openExternal(vscode.Uri.parse(cur.browserUrl || cur.localUrl));
+      const targetUrl = await dashboardUrlWithTicket(cur.browserUrl || cur.localUrl, cur.hash);
+      await vscode.env.openExternal(vscode.Uri.parse(targetUrl));
       return;
     }
     if (msg.command === 'copyUrl') {
@@ -988,12 +1056,14 @@ async function openControlUi(hash = '', title) {
   const panelTitle = title || pageTitleForHash(hash);
 
   if (mode === 'external') {
-    await vscode.env.openExternal(vscode.Uri.parse(browserUrl));
+    const targetUrl = await dashboardUrlWithTicket(browserUrl, hash);
+    await vscode.env.openExternal(vscode.Uri.parse(targetUrl));
     return 'external';
   }
 
   if (mode === 'simpleBrowser') {
-    if (await trySimpleBrowser(browserUrl)) return 'simpleBrowser';
+    const targetUrl = await dashboardUrlWithTicket(browserUrl, hash);
+    if (await trySimpleBrowser(targetUrl)) return 'simpleBrowser';
     showAccessHub({
       hash,
       title: t('怎么用 ComputeDeck'),
@@ -1005,7 +1075,8 @@ async function openControlUi(hash = '', title) {
   }
 
   if (mode === 'embed') {
-    showAccessHub({ hash, title: panelTitle, localUrl, browserUrl, tryEmbed: true });
+    const targetUrl = await dashboardUrlWithTicket(browserUrl, hash);
+    showAccessHub({ hash, title: panelTitle, localUrl, browserUrl: targetUrl, tryEmbed: true });
     return 'embed';
   }
 
@@ -1021,7 +1092,8 @@ async function openControlUi(hash = '', title) {
   }
 
   // auto：先开真正的网页看板；失败再给「怎么用」（标题不再冒充看板）。
-  if (await trySimpleBrowser(browserUrl)) return 'simpleBrowser';
+  const targetUrl = await dashboardUrlWithTicket(browserUrl, hash);
+  if (await trySimpleBrowser(targetUrl)) return 'simpleBrowser';
   showAccessHub({
     hash,
     title: t('怎么用 ComputeDeck'),
@@ -1033,7 +1105,8 @@ async function openControlUi(hash = '', title) {
 }
 
 async function openControlUiExternal(hash = '') {
-  await vscode.env.openExternal(vscode.Uri.parse(await resolveUiUrl(hash)));
+  const browserUrl = await resolveUiUrl(hash);
+  await vscode.env.openExternal(vscode.Uri.parse(await dashboardUrlWithTicket(browserUrl, hash)));
 }
 
 async function pickControlPage() {
@@ -1045,10 +1118,11 @@ async function pickControlPage() {
   await openControlUi(picked.page.hash, t('ComputeDeck · {0}', picked.page.label));
 }
 
+// ── 五分钟上手内容 ─────────────────────────────────────────
 const GUIDE_STEPS = [
   {
     id: 'connect',
-    title: '1. 先连上',
+    title: '先连上',
     file: '01-connect.md',
     actions: [
       { label: '使用本机密钥', command: 'computedeck.useLocalCredentials' },
@@ -1059,7 +1133,7 @@ const GUIDE_STEPS = [
   },
   {
     id: 'workbench',
-    title: '2. 看集群、开看板',
+    title: '看集群和看板',
     file: '02-cluster.md',
     actions: [
       { label: '打开工作台', command: 'computedeck.openWorkbench' },
@@ -1069,7 +1143,7 @@ const GUIDE_STEPS = [
   },
   {
     id: 'nodes',
-    title: '3. 节点终端与诊断',
+    title: '节点操作',
     file: '03-nodes.md',
     actions: [
       { label: '检查节点是否在线', command: 'computedeck.liveness' },
@@ -1079,7 +1153,7 @@ const GUIDE_STEPS = [
   },
   {
     id: 'jobs',
-    title: '4. 部署与启停任务',
+    title: '部署任务',
     file: '04-jobs.md',
     actions: [
       { label: '部署任务', command: 'computedeck.deployJob' },
@@ -1088,7 +1162,7 @@ const GUIDE_STEPS = [
   },
   {
     id: 'mcp',
-    title: '5. 小助手与 AI 工具',
+    title: '助手与 AI',
     file: '05-mcp.md',
     actions: [
       { label: '打开小助手', command: 'computedeck.openAssistant' },
@@ -1158,7 +1232,7 @@ async function configureAssistant() {
   if (!presetPick) return;
 
   const baseUrl = await vscode.window.showInputBox({
-    prompt: t('模型接口地址（总控机能访问的，通常带 /v1）'),
+    prompt: t('模型接口地址（主控机能访问的，通常带 /v1）'),
     value: presetPick.base_url || status.base_url || '',
     ignoreFocusOut: true,
     placeHolder: 'https://example.com/v1',
@@ -1172,7 +1246,7 @@ async function configureAssistant() {
   let apiKey;
   const keyPrompt = status.api_key_configured
     ? t('API 密钥（留空表示沿用已保存的）')
-    : t('API 密钥（会保存在总控本机，不会进 git）');
+    : t('API 密钥（会保存在主控本机，不会进 git）');
   apiKey = await vscode.window.showInputBox({
     prompt: keyPrompt,
     password: true,
@@ -1294,7 +1368,7 @@ async function configureAssistant() {
 
 function readGuideMarkdown(fileName) {
   if (!extensionContext) return '';
-  const uri = vscode.Uri.joinPath(extensionContext.extensionUri, 'media', 'walkthrough', fileName);
+  const uri = vscode.Uri.joinPath(extensionContext.extensionUri, 'media', 'guide', fileName);
   try {
     return fs.readFileSync(uri.fsPath, 'utf8');
   } catch (_) {
@@ -1403,17 +1477,21 @@ function buildGuideHtml(webview, stepIndex) {
   const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const idx = Math.max(0, Math.min(GUIDE_STEPS.length - 1, Number(stepIndex) || 0));
   const step = GUIDE_STEPS[idx];
-  const body = markdownToGuideHtml(readGuideMarkdown(step.file));
+  const body = markdownToGuideHtml(readGuideMarkdown(step.file)).replace(/^<h2>.*?<\/h2>\s*/, '');
   const nav = GUIDE_STEPS.map(
     (s, i) =>
-      `<button type="button" class="step${i === idx ? ' active' : ''}" data-step="${i}">${s.title}</button>`
+      `<button type="button" class="step${i === idx ? ' active' : ''}${i < idx ? ' done' : ''}" data-step="${i}">
+        <span class="num">${String(i + 1).padStart(2, '0')}</span>
+        <span class="label">${s.title}</span>
+      </button>`
   ).join('');
   const actions = (step.actions || [])
     .map(
-      (a) =>
-        `<button type="button" class="primary" data-cmd="${a.command}" data-args='${JSON.stringify(a.args || [])}'>${a.label}</button>`
+      (a, i) =>
+        `<button type="button" class="${i === 0 ? 'primary' : ''}" data-cmd="${a.command}" data-args='${JSON.stringify(a.args || [])}'>${a.label}</button>`
     )
     .join('');
+  const pct = Math.round(((idx + 1) / GUIDE_STEPS.length) * 100);
   const csp = [
     `default-src 'none'`,
     `style-src ${webview.cspSource} 'unsafe-inline'`,
@@ -1424,79 +1502,154 @@ function buildGuideHtml(webview, stepIndex) {
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>五分钟上手</title>
   <style>
-    :root { color-scheme: light dark; }
+    :root {
+      color-scheme: light dark;
+      --accent: var(--vscode-button-background, #0f766e);
+      --accent-ink: var(--vscode-button-foreground, #f0fdfa);
+      --line: var(--vscode-widget-border, rgba(127,127,127,.3));
+      --soft: color-mix(in srgb, var(--vscode-editor-background) 91%, var(--vscode-foreground) 6%);
+      --muted: color-mix(in srgb, var(--vscode-foreground) 62%, transparent);
+    }
+    * { box-sizing: border-box; }
     body {
-      margin: 0; display: grid; grid-template-columns: 220px minmax(0, 1fr);
-      min-height: 100vh; font: 13px/1.5 var(--vscode-font-family);
-      color: var(--vscode-foreground); background: var(--vscode-editor-background);
+      margin: 0; min-height: 100vh; display: grid; grid-template-columns: 268px minmax(0, 1fr);
+      font: 13.5px/1.6 var(--vscode-font-family);
+      color: var(--vscode-foreground);
+      background:
+        radial-gradient(900px 420px at 100% -10%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 60%),
+        var(--vscode-editor-background);
     }
     aside {
-      border-right: 1px solid var(--vscode-widget-border, rgba(127,127,127,.35));
-      padding: 14px 10px; background: color-mix(in srgb, var(--vscode-editor-background) 92%, var(--vscode-foreground) 4%);
+      position: sticky; top: 0; height: 100vh; padding: 22px 16px 18px;
+      border-right: 1px solid var(--line);
+      background: color-mix(in srgb, var(--vscode-editor-background) 94%, var(--vscode-foreground) 3%);
+      display: flex; flex-direction: column; gap: 18px;
     }
-    aside h1 { margin: 0 0 10px; font-size: 14px; padding: 0 6px; }
-    main table {
-      width: 100%; border-collapse: collapse; margin: 10px 0 14px;
-      font-size: 12.5px;
+    .brand { display: flex; align-items: center; gap: 10px; padding: 0 6px; }
+    .brand svg { width: 30px; height: 30px; flex: 0 0 auto; }
+    .brand strong { display: block; font-size: 14px; letter-spacing: -.01em; }
+    .brand small { display: block; font-size: 11px; color: var(--muted); }
+    .nav { display: grid; gap: 5px; }
+    .step {
+      display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+      border: 1px solid transparent; background: transparent; color: inherit;
+      border-radius: 9px; padding: 9px 10px; cursor: pointer; font: inherit;
     }
-    main th, main td {
-      border: 1px solid var(--vscode-widget-border, rgba(127,127,127,.35));
-      padding: 8px 10px; text-align: left; vertical-align: top;
+    .step:hover { background: var(--vscode-list-hoverBackground); }
+    .step .num {
+      width: 24px; height: 24px; border-radius: 50%; flex: 0 0 auto;
+      display: grid; place-items: center; font-size: 10px; font-weight: 700;
+      border: 1px solid var(--line); color: var(--muted);
+      font-family: var(--vscode-editor-font-family, monospace);
     }
-    main th {
-      background: color-mix(in srgb, var(--vscode-editor-background) 88%, var(--vscode-foreground) 8%);
+    .step .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .step.done .num { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); color: var(--accent); }
+    .step.active {
+      background: color-mix(in srgb, var(--accent) 12%, var(--soft));
+      border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
       font-weight: 600;
     }
-    main ol { padding-left: 1.3em; }
-    aside .step {
-      display: block; width: 100%; text-align: left; margin: 0 0 6px;
-      border: 0; background: transparent; color: inherit; border-radius: 6px;
-      padding: 8px 10px; cursor: pointer; font: inherit;
+    .step.active .num { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+    .aside-foot { margin-top: auto; padding: 12px 8px 0; border-top: 1px solid var(--line); }
+    .aside-foot .meta { font-size: 11px; color: var(--muted); display: flex; justify-content: space-between; margin-bottom: 7px; }
+    .bar { height: 4px; border-radius: 999px; background: color-mix(in srgb, var(--vscode-foreground) 8%, transparent); overflow: hidden; }
+    .bar i { display: block; height: 100%; background: linear-gradient(90deg, #2dd4bf, var(--accent)); border-radius: inherit; transition: width .25s ease; }
+    main { padding: 30px clamp(20px, 5vw, 64px) 26px; overflow: auto; display: flex; flex-direction: column; }
+    .wrap { width: 100%; max-width: 800px; margin: auto; display: grid; gap: 16px; }
+    .kicker {
+      font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+      color: color-mix(in srgb, var(--accent) 78%, var(--vscode-foreground));
     }
-    aside .step:hover { background: var(--vscode-list-hoverBackground); }
-    aside .step.active {
-      background: var(--vscode-list-activeSelectionBackground);
-      color: var(--vscode-list-activeSelectionForeground);
+    h1 { margin: 0; font-size: clamp(25px, 3.2vw, 34px); line-height: 1.15; letter-spacing: -.03em; }
+    .card {
+      border: 1px solid var(--line); border-radius: 16px; background: var(--soft);
+      padding: 22px 24px 20px;
     }
-    main { padding: 18px 22px 28px; overflow: auto; }
-    main h1, main h2, main h3 { margin: 0.4em 0 0.35em; }
-    main p, main li { margin: 0.35em 0; }
-    main ul { padding-left: 1.2em; }
-    main code {
-      font-family: var(--vscode-editor-font-family, monospace);
-      font-size: 12px; padding: 0 4px; border-radius: 4px;
-      background: color-mix(in srgb, var(--vscode-editor-background) 80%, var(--vscode-foreground) 12%);
+    #body > h2, #body:empty { display: none; }
+    #body p { margin: 0 0 12px; color: color-mix(in srgb, var(--vscode-foreground) 86%, transparent); max-width: 64ch; }
+    #body p:last-child { margin-bottom: 0; }
+    #body ul, #body ol { margin: 0 0 12px; padding-left: 1.3em; display: grid; gap: 6px; }
+    #body li { max-width: 62ch; }
+    #body table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 4px 0 14px; font-size: 12.5px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+    #body th, #body td { padding: 9px 11px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+    #body tr:last-child td { border-bottom: 0; }
+    #body th { background: color-mix(in srgb, var(--vscode-foreground) 5%, transparent); font-weight: 600; }
+    #body code {
+      font-family: var(--vscode-editor-font-family, monospace); font-size: 12px;
+      padding: 1px 5px; border-radius: 5px;
+      background: color-mix(in srgb, var(--vscode-foreground) 9%, transparent);
     }
-    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 8px; }
-    button.primary, main button {
-      appearance: none; border: 1px solid var(--vscode-button-border, transparent);
-      background: var(--vscode-button-background); color: var(--vscode-button-foreground);
-      border-radius: 6px; padding: 6px 12px; font: inherit; cursor: pointer;
+    #body a { color: var(--vscode-textLink-foreground); text-decoration: none; }
+    #body a:hover { text-decoration: underline; }
+    #body strong { font-weight: 650; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+    .actions button {
+      appearance: none; font: inherit; cursor: pointer; border-radius: 999px;
+      border: 1px solid var(--line); padding: 8px 15px;
+      background: color-mix(in srgb, var(--vscode-foreground) 6%, transparent);
+      color: var(--vscode-foreground);
     }
-    main button {
-      background: var(--vscode-button-secondaryBackground);
-      color: var(--vscode-button-secondaryForeground);
-      margin: 0 4px 4px 0;
+    .actions button:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+    .actions button.primary {
+      border-color: transparent; font-weight: 650;
+      background: var(--accent); color: var(--accent-ink);
     }
-    .pager { display: flex; gap: 8px; margin-top: 18px; }
-    .hint { opacity: .7; font-size: 12px; margin-top: 10px; }
+    .pager { display: flex; align-items: center; gap: 10px; padding-top: 14px; border-top: 1px solid var(--line); }
+    .pager .spacer { flex: 1; }
+    .pager button {
+      appearance: none; font: inherit; cursor: pointer; border-radius: 8px; padding: 8px 15px;
+      border: 1px solid var(--line); background: transparent; color: var(--vscode-foreground);
+    }
+    .pager button.primary { border-color: transparent; background: var(--accent); color: var(--accent-ink); font-weight: 650; }
+    .pager button:disabled { opacity: .4; cursor: default; }
+    .hint { margin: 0; font-size: 11.5px; color: var(--muted); }
+    @media (max-width: 760px) {
+      body { grid-template-columns: 1fr; }
+      aside { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+      .nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .aside-foot { margin-top: 0; }
+      main { padding: 20px 16px 24px; }
+    }
   </style>
 </head>
 <body>
   <aside>
-    <h1>五分钟上手</h1>
-    ${nav}
+    <div class="brand">
+      <svg viewBox="0 0 128 128" aria-hidden="true">
+        <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2dd4bf"/><stop offset="1" stop-color="#0f766e"/></linearGradient></defs>
+        <rect width="128" height="128" rx="30" fill="url(#g)"/>
+        <rect x="22" y="30" width="64" height="16" rx="5" fill="#fff" opacity=".96"/>
+        <rect x="28" y="55" width="58" height="16" rx="5" fill="#ccfbf1" opacity=".95"/>
+        <rect x="34" y="80" width="52" height="16" rx="5" fill="#99f6e4" opacity=".9"/>
+        <path d="M96 38V88" stroke="#fff" stroke-opacity=".4" stroke-width="2" stroke-dasharray="3 4"/>
+        <circle cx="96" cy="38" r="7.5" fill="#fb923c"/>
+        <circle cx="96" cy="63" r="5.5" fill="#fff" opacity=".88"/>
+        <circle cx="96" cy="88" r="5.5" fill="#fff" opacity=".72"/>
+      </svg>
+      <div><strong>ComputeDeck</strong><small>上手指南</small></div>
+    </div>
+    <nav class="nav" aria-label="步骤">${nav}</nav>
+    <div class="aside-foot">
+      <div class="meta"><span>进度</span><span>${idx + 1} / ${GUIDE_STEPS.length}</span></div>
+      <div class="bar"><i style="width:${pct}%"></i></div>
+    </div>
   </aside>
   <main>
-    <div id="body">${body}</div>
-    <div class="actions">${actions}</div>
-    <div class="pager">
-      <button type="button" class="primary" id="prev" ${idx === 0 ? 'disabled' : ''}>上一步</button>
-      <button type="button" class="primary" id="next">${idx >= GUIDE_STEPS.length - 1 ? '完成' : '下一步'}</button>
+    <div class="wrap">
+      <div class="kicker">第 ${idx + 1} 步 / 共 ${GUIDE_STEPS.length} 步</div>
+      <h1>${step.title}</h1>
+      <section class="card"><div id="body">${body}</div></section>
+      <div class="actions">${actions}</div>
+      <div class="pager">
+        <button type="button" id="prev" ${idx === 0 ? 'disabled' : ''}>上一步</button>
+        <span class="spacer"></span>
+        <p class="hint">下面的按钮会直接执行对应操作</p>
+        <button type="button" class="primary" id="next">${idx >= GUIDE_STEPS.length - 1 ? '完成' : '下一步'}</button>
+      </div>
     </div>
-    <p class="hint">下面按钮可直接执行；CodeLab 里用本窗口比欢迎页 Walkthrough 更稳。</p>
   </main>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
@@ -1559,18 +1712,8 @@ function showGuide(stepIndex = 0) {
 }
 
 async function openGettingStarted() {
-  const walkthroughId = extensionContext
-    ? `${extensionContext.extension.id}#computedeck.getStarted`
-    : 'computedeck.computedeck-vscode#computedeck.getStarted';
-  try {
-    await vscode.commands.executeCommand('workbench.action.openWalkthrough', walkthroughId, false);
-    if (extensionContext) {
-      await extensionContext.globalState.update('computedeck.guideOpened', true);
-    }
-    return 'walkthrough';
-  } catch (_) {
-    // CodeLab / 部分发行版没有 Walkthrough UI。
-  }
+  // 原生 Walkthrough 的排版由编辑器控制，信息一多就变成一列蓝色按钮；
+  // 统一用自定义面板，侧栏步骤和内容区都能按产品自己的层次排。
   showGuide(0);
   if (extensionContext) {
     await extensionContext.globalState.update('computedeck.guideOpened', true);
@@ -1578,6 +1721,7 @@ async function openGettingStarted() {
   return 'guide';
 }
 
+// ── 工作台面板 ─────────────────────────────────────────────
 function workbenchSnapshot() {
   const data = provider?.data || null;
   const error = provider?.lastError || null;
@@ -2006,7 +2150,7 @@ function buildWorkbenchHtml(webview) {
       el('assistantBlock').replaceChildren(
         statusRow('状态', a.ready ? '可用' : (a.enabled ? '已启用，未就绪' : '未启用'), a.model || '', a.ready ? true : false),
         statusRow('接口地址', a.base_url || '未填写', a.network_note || '', a.base_url ? true : false),
-        statusRow('密钥', a.api_key_configured ? '已配置' : '未配置', a.api_key_configured ? '保存在总控本机' : '配置时粘贴一次即可', a.api_key_configured ? true : false)
+        statusRow('密钥', a.api_key_configured ? '已配置' : '未配置', a.api_key_configured ? '保存在主控本机' : '配置时粘贴一次即可', a.api_key_configured ? true : false)
       );
       el('assistantActions').replaceChildren(
         btn(a.ready ? '打开小助手' : '配置小助手 API', a.ready ? 'openAssistant' : 'configureAssistant', 'primary'),
@@ -2014,7 +2158,7 @@ function buildWorkbenchHtml(webview) {
       );
       el('assistantHint').textContent = a.ready
         ? '聊天、看集群建议、危险操作会二次确认。'
-        : (a.setup_hint || '填总控能访问的模型地址、密钥和模型名。内网请用兼容网关。');
+        : (a.setup_hint || '填主控能访问的模型地址、密钥和模型名。内网请用兼容网关。');
       el('mcpBlock').replaceChildren(
         statusRow('工具程序', m.ready ? '已找到' : '未找到', m.path || '一般在 bin/gpu-control-mcp', m.ready ? true : false),
         statusRow('登录密钥', m.tokenReady ? '已就绪' : '需要登录', m.tokenReady ? '本机密钥可用' : '先登录再注册', m.tokenReady ? true : false)
@@ -2024,7 +2168,7 @@ function buildWorkbenchHtml(webview) {
         btn('打开小助手', 'openAssistant', 'ghost')
       );
       el('authBlock').replaceChildren(
-        statusRow('总控登录', m.tokenReady ? '已就绪' : '需要登录', state.base || '', m.tokenReady ? true : false)
+        statusRow('主控登录', m.tokenReady ? '已就绪' : '需要登录', state.base || '', m.tokenReady ? true : false)
       );
       el('authActions').replaceChildren(
         btn(m.tokenReady ? '使用本机密钥' : '设置登录密钥', m.tokenReady ? 'useLocalCredentials' : 'setToken'),
@@ -2099,8 +2243,12 @@ function refreshAccessHub() {
     ...accessProfile(),
     title: t('怎么用 ComputeDeck'),
   };
-  controlUiPanel.title = next.title;
   controlUiPanel._cdAccess = next;
+  // 只重建发生变化的页面，避免每次轮询把正在阅读的说明页刷新掉。
+  const sig = accessHubSignature(next);
+  if (sig === controlUiPanel._cdSig) return;
+  controlUiPanel._cdSig = sig;
+  controlUiPanel.title = next.title;
   controlUiPanel.webview.html = buildAccessHubHtml(controlUiPanel.webview, next);
 }
 
@@ -2152,7 +2300,6 @@ function showWorkbench() {
       configureAssistant: 'computedeck.configureAssistant',
       openNotices: 'computedeck.openNotices',
       openWalkthrough: 'computedeck.openWalkthrough',
-      openGuide: 'computedeck.openGuide',
       openAccess: 'computedeck.openAccess',
       runDoctor: 'computedeck.runDoctor',
       liveness: 'computedeck.liveness',
@@ -2468,6 +2615,7 @@ function registerMcp(context) {
   );
 }
 
+// ── 命令与动作用户界面 ─────────────────────────────────────
 function registerCommands(context) {
   const cmd = (name, fn) =>
     context.subscriptions.push(
@@ -2532,13 +2680,9 @@ function registerCommands(context) {
   cmd('computedeck.openWalkthrough', async () => {
     await openGettingStarted();
   });
-  cmd('computedeck.openGuide', async () => {
-    showGuide(0);
-    await context.globalState.update('computedeck.guideOpened', true);
-  });
   cmd('computedeck.login', async () => {
     const password = await vscode.window.showInputBox({
-      prompt: t('总控登录密码'),
+      prompt: t('主控登录密码'),
       password: true,
       ignoreFocusOut: true,
     });
@@ -2550,7 +2694,7 @@ function registerCommands(context) {
   });
   cmd('computedeck.setToken', async () => {
     const token = await vscode.window.showInputBox({
-      prompt: t('粘贴登录密钥（总控上可自动读取，一般不用手填）'),
+      prompt: t('粘贴登录密钥（主控上可自动读取，一般不用手填）'),
       password: true,
       ignoreFocusOut: true,
     });
@@ -2566,7 +2710,7 @@ function registerCommands(context) {
     const token = readLocalApiToken();
     if (!token) {
       vscode.window.showWarningMessage(
-        t('没找到本机密钥（{0}）。请先打开「怎么用」，或在总控生成密钥。', tokenPath || '本机密钥文件')
+        t('没找到本机密钥（{0}）。请先打开「怎么用」，或在主控生成密钥。', tokenPath || '本机密钥文件')
       );
       return;
     }
@@ -2654,7 +2798,7 @@ function registerCommands(context) {
     const mcpPath = resolveMcpPath();
     if (!mcpPath || !fs.existsSync(mcpPath)) {
       vscode.window.showWarningMessage(
-        t('没找到 AI 工具程序（{0}）。一般在总控仓库的 bin 目录里。', mcpPath || t('未配置'))
+        t('没找到 AI 工具程序（{0}）。一般在主控仓库的 bin 目录里。', mcpPath || t('未配置'))
       );
       return;
     }
@@ -2675,6 +2819,7 @@ function startPolling() {
   }, seconds * 1000);
 }
 
+// ── 生命周期 ───────────────────────────────────────────────
 function activate(context) {
   extensionContext = context;
   output = vscode.window.createOutputChannel('ComputeDeck');
@@ -2703,7 +2848,7 @@ function activate(context) {
   const controlRoot = findControlRoot();
   output.appendLine(t('ComputeDeck 已启动 · 地址 {0}', client.base()));
   if (controlRoot) {
-    output.appendLine(t('已识别总控目录：{0}', controlRoot));
+    output.appendLine(t('已识别主控目录：{0}', controlRoot));
   }
   if (config().get('autoLocalAuth', true) && localTokenPath() && fs.existsSync(localTokenPath())) {
     output.appendLine(t('将自动使用本机密钥登录'));
@@ -2714,7 +2859,7 @@ function activate(context) {
     context.globalState.update('computedeck.guidePrompted', true);
     const open = t('怎么用');
     vscode.window
-      .showInformationMessage(t('欢迎使用 ComputeDeck。点「怎么用」看三步就会。'), open)
+      .showInformationMessage(t('欢迎使用 ComputeDeck。第一次用可以先看「怎么用」。'), open)
       .then((choice) => {
         if (choice === open) return vscode.commands.executeCommand('computedeck.openAccess');
         return undefined;

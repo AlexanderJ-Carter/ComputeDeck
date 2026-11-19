@@ -32,7 +32,7 @@ TOOL_RISKS: dict[str, str] = {
 }
 
 TEACHING_SUMMARY = (
-    "ComputeDeck（CLI/MCP：gpu-control）是可迁移的多节点 GPU 控制面。"
+    "ComputeDeck（CLI/MCP：gpu-control）是可迁移的多节点算力控制面。"
     "先查目录（gc_api_catalog / GET /api），不要假设特定 Job 名，以已安装列表为准。"
     "调度用 gc_queue / gc_lease；排障用 gc_diagnose；入口用 gc_gateway；"
     "隔离与 inventory 用 gc_node；异主租约部署用 gc_deploy(force=true)。"

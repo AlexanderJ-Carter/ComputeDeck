@@ -16,7 +16,7 @@ ARG VCS_REF=unknown
 ARG BUILD_DATE=unknown
 
 LABEL org.opencontainers.image.title="ComputeDeck" \
-      org.opencontainers.image.description="Multi-node GPU control plane (Web / CLI / MCP). CLI name: gpu-control." \
+      org.opencontainers.image.description="Multi-node compute control plane (Web / CLI / MCP). CLI name: gpu-control." \
       org.opencontainers.image.source="https://github.com/AlexanderJ-Carter/ComputeDeck" \
       org.opencontainers.image.url="https://github.com/AlexanderJ-Carter/ComputeDeck" \
       org.opencontainers.image.documentation="https://github.com/AlexanderJ-Carter/ComputeDeck/tree/main/docs" \
@@ -31,6 +31,7 @@ RUN apt-get update \
     ca-certificates \
     git \
     openssh-client \
+    openssl \
     sshpass \
   && rm -rf /var/lib/apt/lists/*
 

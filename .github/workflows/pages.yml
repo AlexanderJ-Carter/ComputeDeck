@@ -1,10 +1,18 @@
-name: Deploy demo to GitHub Pages
+name: Deploy site to GitHub Pages
+
+# 同一个 Pages 站点：
+#   /        产品演示页（demo/）
+#   /docs/   产品文档（MkDocs）
+# 手册在控制面 /help 也有一份；这里只是给外部访问的静态副本。
 
 on:
   push:
     branches: [main]
     paths:
       - "demo/**"
+      - "docs/**"
+      - "mkdocs.yml"
+      - "requirements-docs.txt"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -13,8 +21,6 @@ permissions:
   pages: write
   id-token: write
 
-# 排队部署，勿中途取消：cancel 会导致半成品 artifact，
-# 再 rerun 同 run 时出现多个 github-pages artifact 使 deploy-pages 失败。
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -27,13 +33,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Prepare site
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install docs dependencies
+        run: pip install -r requirements-docs.txt
+
+      - name: Build docs
+        run: mkdocs build --strict -d _site/docs
+
+      - name: Add demo site
         run: |
-          # 若存在 demo/CNAME（自定义域名），随站点一起发布
-          test -f demo/CNAME && echo "CNAME=$(cat demo/CNAME)" || echo "CNAME=(none)"
+          cp -R demo/. _site/
+          if [ -f demo/CNAME ]; then cp demo/CNAME _site/CNAME; fi
+          test -f _site/index.html
+          test -f _site/docs/index.html
+
+      - name: Check static links
+        run: python scripts/check_site.py _site
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: demo
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4

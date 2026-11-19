@@ -11,6 +11,10 @@
 
 ## [Unreleased]
 
+---
+
+## [1.3.0] - 2026-11-19
+
 ### Added
 
 - 运行审计条目含 `actor` / `request_id`；助手 execute / reject / AI 解读写入 runlog
@@ -19,8 +23,15 @@
 - 就绪检查增加 `/help`、MCP 入口、VS Code 说明、MCP 示例配置项
 - OIDC 支持 Groups 白名单与粘贴写入 Client Secret；配置页密钥就绪总览
 - 工具栈：节点选择、捆绑/单包安装、覆盖 KPI
+- 扩展手动发布工作流 `.github/workflows/vscode-publish.yml`（Open VSX）；文档补充 VSIX / Open VSX / Marketplace / npm / PyPI 的渠道说明
+- `gateway nginx --apply`：渲染后备份、`nginx -t`、reload，校验失败回滚；`--watch` 跟随节点与健康变化；`--reload-only` 供多台 nginx 共用配置时跟随文件
+- `gateway.nginx.*` 配置：`apply_path` / `test_cmd` / `reload_cmd` / `sync_interval_sec` / `backup`
+- `gpu-control tls init|show|check`：生成标准 RSA 3072 自签证书、查看到期时间、30 天内到期提醒
+- `gpu-control auth pair`：生成 5 分钟一次性配对链接，远程设备打开即换 Session
+- `doctor` 增加 TLS 就绪/到期、nginx 配置漂移、自动跟随进程、API Token 缺失等检查
+- `package_all.sh` 产出 `manifest.json` 并自动跑 `verify_release.py`；VSIX 按扩展自身版本命名
 
-### Added
+
 
 - 文档 [接入拓扑与鉴权](docs/接入拓扑与鉴权.md)：主控/被控、访问路径、鉴权矩阵、OIDC SSO 方向、VSIX 非 npm 交付约定
 
@@ -36,15 +47,23 @@
 - 底部输出坞闲置隐藏；有结果才出现，去掉「执行输出」说教文案与活动记录折叠；启动不再预填自检
 - 入口总览增加 Edge / LiteLLM / nginx / TLS / 对外 KPI；关键页挂 `/help` 情境链接
 - 助手确认卡显示剩余有效期倒计时，高亮当前待决策卡；窄屏 KPI / 输出坞收紧
+- 用户文档、插件文案与演示页统一整理：减少口号式对仗和重复句式，统一「看板」「主控」「工作节点」等叫法
+- VS Code 扩展 `1.2.22`：怎么用页按钮分「常用 / 连接」、新增复制看板地址；轮询只在连接状态变化时重绘说明页
+- 品牌定位扩展为「多节点算力控制面」，换新 logo，网页 / 插件 / 文档 / 演示页同步
+- 新增 `docs/产品故事.md`：名字含义、产品边界、宣传短文案；README / 文档首页 / 演示页补入口
+- 文档补充 nginx 与 Nginx UI 共存方式、容器部署边界；compose 增加 init / 停止宽限 / 日志轮转
+- 助手工具步骤在完成后折叠为一行摘要，可展开明细；不再逐行重复「已执行」
+- VS Code「五分钟上手」改为自定义全屏上手指南，移除原生 Walkthrough；插件打开完整看板时用 90 秒一次性票据免密换 Session
+- 清理旧版 VSIX 产物、未使用的演示页 SVG 和本地缓存目录
+- 生成的 nginx 配置补上 `X-Forwarded-*`、连接复用、请求不落盘缓冲和 next_upstream 次数限制
 
-### Fixed
 
+- 演示页顶栏和终页的「文档」链接原先指向演示页自身，改为仓库 `docs/`
 - 流式确认卡先落盘再可点，避免抢点出现 `action_not_found`
 - `curl -X GET` / `-o /dev/null` 探活不再误标为危险命令
 - 助手执行成功与模型总结解耦；上游 429 不再盖过「已执行」心智
 
 ---
-
 ## [1.2.7] - 2026-11-18
 
 ### Changed
@@ -778,6 +797,7 @@ ComputeDeck **1.0 先导测试版**：控制面 / CLI / MCP / 展板已可日常
 4. 版本锚点见下方；具备远程后可改为 compare URL。
 
 [Unreleased]: #unreleased
+[1.3.0]: #130---2026-11-19
 [1.2.6]: #126---2026-11-18
 [1.2.5]: #125---2026-11-17
 [1.2.4]: #124---2026-11-17

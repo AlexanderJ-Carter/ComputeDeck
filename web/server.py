@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import importlib.util
 import json
@@ -24,7 +25,7 @@ from pathlib import Path
 from typing import Any
 import urllib.error
 import urllib.request
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 from json_util import loads_relaxed  # noqa: E402
@@ -99,8 +100,10 @@ from auth_util import (  # noqa: E402
     auth_status_payload,
     authenticate_http,
     clear_login_failures,
+    consume_login_ticket,
     extract_bearer,
     issue_api_token,
+    issue_login_ticket,
     issue_session,
     load_auth_config,
     login_rate_limited,
@@ -2097,7 +2100,7 @@ class Handler(BaseHTTPRequestHandler):
             line = str(fmt)
         # 访问日志不带凭据：URL 查询参数里的 token / key / password 一律脱敏。
         line = re.sub(
-            r"([?&](?:access_token|token|api_key|key|password)=)[^&\s]+",
+            r"([?&](?:access_token|token|api_key|key|password|code)=)[^&\s]+",
             r"\1***",
             line,
             flags=re.IGNORECASE,
@@ -2113,10 +2116,25 @@ class Handler(BaseHTTPRequestHandler):
         cache_control: str = "no-store",
         etag: str | None = None,
         extra_headers: dict | None = None,
+        compress: bool = True,
     ) -> None:
+        encoded = body
+        gzipped = False
+        if compress and code != 304 and len(body) >= 1024:
+            accepts = "gzip" in (self.headers.get("Accept-Encoding") or "").lower()
+            base = content_type.split(";", 1)[0].strip().lower()
+            if accepts and (
+                base.startswith("text/")
+                or base in {"application/json", "application/javascript", "application/xml", "image/svg+xml"}
+            ):
+                encoded = gzip.compress(body, compresslevel=5)
+                gzipped = True
         self.send_response(code)
         self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Length", str(len(encoded)))
+        if gzipped:
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Vary", "Accept-Encoding")
         self.send_header("Cache-Control", cache_control)
         self.send_header("X-GPU-Control-Version", UI_VERSION)
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -2145,7 +2163,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header(key, value)
         self.end_headers()
         if code != 304:
-            self.wfile.write(body)
+            self.wfile.write(encoded)
 
     def _sse_start(self) -> None:
         self.send_response(200)
@@ -2237,6 +2255,26 @@ class Handler(BaseHTTPRequestHandler):
         if principal is None:
             return "anonymous"
         return f"{principal.method}:{principal.subject}"
+
+    def _handle_auth_consume(self, parsed) -> None:
+        """浏览器用一次性票据换 Session，然后回到原页面。"""
+        try:
+            query = parse_qs(parsed.query)
+        except ValueError:
+            query = {}
+        code = (query.get("code") or [""])[0]
+        entry = consume_login_ticket(code)
+        if entry is None:
+            self._redirect("/?auth=expired")
+            return
+        cfg = load_auth_config()
+        token = issue_session(subject=str(entry.get("subject") or "admin"), cfg=cfg)
+        headers = {
+            "Set-Cookie": session_cookie_header(token, ttl_hours=cfg.session_ttl_hours),
+            "Cache-Control": "no-store",
+            "Referrer-Policy": "no-referrer",
+        }
+        self._redirect(str(entry.get("target") or "/"), extra_headers=headers)
 
     def _read_body(self) -> dict:
         try:
@@ -2420,6 +2458,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/ws/terminal":
             self._handle_terminal_ws(parsed)
+            return
+
+        if path == "/auth/consume":
+            self._handle_auth_consume(parsed)
             return
 
         if path.startswith("/api") and not self._auth_gate(path, parsed.query):
@@ -3046,6 +3088,30 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path.startswith("/api") and not self._auth_gate(path, parsed.query):
+            return
+
+        if path == "/api/auth/exchange":
+            cfg = load_auth_config()
+            if not cfg.enabled:
+                self._json(200, {"ok": True, "auth_disabled": True})
+                return
+            principal = getattr(self, "auth_principal", None)
+            if principal is None:
+                self._json(401, {"ok": False, "error": "authentication required"})
+                return
+            subject = "admin" if principal.method == "bearer" else principal.subject
+            target = str(body.get("target") or "/#/actions")
+            code, ttl = issue_login_ticket(subject=subject, target=target)
+            self._json(
+                200,
+                {
+                    "ok": True,
+                    "code": code,
+                    "expires_in": ttl,
+                    "consume_path": f"/auth/consume?code={quote(code)}&next={quote(target, safe='')}",
+                    "subject": subject,
+                },
+            )
             return
 
         if path == "/api/auth/token":

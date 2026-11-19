@@ -54,6 +54,15 @@ GHCR **新建** Package 默认仍私有。fork / 改名后的首次推送若匿�
 - 设 `GPU_CONTROL_API_BASE=http://127.0.0.1:<UI_PORT>` 指向已映射端口；Token 与源码安装相同。
 - 容器内调试：`docker compose exec control gpu-control …` / `gpu-control-mcp`（交互式排查，不是给 Cursor 挂 stdio 的首选）。
 
+## 和 nginx / Nginx UI 一起用
+
+控制面容器默认不装 nginx，也不直接改宿主机 nginx。两种常见做法：
+
+1. **控制面在宿主机运行**：最省事，`gateway nginx --apply` 直接写本机 nginx 配置并 reload；
+2. **控制面在容器、nginx 在宿主机**：把宿主机 nginx 的 include 目录挂进容器，`gateway.nginx.apply_path` 指向容器内路径；但容器里还需要能执行 `nginx -t` / reload，通常要额外挂二进制或改用宿主机 CLI，复杂时不建议。
+
+Nginx UI 可以与两种方式共存：让 Nginx UI 管证书和站点，ComputeDeck 只写一个独立的 upstream 片段。不要把同一个 `apply_path` 同时交给两边编辑。
+
 ## 设计取舍
 
 - 容器内建 `.venv`，与仓库 `paths.VENV_*` / Ansible 调用方式一致

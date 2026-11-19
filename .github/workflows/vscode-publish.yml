@@ -1,0 +1,52 @@
+name: Publish VS Code extension
+
+# 手动发布到 Open VSX（Cursor / Windsurf / VSCodium / CodeLab 等使用该市场）。
+# 需要仓库 Secret：OVSX_PAT（open-vsx.org → Settings → Access Tokens）。
+# 发布前先在 open-vsx.org 创建并认领命名空间 computedeck。
+# 正式 VS Code Marketplace 不在本工作流内：其 PAT 方案将于 2026-12-01 停用，
+# 后续改走 Trusted Publishing（OIDC），或手动上传 VSIX。
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "输入 publish 才会真正上传"
+        required: true
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vscode-publish
+  cancel-in-progress: false
+
+jobs:
+  openvsx:
+    if: inputs.confirm == 'publish'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Package VSIX
+        working-directory: extensions/vscode
+        run: |
+          npx --yes @vscode/vsce@4.1.1 package --allow-missing-repository
+          echo "VERSION=$(node -p "require('./package.json').version")" >> "$GITHUB_ENV"
+          ls -lh ./*.vsix
+
+      - name: Publish to Open VSX
+        working-directory: extensions/vscode
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [[ -z "$OVSX_PAT" ]]; then
+            echo "缺少 OVSX_PAT；先在 open-vsx.org 生成 Access Token 并写入仓库 Secret。" >&2
+            exit 1
+          fi
+          npx --yes ovsx@1.4.0 publish "computedeck-vscode-${VERSION}.vsix" -p "$OVSX_PAT"

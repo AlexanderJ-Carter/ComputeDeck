@@ -348,7 +348,13 @@ def render_nginx(
     - 否则：nginx 作为节点 LB 的同层替代，直接对节点端口 ``least_conn``。
     """
     tls = tls or {}
-    proxy_buffering = "        proxy_buffering off;\n        proxy_next_upstream error timeout http_502 http_503 http_504;"
+    proxy_buffering = (
+        "        proxy_buffering off;\n"
+        "        proxy_request_buffering off;\n"
+        "        proxy_socket_keepalive on;\n"
+        "        proxy_next_upstream error timeout http_502 http_503 http_504;\n"
+        "        proxy_next_upstream_tries 2;"
+    )
     if litellm_url:
         parts = urlsplit(litellm_url)
         host = parts.hostname or "127.0.0.1"
@@ -432,6 +438,8 @@ server {{
         proxy_set_header Connection "";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Authorization $http_authorization;
 {proxy_buffering}
         proxy_connect_timeout 2s;

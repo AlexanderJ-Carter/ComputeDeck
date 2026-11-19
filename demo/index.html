@@ -4,10 +4,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>ComputeDeck — 多节点 GPU 控制面</title>
-  <meta name="description" content="ComputeDeck：多节点 GPU 控制面。看见占用、部署任务、管好推理入口，UI / CLI / Agent 同一套。" />
-  <meta property="og:title" content="ComputeDeck — 多节点 GPU 控制面" />
-  <meta property="og:description" content="多节点 GPU 控制面：看板、任务、入口、助手与终端，一套装上就能用。" />
+  <title>ComputeDeck — 多节点算力控制面</title>
+  <meta name="description" content="ComputeDeck 是一套多节点算力控制面：管理节点、任务、模型和推理入口，网页、命令行和 Agent 共用同一套状态。" />
+  <meta property="og:title" content="ComputeDeck — 多节点算力控制面" />
+  <meta property="og:description" content="用一台主控管理多台算力节点：看板、任务、模型、入口、助手和终端。" />
   <meta property="og:url" content="https://compute.alexander.xin/" />
   <meta property="og:image" content="https://compute.alexander.xin/assets/architecture-overview.svg" />
   <meta name="twitter:card" content="summary_large_image" />
@@ -36,13 +36,13 @@
     </a>
     <nav class="top-nav" aria-label="快捷">
       <button type="button" id="btn-play" class="ghost-btn" data-keep aria-pressed="false">自动播放</button>
-      <a href="https://alexanderj-carter.github.io/ComputeDeck/">文档</a>
+      <a href="./docs/">文档</a>
       <a href="https://github.com/AlexanderJ-Carter/ComputeDeck">GitHub</a>
       <a class="cta" href="https://github.com/AlexanderJ-Carter/ComputeDeck#快速开始">开始使用</a>
     </nav>
   </header>
 
-  <nav class="dots" id="dots" aria-label="展板导航"></nav>
+  <nav class="dots" id="dots" aria-label="页面导航"></nav>
 
   <main id="deck" class="deck">
     <!-- 1 Hero -->
@@ -54,26 +54,26 @@
       <div class="slide-inner hero-inner">
         <img class="hero-logo reveal" src="assets/logo.svg" width="104" height="104" alt="ComputeDeck" decoding="async"
           fetchpriority="high" />
-        <p class="eyebrow reveal d1">多节点 GPU 控制面</p>
+        <p class="eyebrow reveal d1">多节点算力控制面</p>
         <h1 class="reveal d2">ComputeDeck</h1>
-        <p class="lede reveal d3">一台主控，管住多机 GPU：谁在用、跑什么、对外怎么进。</p>
-        <p class="lede sub reveal d3">Web 看板 · 任务启停 · 推理入口 · 助手确认 · SSH 终端。CLI 与 Agent 共用同一套能力。</p>
+        <p class="lede reveal d3">一台主控，管住多台算力节点：谁在用、跑什么、对外怎么进。</p>
+        <p class="lede sub reveal d3">网页看板、任务启停、推理入口、SSH 终端都在同一个界面里。命令行和 Agent 调用的也是同一套接口。</p>
         <div class="hero-stats reveal d4">
           <div class="stat-card"><b data-count="20">0</b><span>MCP 工具</span></div>
           <div class="stat-card"><b data-count="30">0</b><span>助手工具</span></div>
-          <div class="stat-card"><b data-count="10">0</b><span>推荐 Job</span></div>
+          <div class="stat-card"><b data-count="10">0</b><span>任务模板</span></div>
         </div>
-        <p class="hint reveal d5">下滑浏览 · ↓ / 空格 · 默认自动播放</p>
+        <p class="hint reveal d5">用 ↓ 或空格翻页，也可以让它自动播放</p>
       </div>
     </section>
 
     <!-- 2 Why：现场对照，不再用两列清单 -->
-    <section class="slide pain" id="s2" data-title="为什么">
+    <section class="slide pain" id="s2" data-title="现状">
       <div class="slide-bg mesh-pain"></div>
       <div class="slide-inner">
-        <p class="eyebrow reveal">为什么需要</p>
-        <h2 class="reveal d1">口头对账，管不住集群</h2>
-        <p class="body narrow reveal d2">谁占了卡、脚本怎么启停、入口通不通——这些不该散落在聊天记录和本机终端里。</p>
+        <p class="eyebrow reveal">现状</p>
+        <h2 class="reveal d1">现在靠群聊和 nvidia-smi 对账</h2>
+        <p class="body narrow reveal d2">卡被谁占着，任务怎么起停，入口通不通，这些信息分散在群聊和各自的终端里，出了问题很难查。</p>
         <div class="pain-board reveal d3" aria-hidden="true">
           <div class="pain-pane chaos">
             <header>
@@ -105,45 +105,45 @@ GPU 3  76%  PID  9921  ???</pre>
               <li><em>入口</em><span>Edge · healthy · 可换路</span></li>
               <li><em>Agent</em><span>同一套工具可调用</span></li>
             </ul>
-            <p class="calm-foot">看见占用 · 占住卡 · 跑起任务 · 对外服务</p>
+            <p class="calm-foot">看板、命令行和 Agent 读到的都是同一份状态。</p>
           </div>
         </div>
       </div>
     </section>
 
     <!-- 3 Capabilities -->
-    <section class="slide" id="s3" data-title="能力">
+    <section class="slide" id="s3" data-title="功能">
       <div class="slide-bg mesh-a"></div>
       <div class="slide-inner">
-        <p class="eyebrow reveal">能力全景</p>
-        <h2 class="reveal d1">从看见卡，到对外服务</h2>
-        <p class="body narrow reveal d2">占卡、跑任务、对外入口、Agent 接入，都落在同一套配置和状态里。</p>
+        <p class="eyebrow reveal">功能</p>
+        <h2 class="reveal d1">可以做什么</h2>
+        <p class="body narrow reveal d2">Deck 是甲板：节点、任务、模型、入口一层层叠在同一处。占卡、跑任务、开入口、接 Agent 都共用一份配置和状态。</p>
         <ol class="cap-rail reveal d3">
-          <li><strong>看板</strong><span>总览 · 入口 · 运维 · 趋势 · 监管</span></li>
-          <li><strong>工作台</strong><span>主内容 + 底部终端</span></li>
+          <li><strong>看板</strong><span>总览、入口、运维、趋势和监管</span></li>
+          <li><strong>工作台</strong><span>看板内容与底部终端</span></li>
           <li><strong>Job</strong><span>推理 / 训练 / Ray / Docker</span></li>
-          <li><strong>配置</strong><span>一项一页 · 保存即检</span></li>
+          <li><strong>配置</strong><span>按项分页，保存时检查</span></li>
           <li><strong>入口</strong><span>统一推理入口 · 远程接入</span></li>
           <li><strong>模型栈</strong><span>拉取 · 校验 · 装训练/推理栈</span></li>
-          <li><strong>助手</strong><span>对话操作 · 写前确认 · 监管建议</span></li>
-          <li><strong>Agent</strong><span>MCP / OpenAPI 同一套</span></li>
+          <li><strong>助手</strong><span>在对话里操作，写入前确认</span></li>
+          <li><strong>Agent</strong><span>MCP 和 OpenAPI 共用接口</span></li>
         </ol>
-        <p class="rail-foot reveal d4">界面配完就能用；进阶再改本地文件。</p>
+        <p class="rail-foot reveal d4">大部分设置能在界面上改完；更细的选项在 <code>config/local/</code> 里。</p>
       </div>
     </section>
 
     <!-- 4 Observe -->
-    <section class="slide" id="s4" data-title="看得见">
+    <section class="slide" id="s4" data-title="看板">
       <div class="slide-bg mesh-b"></div>
       <div class="slide-inner split">
         <div>
-          <p class="eyebrow reveal">看得见</p>
-          <h2 class="reveal d1">占用、健康、入口，一屏说清</h2>
-          <p class="body reveal d2">看板按场景分页：先看集群是否健康、卡还剩多少；再看入口通不通、运维动作和近一小时趋势。不用在聊天里对账。</p>
+          <p class="eyebrow reveal">看板</p>
+          <h2 class="reveal d1">先看集群是否健康，再看卡还剩多少</h2>
+          <p class="body reveal d2">看板分成总览、入口、运维、趋势、监管五页。总览里有健康分、GPU 占用和每台机器的状态，趋势页保留最近一小时的数据。</p>
           <ul class="bullet reveal d3">
-            <li>总览 / 入口 / 运维 / 趋势 / 监管，各管一块</li>
+            <li>每页只放一类信息，不用来回翻</li>
             <li>腾空节点：停任务、清进程、释放占用</li>
-            <li>隔离节点：先别往这台调度，排查完再放开</li>
+            <li>隔离节点：先停止调度，排查完再放开</li>
           </ul>
         </div>
         <div class="mock-panel reveal d3" aria-hidden="true">
@@ -170,10 +170,9 @@ GPU 3  76%  PID  9921  ???</pre>
       <div class="slide-bg mesh-a"></div>
       <div class="slide-inner split">
         <div>
-          <p class="eyebrow reveal">Job 插件</p>
-          <h2 class="reveal d1">装上模板，就能启停</h2>
-          <p class="body reveal d2">推荐包一次装齐 vLLM、微调、Ray、Docker。多机训练自动注入 <code>NNODES</code>、<code>MASTER_ADDR</code>。
-          </p>
+          <p class="eyebrow reveal">任务</p>
+          <h2 class="reveal d1">预置模板装好就能启停</h2>
+          <p class="body reveal d2">推荐包里有 vLLM、微调、Ray 和 Docker 的模板。多机训练需要的 <code>NNODES</code>、<code>MASTER_ADDR</code> 等变量由控制面注入。</p>
           <p class="cmd reveal d3"><code>gpu-control jobs install --recommended</code></p>
         </div>
         <div class="tpl-stack reveal d3">
@@ -194,9 +193,9 @@ GPU 3  76%  PID  9921  ???</pre>
       <div class="slide-bg mesh-b"></div>
       <div class="slide-inner split">
         <div>
-          <p class="eyebrow reveal">怎么配</p>
-          <h2 class="reveal d1">界面里配完就能跑</h2>
-          <p class="body reveal d2">节点、连接、登录各管一页。保存后自动检查；进阶再改本地文件。</p>
+          <p class="eyebrow reveal">配置</p>
+          <h2 class="reveal d1">节点、SSH、登录都在界面里改</h2>
+          <p class="body reveal d2">节点清单、SSH 连接和登录方式各占一页。保存时会检查格式并重新生成配置，需要更细的控制再改本地文件。</p>
         </div>
         <div class="cfg-stage reveal d3" id="cfg-stage" aria-hidden="true">
           <div class="cfg-chrome"><i></i><i></i><i></i><span>配置</span></div>
@@ -254,8 +253,8 @@ GPU 3  76%  PID  9921  ???</pre>
       <div class="slide-inner split edge-split">
         <div>
           <p class="eyebrow reveal">推理入口</p>
-          <h2 class="reveal d1">对外一个入口，后面多台一起扛</h2>
-          <p class="body reveal d2">客户端打到统一入口即可。节点选择、重试、密钥和预算由 LiteLLM 管；前面的 Edge / nginx 只做域名和 TLS，不再抢着选节点。</p>
+          <h2 class="reveal d1">推理请求统一走 LiteLLM</h2>
+          <p class="body reveal d2">客户端只连一个地址。选哪台机器、失败重试、密钥和额度都由 LiteLLM 决定；前面的 nginx 或 Edge 只负责域名和 TLS。</p>
           <div class="flow reveal d3" aria-hidden="true">
             <span>Client</span><i></i><span>nginx / Edge</span><i></i><span class="ok">LiteLLM</span><i></i><span>节点
               API</span>
@@ -292,8 +291,8 @@ GPU 3  76%  PID  9921  ???</pre>
       <div class="slide-bg mesh-b"></div>
       <div class="slide-inner">
         <p class="eyebrow reveal">模型与工具栈</p>
-        <h2 class="reveal d1">模型下载完，训练和推理栈也能装上</h2>
-        <p class="body narrow reveal d2">从 Hugging Face / ModelScope 拉模型并登记；训练栈、推理栈按套装装到各节点自己的 Python 环境。</p>
+        <h2 class="reveal d1">模型、训练依赖、推理依赖分开管理</h2>
+        <p class="body narrow reveal d2">可以从 Hugging Face 或 ModelScope 拉取权重并登记。训练栈和推理栈按套装安装，装在各节点自己的 Python 环境里，互不影响。</p>
         <div class="stack-steps reveal d3">
           <article>
             <span class="step-n">01</span>
@@ -315,12 +314,12 @@ GPU 3  76%  PID  9921  ???</pre>
     </section>
 
     <!-- 9 AI · Agent -->
-    <section class="slide" id="s9" data-title="AI">
+    <section class="slide" id="s9" data-title="助手与 Agent">
       <div class="slide-bg mesh-a"></div>
       <div class="slide-inner">
         <p class="eyebrow reveal">助手与 Agent</p>
-        <h2 class="reveal d1">能对话操作，危险动作先问你</h2>
-        <p class="body narrow reveal d2">右下角助手能查状态、给建议；真正改集群前会弹出确认。Cursor / Claude 等也可以通过 MCP 接同一套工具。</p>
+        <h2 class="reveal d1">助手可以操作集群，写操作先确认</h2>
+        <p class="body narrow reveal d2">右下角的助手能查状态、给建议，真要改集群时会先弹确认。Cursor、Claude 等编辑器通过 MCP 可以调用同一批工具。</p>
         <div class="ai-stage reveal d3" aria-hidden="true">
           <div class="ai-demo">
             <article class="ai-card glow">
@@ -402,32 +401,32 @@ GPU 3  76%  PID  9921  ???</pre>
       <div class="slide-bg mesh-b"></div>
       <div class="slide-inner">
         <p class="eyebrow reveal">可靠性</p>
-        <h2 class="reveal d1">占用说得清，出事查得到</h2>
-        <p class="body narrow reveal d2">谁占了卡有账可对；任务挂了能巡检重启；终端选中节点再连，空白时不再是一块黑屏。</p>
+        <h2 class="reveal d1">占用有记录，出问题有日志</h2>
+        <p class="body narrow reveal d2">每张卡被谁占着都有记录。任务挂掉后 watchdog 可以按健康检查重启。浏览器里的终端要先选节点再连，没选时会显示提示。</p>
         <div class="reli-grid reveal d3">
           <article>
             <strong>状态加锁</strong>
-            <p>租约、队列、隔离状态跨进程写入，CLI 和 UI 不会互相踩。</p>
+            <p>租约、队列和隔离状态会被多个进程同时写入，加锁后命令行和网页不会互相覆盖。</p>
           </article>
           <article>
             <strong>租约规矩</strong>
-            <p>别人的占用默认不能抢；真要覆盖才需要强制。对不上账，诊断会点出来。</p>
+            <p>别人占用的卡默认不能抢，确实要覆盖时用强制参数。两边记录对不上，诊断会指出来。</p>
           </article>
           <article>
             <strong>自动巡检</strong>
-            <p>按任务健康检查，异常可自动重启；已隔离的节点会跳过。</p>
+            <p>按任务配置的健康检查定期巡检，异常时可以自动重启；已隔离的节点会跳过。</p>
           </article>
           <article>
             <strong>登录鉴权</strong>
-            <p>密码或企业登录（OIDC）在配置里统一开；可发 API Token 给脚本和 MCP。</p>
+            <p>密码或企业登录（OIDC）在配置里开关。脚本和 MCP 使用单独的 API Token。</p>
           </article>
           <article>
             <strong>交互终端</strong>
-            <p>浏览器里直接 SSH 到节点，排障不用另开一堆窗口。</p>
+            <p>在浏览器里直接 SSH 到节点，排查问题不必再开一堆本地窗口。</p>
           </article>
           <article>
             <strong>开源</strong>
-            <p>AGPL-3.0：网络提供修改版，须公开对应源码。</p>
+            <p>AGPL-3.0：如果把修改版作为网络服务提供，需要公开对应源码。</p>
           </article>
         </div>
       </div>
@@ -439,22 +438,22 @@ GPU 3  76%  PID  9921  ???</pre>
       <div class="slide-inner finale-inner">
         <div class="finale-copy">
           <p class="eyebrow reveal">开源 · AGPL-3.0</p>
-          <h2 class="reveal d1">克隆仓库，就能在你的机器上跑</h2>
-          <p class="body reveal d2">用 <code>uv</code> 或 Docker 拉起控制面。浏览器里配节点、装任务、开入口；助手改集群前会先确认。不走 PyPI / npm，仓库即控制面。</p>
+          <h2 class="reveal d1">在自己的机器上跑起来</h2>
+          <p class="body reveal d2">控制面可以用 <code>uv</code> 或 Docker 启动。之后在浏览器里配节点、装任务、开入口。不发布 PyPI / npm 包，仓库本身就是控制面。</p>
           <ul class="finale-ai reveal d3">
-            <li><strong>助手</strong><span>对话查状态 · 写操作先确认</span></li>
-            <li><strong>监管</strong><span>规则告警 · 可让助手继续跟</span></li>
-            <li><strong>终端</strong><span>选节点再连 SSH</span></li>
-            <li><strong>MCP</strong><span>Cursor / Claude / Codex 同接口</span></li>
+            <li><strong>助手</strong><span>查状态、改配置，写操作先确认</span></li>
+            <li><strong>监管</strong><span>规则告警，可以让助手继续分析</span></li>
+            <li><strong>终端</strong><span>选节点后连 SSH</span></li>
+            <li><strong>MCP</strong><span>Cursor、Claude、Codex 用同一套工具</span></li>
           </ul>
           <div class="cta-row reveal d4">
             <a class="btn primary" href="https://github.com/AlexanderJ-Carter/ComputeDeck">打开 GitHub</a>
-            <a class="btn ghost" href="https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/docs/ai-接入.md">AI /
-              MCP</a>
-            <a class="btn ghost" href="https://alexanderj-carter.github.io/ComputeDeck/">文档站</a>
-            <a class="btn ghost" href="https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/docs/手册.md">阅读手册</a>
+            <a class="btn ghost" href="./docs/ai-接入/">AI / MCP</a>
+            <a class="btn ghost" href="./docs/">文档</a>
+            <a class="btn ghost" href="./docs/产品故事/">产品故事</a>
+            <a class="btn ghost" href="./docs/手册/">阅读手册</a>
             <a class="btn ghost"
-              href="https://github.com/AlexanderJ-Carter/ComputeDeck/blob/main/docs/develop/docker.md">容器部署</a>
+              href="./docs/develop/docker/">容器部署</a>
           </div>
           <p class="foot reveal d5">ComputeDeck · gpu-control · ghcr.io/…/computedeck</p>
         </div>

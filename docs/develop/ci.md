@@ -28,7 +28,7 @@ gpu-control doctor
 | 工作流 | 触发 | 作用 |
 |--------|------|------|
 | `.github/workflows/ci.yml` | `main` push / PR | `check.sh` + MkDocs `--strict` + Docker 构建冒烟 |
-| `.github/workflows/pages.yml` | `demo/**` 变更 | 发布宣传展板到 GitHub Pages |
+| `.github/workflows/pages.yml` | `demo/**`、`docs/**`、`mkdocs.yml` 变更 | 发布演示页 + `/docs/` 手册到 GitHub Pages |
 | `.github/workflows/release.yml` | tag `vX.Y.Z` | CHANGELOG → GitHub Release + 推送 GHCR 镜像 |
 
 ### 打包与发布策略

@@ -15,13 +15,15 @@
 | 怎么用 | 连接方式和登录时机的说明 |
 | 打开完整看板 | 打开完整网页界面 |
 | 五分钟上手 | 分步引导 |
-| 打开小助手 | 网页聊天（大屏 `#/assistant`） |
+| 打开小助手 | 网页聊天（看板 `#/assistant`） |
 | 配置小助手 API | 在插件里填模型地址 / 密钥 / 模型名 |
 | 注册给 AI 用的工具 | 给 Copilot 等注册 MCP |
 
 网页小助手和给外部 Agent 用的 MCP 工具是两件事：前者在网页里对话，后者让 Copilot、Cursor 等直接调用 `gc_*`。
 
 ## 安装
+
+从 [GitHub Releases](https://github.com/AlexanderJ-Carter/ComputeDeck/releases) 下载 `computedeck-vscode-*.vsix`，或自行打包：
 
 ```bash
 cd extensions/vscode && npm run package
@@ -30,6 +32,8 @@ code --install-extension computedeck-vscode-*.vsix
 ```
 
 预览：`./scripts/preview_extension.sh`
+
+目前插件通过 VSIX 分发，尚未上架 Open VSX 或 VS Code Marketplace；各渠道的状态和发布步骤见 [打包与发布](打包与发布.md#51)。
 
 ## 设置（一般不需要改）
 

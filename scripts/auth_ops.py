@@ -8,11 +8,14 @@ import getpass
 import json
 import secrets
 import sys
+from urllib.parse import quote
 
 import _bootstrap  # noqa: F401
 from auth_util import (
+    _ui_base_from_cluster,
     doctor_auth_notes,
     issue_api_token,
+    issue_login_ticket,
     load_auth_config,
     oidc_config,
     password_configured,
@@ -107,6 +110,34 @@ def cmd_issue_token(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pair(args: argparse.Namespace) -> int:
+    """生成一张短期配对链接；目标设备打开后换 Session。"""
+    cfg = load_auth_config()
+    target = str(args.target or "/#/actions")
+    try:
+        ttl = max(30, min(1800, int(args.ttl)))
+    except (TypeError, ValueError):
+        ttl = 300
+    code, ttl = issue_login_ticket(subject="admin", target=target, ttl=ttl)
+    base = str(args.base or "").rstrip("/") or _ui_base_from_cluster() or "http://127.0.0.1:8787"
+    url = f"{base}/auth/consume?code={quote(code)}&next={quote(target, safe='')}"
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "url": url,
+                "expires_in": ttl,
+                "target": target,
+                "auth_mode": cfg.mode,
+                "note": "链接等同于一次性登录凭证；只发给要配对的设备，过期或使用一次后失效。",
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
+
+
 def cmd_oidc_check(_: argparse.Namespace) -> int:
     cfg = load_auth_config()
     oc = oidc_config(cfg)
@@ -135,6 +166,12 @@ def main() -> int:
     p_tok = sub.add_parser("issue-token", help="Create API bearer token file")
     p_tok.add_argument("--enable", action="store_true", help="Ensure mode=password")
     p_tok.set_defaults(func=cmd_issue_token)
+
+    p_pair = sub.add_parser("pair", help="生成一次性配对链接（给笔记本 / 远程设备登录）")
+    p_pair.add_argument("--ttl", type=int, default=300, help="有效秒数，默认 300，最大 1800")
+    p_pair.add_argument("--target", default="/#/actions", help="登录后跳转的站内路径")
+    p_pair.add_argument("--base", default="", help="控制面外部地址；默认从 cluster 推导")
+    p_pair.set_defaults(func=cmd_pair)
 
     p_oidc = sub.add_parser("oidc-check", help="探测 OIDC discovery / 配置完整性")
     p_oidc.set_defaults(func=cmd_oidc_check)

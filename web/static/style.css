@@ -6465,12 +6465,75 @@ a[aria-disabled="true"]:hover {
 
 .assistant-steps {
   margin-top: 8px;
-  padding: 7px 9px;
   border: 1px dashed color-mix(in srgb, var(--line-strong) 70%, transparent);
   border-radius: 9px;
   background: color-mix(in srgb, var(--ink) 3%, transparent);
+  overflow: hidden;
+}
+
+.assistant-steps-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.assistant-steps-toggle:hover {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+
+.assistant-steps-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink);
+}
+
+.assistant-steps-summary::before {
+  content: "●";
+  font-size: 8px;
+  color: var(--muted);
+}
+
+.assistant-steps-summary[data-tone="ok"]::before {
+  content: "✓";
+  font-size: 10px;
+  color: var(--ok);
+}
+
+.assistant-steps-summary[data-tone="warn"]::before {
+  color: var(--warn);
+}
+
+.assistant-steps-summary[data-tone="bad"]::before {
+  color: var(--bad);
+}
+
+.assistant-steps-action {
+  margin-left: auto;
+  font-size: 11px;
+  opacity: 0.62;
+}
+
+.assistant-steps-list {
   display: grid;
   gap: 4px;
+  padding: 0 9px 8px;
+  max-height: 160px;
+  overflow: auto;
+}
+
+.assistant-steps[data-expanded="false"] .assistant-steps-list {
+  display: none;
 }
 
 .assistant-step {
@@ -6535,6 +6598,8 @@ a[aria-disabled="true"]:hover {
 }
 
 .assistant-step-label {
+  flex: 1;
+  min-width: 0;
   color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -6545,6 +6610,10 @@ a[aria-disabled="true"]:hover {
   margin-left: auto;
   opacity: 0.7;
   flex: 0 0 auto;
+}
+
+.assistant-step-meta:empty {
+  display: none;
 }
 
 .assistant-approval {

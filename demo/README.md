@@ -1,4 +1,4 @@
-# ComputeDeck 宣传展板
+# ComputeDeck 产品演示页
 
 全屏纵向 scroll-snap 演示页（中文），适合投屏与 GitHub Pages。
 叙事对齐现网：看板分页、助手确认卡、终端工作台；文案偏产品人话，少堆内部黑话。
@@ -13,12 +13,12 @@ python3 -m http.server 4173
 
 ## GitHub Pages
 
-已用工作流 `.github/workflows/pages.yml` 发布**本目录（宣传展板）**。
+已用工作流 `.github/workflows/pages.yml` 发布**本目录（产品演示页）**。
 
 - 默认：https://alexanderj-carter.github.io/ComputeDeck/
 - 自定义域名：见 [docs/自定义域名.md](../docs/自定义域名.md)；买域后把域名写入 `CNAME`（参考 `CNAME.example`）
 
-产品手册不走这个 Pages：源码在仓库 `docs/`，运行时在控制面 `/help/`（`gpu-control docs build`）。
+Pages 根路径是产品演示页，`/docs/` 是 MkDocs 手册静态副本；运行时的 `/help/` 跟控制面版本走（`gpu-control docs build`）。
 
 产品名 **ComputeDeck**；命令行仍为 `gpu-control`。
 

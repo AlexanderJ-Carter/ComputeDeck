@@ -5,7 +5,7 @@
 <h1 align="center">ComputeDeck</h1>
 
 <p align="center">
-  <strong>多节点 GPU 控制面</strong>
+  <strong>多节点算力控制面</strong>
   <br />
   <em>Web · CLI · MCP · 配置驱动</em>
 </p>
@@ -30,7 +30,7 @@
   ·
   <a href="https://github.com/AlexanderJ-Carter/ComputeDeck">GitHub</a>
   ·
-  <a href="https://compute.alexander.xin/">宣传展板</a>
+  <a href="https://compute.alexander.xin/">演示页</a>
   ·
   <a href="docs/index.md">文档</a>
   ·
@@ -45,23 +45,40 @@
 
 实验室和业务团队手里常有一批 SSH 就能登上的 GPU 机器。卡谁在用、进程在哪、能不能腾空，往往靠群聊和 `nvidia-smi`；微调、推理、Ray 各自一套启停脚本；想让 Cursor 这类 Agent 帮忙运维，又缺少统一的 HTTP / MCP 契约。
 
-**ComputeDeck**（命令行仍为 `gpu-control`）把发现、租约、Job 部署、健康检查、统一入口和日志收成一套控制面。一台 Control 主机跑 Web UI、CLI 和 MCP，用 Ansible/SSH 编排 worker。场景写在 `config/local/`，换集群主要改配置。宣传展板见 [`demo/`](demo/)（GitHub Pages）。
+**ComputeDeck**（命令行仍为 `gpu-control`）把这些事情放进一个控制面：发现节点、登记租约、部署 Job、健康检查、统一推理入口和查看日志。一台主控运行 Web UI、CLI 和 MCP，通过 Ansible/SSH 操作工作节点。集群信息写在 `config/local/`，换一批机器主要改配置。演示页在 [`demo/`](demo/)，文档静态站也在 GitHub Pages 的 `/docs/`。
 
-## 能力
+它管理的不只是 GPU 任务：节点清单、任务模板、模型文件、推理入口和远程接入都在同一个控制面里，GPU 调度是其中一项能力。
 
-| 能力 | 说明 |
+## 为什么叫 ComputeDeck
+
+Deck 是层层叠起来的甲板。一个集群本来就有机器、任务、模型、入口几层，以前它们散在群聊、终端和不同脚本里；ComputeDeck 把这些层放到同一张控制面上，所以叫 ComputeDeck。GPU 调度是其中一层，不是产品的全部。
+
+完整故事、名字解释和宣传短文案见 [docs/产品故事.md](docs/产品故事.md)。
+
+## 为什么用它
+
+- **节点不装 agent**：控制面通过 SSH / Ansible 操作工作节点，加机器不需要先装运行时。
+- **控制面自身很轻**：本机回环下 `/api/health` p50 约 0.8ms，`/api/overview?light=1` p50 约 3.5ms；方法和数据见 [性能与基准](docs/性能与基准.md)。
+- **首屏更小**：`app.js` gzip 后约 83KB（原始 321KB），`style.css` 约 27KB（原始 149KB）。
+- **只有一层节点 LB**：LiteLLM 或 Edge 二选一，避免 nginx / Edge / LiteLLM 对同一批节点重复负载均衡。
+- **同一份状态**：网页、CLI、MCP 读写同一套 state；Agent 写操作先确认。
+- **配置能落地**：nginx 片段可校验、reload、失败回滚；`doctor` 会指出配置漂移和证书问题。
+
+## 功能
+
+| 功能 | 说明 |
 |------|------|
 | 单屏看板 | 健康评分、GPU 池、Edge / TLS / Gateway 状态 |
 | Job 插件 | JSON 描述启停；`jobs install --recommended` 一键装推理 / 训练 / Ray / Docker 模板 |
 | 路径异构 | `defaults.paths`、节点覆盖、`${paths.*}` |
 | 统一入口 | LiteLLM 为唯一节点 LB（逐节点 model_list、重试/冷却、虚拟密钥/预算）；Edge / nginx 只做 18080 的 TLS/Web 前置；不用 LiteLLM 时内置 Edge 直接做节点 LB |
-| Agent | OpenAPI + `gc_*` MCP，与 CLI 同一能力面 |
+| Agent | OpenAPI 和 `gc_*` MCP，与 CLI 使用同一套接口 |
 | 可靠性 | 状态 flock 原子写、watchdog、diagnose（含租约漂移提示） |
 
 ## 架构
 
 <p align="center">
-  <img src="docs/assets/architecture-overview.svg" alt="ComputeDeck 架构：使用者、Control 主机与 GPU Workers" width="900" />
+  <img src="docs/assets/architecture-overview.svg" alt="ComputeDeck 架构：使用者、Control 主机与工作节点" width="900" />
 </p>
 
 控制面在 Control（Web / CLI / MCP / LiteLLM + `state/`）；Worker 只跑 Job。编排走 Ansible/SSH，推理走 LiteLLM → 节点端口。

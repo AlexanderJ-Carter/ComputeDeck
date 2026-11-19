@@ -267,6 +267,66 @@ def verify_session(token: str, *, cfg: AuthConfig | None = None) -> AuthPrincipa
     return AuthPrincipal(subject=subject, method="session", mode=cfg.mode)
 
 
+TICKET_TTL_SEC = 90
+_TICKETS: dict[str, dict[str, Any]] = {}
+_TICKET_LOCK = threading.Lock()
+
+
+def _safe_next_path(value: str | None, default: str = "/") -> str:
+    """登录后只允许站内相对路径，避免票据变成开放重定向。"""
+    target = str(value or "").strip()
+    if not target.startswith("/") or target.startswith("//"):
+        return default
+    if "\n" in target or "\r" in target or len(target) > 300:
+        return default
+    return target
+
+
+def _purge_tickets(now: float) -> None:
+    expired = [key for key, row in _TICKETS.items() if row.get("expires", 0) <= now]
+    for key in expired:
+        _TICKETS.pop(key, None)
+
+
+def issue_login_ticket(
+    *,
+    subject: str = "admin",
+    target: str = "/",
+    ttl: int = TICKET_TTL_SEC,
+) -> tuple[str, int]:
+    """签发一次性登录票据；返回 ``(code, ttl)``。
+
+    票据只存在内存里，90 秒内有效且只能用一次。插件用本地 Bearer Token
+    换票据，浏览器再用票据换 Session，避免把长期 Token 放进 URL。
+    """
+    code = secrets.token_urlsafe(32)
+    key = hashlib.sha256(code.encode("utf-8")).hexdigest()
+    now = time.time()
+    with _TICKET_LOCK:
+        _purge_tickets(now)
+        _TICKETS[key] = {
+            "subject": str(subject or "admin"),
+            "target": _safe_next_path(target),
+            "expires": now + max(1, int(ttl)),
+        }
+    return code, max(1, int(ttl))
+
+
+def consume_login_ticket(code: str) -> dict[str, Any] | None:
+    """消费一次性票据；成功返回 ``{subject,target}``，过期/重复使用返回 ``None``。"""
+    value = str(code or "").strip()
+    if not value:
+        return None
+    key = hashlib.sha256(value.encode("utf-8")).hexdigest()
+    now = time.time()
+    with _TICKET_LOCK:
+        _purge_tickets(now)
+        row = _TICKETS.pop(key, None)
+    if not row or row.get("expires", 0) <= now:
+        return None
+    return {"subject": row.get("subject") or "admin", "target": row.get("target") or "/"}
+
+
 def issue_api_token(*, cfg: AuthConfig | None = None) -> tuple[str, Path]:
     """创建长期 API Bearer Token 文件（明文仅返回一次）。
 

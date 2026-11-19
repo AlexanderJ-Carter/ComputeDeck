@@ -1519,6 +1519,12 @@ def cmd_gateway(args: argparse.Namespace) -> int:
             cmd.append("--reveal")
     if action in {"render", "nginx"} and args.listen is not None:
         cmd.extend(["--listen", str(args.listen)])
+    if action == "nginx":
+        for flag in ("apply", "dry_run", "watch", "background", "reload_only"):
+            if getattr(args, flag, False):
+                cmd.append("--" + flag.replace("_", "-"))
+        if getattr(args, "interval", None) is not None:
+            cmd.extend(["--interval", str(args.interval)])
     if action in {"start", "stop", "ensure"} and getattr(args, "kind", None):
         cmd.extend(["--kind", args.kind])
     return run_python("gateway_ops.py", *cmd).returncode
@@ -1605,7 +1611,43 @@ def cmd_auth(args: argparse.Namespace) -> int:
     elif args.auth_action == "issue-token":
         if args.enable:
             cmd.append("--enable")
+    elif args.auth_action == "pair":
+        if getattr(args, "pair_ttl", None) is not None:
+            cmd.extend(["--ttl", str(args.pair_ttl)])
+        if getattr(args, "pair_target", None):
+            cmd.extend(["--target", args.pair_target])
+        if getattr(args, "pair_base", None):
+            cmd.extend(["--base", args.pair_base])
     return run_python("auth_ops.py", *cmd).returncode
+
+
+def cmd_bench(args: argparse.Namespace) -> int:
+    """控制面 API / 静态资源基准。"""
+    ensure_runtime()
+    cmd = ["--base", args.base, "--n", str(args.n), "--concurrency", str(args.concurrency)]
+    if args.json:
+        cmd.append("--json")
+    if getattr(args, "token", None):
+        cmd.extend(["--token", args.token])
+    return run_python("bench_control.py", *cmd).returncode
+
+
+def cmd_tls(args: argparse.Namespace) -> int:
+    """控制面 / 入口 TLS 证书：生成自签、查看、检查。"""
+    ensure_runtime()
+    cmd = [args.tls_action]
+    if args.tls_action == "init":
+        if getattr(args, "domain", None):
+            cmd.extend(["--domain", args.domain])
+        if getattr(args, "days", None) is not None:
+            cmd.extend(["--days", str(args.days)])
+        if getattr(args, "cert", None):
+            cmd.extend(["--cert", args.cert])
+        if getattr(args, "key", None):
+            cmd.extend(["--key", args.key])
+        if getattr(args, "force", False):
+            cmd.append("--force")
+    return run_python("tls_ops.py", *cmd).returncode
 
 
 def cmd_toolkits(args: argparse.Namespace) -> int:
@@ -2251,9 +2293,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="gateway litellm-db 的子动作（默认 status）",
     )
     p_gateway.add_argument("--listen", type=int, default=None, help="edge/nginx listen 端口")
+    p_gateway.add_argument("--apply", action="store_true", help="nginx：写入 apply_path 并 reload")
+    p_gateway.add_argument("--dry-run", action="store_true", help="nginx：只报告将写入的内容")
+    p_gateway.add_argument("--watch", action="store_true", help="nginx：持续跟随节点变化")
+    p_gateway.add_argument("--background", action="store_true", help="nginx --watch：后台运行")
+    p_gateway.add_argument("--reload-only", action="store_true", help="nginx --watch：只跟随共享文件并 reload")
+    p_gateway.add_argument("--interval", type=int, default=None, help="nginx --watch 轮询秒数")
     p_gateway.add_argument(
         "--kind",
-        choices=["edge", "litellm", "both", "nginx", "all"],
+        choices=["edge", "litellm", "both", "nginx", "nginx-sync", "all"],
         help="start/stop/ensure 目标（默认读 cluster.gateway.ingress.kind）",
     )
     p_gateway.add_argument("--json", action="store_true", help="兼容旧参数（忽略）")
@@ -2296,13 +2344,33 @@ def build_parser() -> argparse.ArgumentParser:
     p_auth = sub.add_parser("auth", help="控制面 UI 鉴权（密码 / Token / OIDC）")
     p_auth.add_argument(
         "auth_action",
-        choices=["status", "set-password", "set-mode", "issue-token", "oidc-check"],
+        choices=["status", "set-password", "set-mode", "issue-token", "pair", "oidc-check"],
     )
     p_auth.add_argument("mode", nargs="?", choices=["none", "password", "oidc"], help="set-mode 目标")
     p_auth.add_argument("--password", help="set-password 明文（省略则交互输入）")
     p_auth.add_argument("--generate", action="store_true", help="set-password 随机生成")
     p_auth.add_argument("--enable", action="store_true", help="写入后启用 mode=password")
+    p_auth.add_argument("--ttl", dest="pair_ttl", type=int, default=None, help="pair：有效秒数")
+    p_auth.add_argument("--target", dest="pair_target", default=None, help="pair：登录后跳转路径")
+    p_auth.add_argument("--base", dest="pair_base", default=None, help="pair：控制面外部地址")
     p_auth.set_defaults(func=cmd_auth)
+
+    p_bench = sub.add_parser("bench", help="控制面 API / 静态资源基准")
+    p_bench.add_argument("--base", default="http://127.0.0.1:8787")
+    p_bench.add_argument("--n", type=int, default=20)
+    p_bench.add_argument("--concurrency", type=int, default=8)
+    p_bench.add_argument("--token", default="")
+    p_bench.add_argument("--json", action="store_true")
+    p_bench.set_defaults(func=cmd_bench)
+
+    p_tls = sub.add_parser("tls", help="入口 TLS 证书：init / show / check")
+    p_tls.add_argument("tls_action", choices=["init", "show", "check"], help="init|show|check")
+    p_tls.add_argument("--domain", default="", help="init：证书域名")
+    p_tls.add_argument("--days", type=int, default=825, help="init：有效期天数")
+    p_tls.add_argument("--cert", default="", help="init：证书路径")
+    p_tls.add_argument("--key", default="", help="init：私钥路径")
+    p_tls.add_argument("--force", action="store_true", help="init：覆盖已有证书")
+    p_tls.set_defaults(func=cmd_tls)
 
     p_procs = sub.add_parser("procs", help="列出 / 结束节点上的 GPU 占用进程")
     p_procs.add_argument("procs_action", choices=["list", "kill"], help="list|kill")

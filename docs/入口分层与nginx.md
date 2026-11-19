@@ -185,7 +185,59 @@ gpu-control gateway render --listen 18080
 
 把它 include 到 nginx.conf，`nginx -t && nginx -s reload`。此时不要再启动 Edge。
 
-### 4.3 nginx 反代控制面 UI
+### 4.3 让 nginx 配置自动生效并跟随节点
+
+只生成片段容易和系统里的 nginx 脱节。给 `gateway.nginx.apply_path` 指向 nginx 已经 include 的文件后，控制面可以负责校验、备份、reload：
+
+```json
+{
+  "gateway": {
+    "nginx": {
+      "apply_path": "/etc/nginx/conf.d/computedeck.conf",
+      "test_cmd": "sudo nginx -t",
+      "reload_cmd": "sudo nginx -s reload",
+      "sync_interval_sec": 15
+    }
+  }
+}
+```
+
+```bash
+gpu-control gateway nginx --apply       # 渲染 → 备份 → nginx -t → reload
+gpu-control gateway nginx --dry-run     # 只看会写什么
+gpu-control gateway nginx --watch --background   # 节点/健康变化时自动重载
+gpu-control gateway nginx --watch --reload-only --background  # 只跟随共享文件
+gpu-control gateway status | jq .nginx  # 是否同步、上次同步结果、跟随进程
+gpu-control gateway stop --kind nginx-sync
+```
+
+行为：
+
+- 写入前保留最近 5 个 `*.bak-时间戳`；`nginx -t` 失败会恢复旧文件，不会把坏配置留在磁盘上。
+- 内容没变就不 reload，避免无意义的连接抖动。
+- reload 失败时保留已通过语法检查的新文件，旧进程继续用旧配置；`gateway status` 的 `last_sync.error` 会给出原因。
+- `test_cmd` / `reload_cmd` 按 shell 词法拆分后直接执行，不经过 shell；需要 sudo 就写进命令里。
+- `apply_path` 必须是 nginx 主配置已经 include 的文件；控制面不会改你的 nginx.conf。
+
+多台 nginx 节点可以共用一份配置（NFS / 共享盘）：
+
+- 控制面所在机器跑 `gateway nginx --watch`，负责渲染并写入共享文件；
+- 其余 nginx 节点把 `apply_path` 指向同一个文件，跑 `gateway nginx --watch --reload-only`，只看文件变化并执行本机 `nginx -t` / reload，不重复渲染，也不需要读取控制面的 `state/`。
+
+这仍然要求各节点能访问同一份文件；控制面不做跨机推送，也不会远程执行 nginx 命令。
+
+### 4.4 和 Nginx UI 一起用
+
+Nginx UI（<https://nginxui.com>）适合管证书、站点和手工配置；ComputeDeck 只负责生成上游片段。两者可以共存，但不要同时改同一个文件：
+
+- 在 Nginx UI 的 `nginx.conf` 里 `include` ComputeDeck 的 `apply_path`，例如 `/etc/nginx/conf.d/computedeck-upstream.conf`；
+- 这个文件只由 ComputeDeck 写（`gateway nginx --apply` / `--watch`），Nginx UI 里不要编辑它；
+- 证书、域名、静态站点继续放 Nginx UI 管理的文件；
+- 在 `gateway.nginx.ui_url` 填 Nginx UI 地址，`gateway status` 会带上，方便从运维记录里跳转。
+
+如果 Nginx UI 自己会 reload nginx，ComputeDeck 的 `reload_cmd` 仍然可以保留；重复 reload 不会中断连接，但没必要同时高频触发。
+
+### 4.5 nginx 反代控制面 UI
 
 ```nginx
 location / {
@@ -198,7 +250,7 @@ location / {
 
 控制面鉴权必须开启；否则不要暴露到公网。
 
-### 4.4 只做静态网页
+### 4.6 只做静态网页
 
 nginx 托管站点，`/v1/` 另行动到 Edge；这和 API 网关不冲突，但不要用同一个 nginx 的 `least_conn` 再选节点。
 

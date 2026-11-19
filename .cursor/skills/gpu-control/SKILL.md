@@ -9,7 +9,7 @@ description: >-
 
 # ComputeDeck（gpu-control）
 
-多节点 GPU 控制面。产品名 **ComputeDeck**；命令行 / MCP 服务名仍为 `gpu-control`。  
+多节点算力控制面。产品名 **ComputeDeck**；命令行 / MCP 服务名仍为 `gpu-control`。  
 主控跑 UI `:8787` + CLI；worker 只跑 Job。权威契约：`GET /api` · `/api/openapi.json`。
 
 ## 接入

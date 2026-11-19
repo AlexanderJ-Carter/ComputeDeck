@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import _bootstrap  # noqa: F401
@@ -130,6 +132,60 @@ def main() -> int:
     auth_issues, auth_notes = doctor_auth_notes(cluster if cluster else None)
     issues.extend(auth_issues)
     notes.extend(auth_notes)
+    if cluster:
+        auth_cfg = (cluster.get("control") or {}).get("auth") or {}
+        auth_mode = str(auth_cfg.get("mode") or "none").lower()
+        token_file = Path(
+            expand_path(str(auth_cfg.get("api_token_file") or LOCAL_DIR / "secrets" / "ui_api_token"))
+        )
+        if auth_mode not in {"none", "off", "disabled"} and not token_file.is_file():
+            notes.append("API Token 未配置：插件/脚本无法自动登录；需要时执行 gpu-control auth issue-token")
+
+    if cluster:
+        from ingress_tls import normalize_ingress, probe_tls
+        from nginx_ops import normalize_settings, status_for
+
+        gateway = cluster.get("gateway") or {}
+        ingress = normalize_ingress(gateway.get("ingress") or {}, gateway=gateway)
+        tls = probe_tls(ingress.get("tls") or {})
+        if tls.get("enabled") and not tls.get("ready"):
+            issues.append("TLS 已启用但未就绪：" + "；".join(tls.get("reasons") or ["证书/私钥缺失"]))
+        elif tls.get("enabled"):
+            notes.append(f"TLS 就绪（到期 {tls.get('not_after') or '未知'}，最低 {tls.get('min_version')}）")
+            not_after = tls.get("not_after")
+            if not_after:
+                try:
+                    expires = datetime.strptime(not_after, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                    if expires - datetime.now(timezone.utc) < timedelta(days=30):
+                        issues.append(f"TLS 证书将在 {not_after} 过期（不足 30 天）")
+                except ValueError:
+                    pass
+
+        settings = normalize_settings(gateway)
+        kind = str(ingress.get("kind") or "edge").lower()
+        if kind == "nginx" and not shutil.which("nginx"):
+            issues.append("ingress.kind=nginx 但本机未安装 nginx")
+        apply_path = str(settings.get("apply_path") or "").strip()
+        if apply_path:
+            apply_path = str(Path(expand_path(apply_path)))
+            artifact = STATE_DIR / "gateway" / "nginx-inference-pool.conf"
+            if not artifact.is_file():
+                issues.append("nginx apply_path 已配置但尚未生成片段（gpu-control gateway render）")
+            else:
+                try:
+                    current = status_for(apply_path, artifact.read_text(encoding="utf-8"))
+                    if not current.get("in_sync"):
+                        issues.append("nginx 配置与最新渲染不一致（gpu-control gateway nginx --apply）")
+                    else:
+                        notes.append("nginx 配置已同步")
+                except OSError as exc:
+                    issues.append(f"nginx 配置不可读：{exc}")
+            if settings.get("auto_sync"):
+                pid_path = STATE_DIR / "ingress-nginx-sync.pid"
+                if not pid_path.is_file():
+                    issues.append("nginx auto_sync 已开启但跟随进程未运行（gateway nginx --watch --background）")
+                else:
+                    notes.append("nginx 自动跟随已配置")
 
     payload = {
         "ok": not issues,
