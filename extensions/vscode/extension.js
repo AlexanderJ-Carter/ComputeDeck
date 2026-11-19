@@ -346,6 +346,7 @@ class ClusterProvider {
     this.emitter.fire();
     updateStatusBar(this.data, this.lastError);
     refreshWorkbench();
+    refreshAccessHub();
     return this.data;
   }
 
@@ -847,7 +848,8 @@ function showAccessHub(opts = {}) {
     browserUrl: opts.browserUrl || '',
     tryEmbed: Boolean(opts.tryEmbed),
   };
-  const panelTitle = opts.title || pageTitleForHash(opts.hash);
+  // 接入页标题固定为「怎么用」，避免「看板」标签里实际是说明页。
+  const panelTitle = t('怎么用 ComputeDeck');
   if (controlUiPanel) {
     controlUiPanel.title = panelTitle;
     controlUiPanel.reveal(vscode.ViewColumn.Beside, false);
@@ -919,6 +921,15 @@ function showAccessHub(opts = {}) {
   });
 }
 
+async function trySimpleBrowser(url) {
+  try {
+    await vscode.commands.executeCommand('simpleBrowser.show', url);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 async function openControlUi(hash = '', title) {
   const localUrl = controlUiUrl(hash);
   const browserUrl = await resolveUiUrl(hash);
@@ -931,13 +942,15 @@ async function openControlUi(hash = '', title) {
   }
 
   if (mode === 'simpleBrowser') {
-    try {
-      await vscode.commands.executeCommand('simpleBrowser.show', browserUrl);
-      return 'simpleBrowser';
-    } catch (_) {
-      showAccessHub({ hash, title: panelTitle, localUrl, browserUrl, tryEmbed: false });
-      return 'access';
-    }
+    if (await trySimpleBrowser(browserUrl)) return 'simpleBrowser';
+    showAccessHub({
+      hash,
+      title: t('怎么用 ComputeDeck'),
+      localUrl,
+      browserUrl,
+      tryEmbed: false,
+    });
+    return 'access';
   }
 
   if (mode === 'embed') {
@@ -945,19 +958,26 @@ async function openControlUi(hash = '', title) {
     return 'embed';
   }
 
-  // auto / access：CodeLab Web 默认进接入页，避免坏掉的 iframe。
-  if (mode === 'access' || mode === 'auto' || isWebIde()) {
-    if (mode === 'auto' && !isWebIde()) {
-      try {
-        await vscode.commands.executeCommand('simpleBrowser.show', browserUrl);
-        return 'simpleBrowser';
-      } catch (_) { }
-    }
-    showAccessHub({ hash, title: panelTitle, localUrl, browserUrl, tryEmbed: false });
+  if (mode === 'access') {
+    showAccessHub({
+      hash,
+      title: t('怎么用 ComputeDeck'),
+      localUrl,
+      browserUrl,
+      tryEmbed: false,
+    });
     return 'access';
   }
 
-  showAccessHub({ hash, title: panelTitle, localUrl, browserUrl, tryEmbed: false });
+  // auto：先开真正的网页大屏；失败再给「怎么用」（标题不再冒充看板）。
+  if (await trySimpleBrowser(browserUrl)) return 'simpleBrowser';
+  showAccessHub({
+    hash,
+    title: t('怎么用 ComputeDeck'),
+    localUrl,
+    browserUrl,
+    tryEmbed: false,
+  });
   return 'access';
 }
 
@@ -1037,6 +1057,13 @@ function readGuideMarkdown(fileName) {
   }
 }
 
+function formatGuideInline(text) {
+  return String(text || '')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\[([^\]]+)\]\(command:([^)]+)\)/g, '<strong>$1</strong>');
+}
+
 function markdownToGuideHtml(md) {
   const escaped = String(md || '')
     .replace(/&/g, '&amp;')
@@ -1044,44 +1071,84 @@ function markdownToGuideHtml(md) {
     .replace(/>/g, '&gt;');
   const lines = escaped.split(/\r?\n/);
   const html = [];
-  let inList = false;
+  let listTag = '';
   const flushList = () => {
-    if (inList) {
-      html.push('</ul>');
-      inList = false;
+    if (listTag) {
+      html.push(`</${listTag}>`);
+      listTag = '';
     }
   };
-  for (const line of lines) {
+  const openList = (tag) => {
+    if (listTag !== tag) {
+      flushList();
+      html.push(`<${tag}>`);
+      listTag = tag;
+    }
+  };
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
     const heading = line.match(/^(#{1,3})\s+(.*)$/);
     if (heading) {
       flushList();
-      const level = heading[1].length;
-      html.push(`<h${level}>${heading[2]}</h${level}>`);
+      html.push(`<h${heading[1].length}>${formatGuideInline(heading[2])}</h${heading[1].length}>`);
+      i += 1;
       continue;
     }
-    const li = line.match(/^[-*]\s+(.*)$/);
-    if (li) {
-      if (!inList) {
-        html.push('<ul>');
-        inList = true;
+    if (/^\|.+\|/.test(line) && i + 1 < lines.length && /^\|\s*[-:| ]+\|/.test(lines[i + 1])) {
+      flushList();
+      const rows = [];
+      while (i < lines.length && /^\|.+\|/.test(lines[i])) {
+        const cells = lines[i]
+          .replace(/^\|/, '')
+          .replace(/\|$/, '')
+          .split('|')
+          .map((c) => c.trim());
+        if (!/^[-:| ]+$/.test(cells.join(''))) rows.push(cells);
+        i += 1;
       }
-      html.push(`<li>${li[1].replace(/`([^`]+)`/g, '<code>$1</code>')}</li>`);
+      if (rows.length) {
+        const head = rows[0];
+        const body = rows.slice(1);
+        html.push('<table><thead><tr>');
+        for (const cell of head) html.push(`<th>${formatGuideInline(cell)}</th>`);
+        html.push('</tr></thead><tbody>');
+        for (const row of body) {
+          html.push('<tr>');
+          for (const cell of row) html.push(`<td>${formatGuideInline(cell)}</td>`);
+          html.push('</tr>');
+        }
+        html.push('</tbody></table>');
+      }
+      continue;
+    }
+    const ul = line.match(/^[-*]\s+(.*)$/);
+    if (ul) {
+      openList('ul');
+      html.push(`<li>${formatGuideInline(ul[1])}</li>`);
+      i += 1;
+      continue;
+    }
+    const ol = line.match(/^\d+\.\s+(.*)$/);
+    if (ol) {
+      openList('ol');
+      html.push(`<li>${formatGuideInline(ol[1])}</li>`);
+      i += 1;
       continue;
     }
     if (!line.trim()) {
       flushList();
+      i += 1;
       continue;
     }
     flushList();
-    html.push(
-      `<p>${line
-        .replace(/`([^`]+)`/g, '<code>$1</code>')
-        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-        .replace(
-          /\[([^\]]+)\]\(command:([^)]+)\)/g,
-          '<button type="button" data-cmd="$2">$1</button>'
-        )}</p>`
-    );
+    // Skip trailing command-link-only lines; step action buttons already cover them.
+    if (/^\[[^\]]+\]\(command:[^)]+\)(?:\s*[｜|]\s*\[[^\]]+\]\(command:[^)]+\))*$/.test(line.trim())) {
+      i += 1;
+      continue;
+    }
+    html.push(`<p>${formatGuideInline(line)}</p>`);
+    i += 1;
   }
   flushList();
   return html.join('\n');
@@ -1112,7 +1179,7 @@ function buildGuideHtml(webview, stepIndex) {
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
-  <title>ComputeDeck 上手指南</title>
+  <title>五分钟上手</title>
   <style>
     :root { color-scheme: light dark; }
     body {
@@ -1125,6 +1192,19 @@ function buildGuideHtml(webview, stepIndex) {
       padding: 14px 10px; background: color-mix(in srgb, var(--vscode-editor-background) 92%, var(--vscode-foreground) 4%);
     }
     aside h1 { margin: 0 0 10px; font-size: 14px; padding: 0 6px; }
+    main table {
+      width: 100%; border-collapse: collapse; margin: 10px 0 14px;
+      font-size: 12.5px;
+    }
+    main th, main td {
+      border: 1px solid var(--vscode-widget-border, rgba(127,127,127,.35));
+      padding: 8px 10px; text-align: left; vertical-align: top;
+    }
+    main th {
+      background: color-mix(in srgb, var(--vscode-editor-background) 88%, var(--vscode-foreground) 8%);
+      font-weight: 600;
+    }
+    main ol { padding-left: 1.3em; }
     aside .step {
       display: block; width: 100%; text-align: left; margin: 0 0 6px;
       border: 0; background: transparent; color: inherit; border-radius: 6px;
@@ -1161,7 +1241,7 @@ function buildGuideHtml(webview, stepIndex) {
 </head>
 <body>
   <aside>
-    <h1>上手指南</h1>
+    <h1>五分钟上手</h1>
     ${nav}
   </aside>
   <main>
@@ -1171,7 +1251,7 @@ function buildGuideHtml(webview, stepIndex) {
       <button type="button" class="primary" id="prev" ${idx === 0 ? 'disabled' : ''}>上一步</button>
       <button type="button" class="primary" id="next">${idx >= GUIDE_STEPS.length - 1 ? '完成' : '下一步'}</button>
     </div>
-    <p class="hint">支持原生 Walkthrough 的环境也可从欢迎页打开同一套步骤；CodeLab 下用本窗口更稳。</p>
+    <p class="hint">下面按钮可直接执行；CodeLab 里用本窗口比欢迎页 Walkthrough 更稳。</p>
   </main>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
@@ -1725,6 +1805,19 @@ function refreshWorkbench() {
   workbenchPanel.webview.postMessage({ type: 'state', state: workbenchSnapshot() });
 }
 
+function refreshAccessHub() {
+  if (!controlUiPanel || !controlUiPanel._cdAccess) return;
+  const cur = controlUiPanel._cdAccess;
+  const next = {
+    ...cur,
+    ...accessProfile(),
+    title: t('怎么用 ComputeDeck'),
+  };
+  controlUiPanel.title = next.title;
+  controlUiPanel._cdAccess = next;
+  controlUiPanel.webview.html = buildAccessHubHtml(controlUiPanel.webview, next);
+}
+
 function showWorkbench() {
   if (workbenchPanel) {
     workbenchPanel.reveal(vscode.ViewColumn.Active, false);
@@ -2127,7 +2220,12 @@ function registerCommands(context) {
     });
   });
   cmd('computedeck.openDashboard', async () => {
-    await openControlUi('/#/actions', t('ComputeDeck · 看板'));
+    const opened = await openControlUi('/#/actions', t('ComputeDeck · 看板'));
+    if (opened === 'access') {
+      vscode.window.showInformationMessage(
+        t('网页大屏没能直接打开。可点「打开完整看板」，或用浏览器打开。')
+      );
+    }
   });
   cmd('computedeck.openPage', async () => {
     await pickControlPage();

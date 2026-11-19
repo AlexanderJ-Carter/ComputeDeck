@@ -1,6 +1,6 @@
 ## 节点：终端、诊断、隔离、腾空
 
-把鼠标移到节点行，右侧出现三个小按钮：
+把鼠标移到节点行，右侧会出现三个小按钮：
 
 | 按钮 | 作用 |
 |---|---|
@@ -12,8 +12,6 @@
 
 推荐流程：
 
-1. [检查节点是否在线](command:computedeck.liveness)
+1. 先检查节点是否在线
 2. 对可疑节点跑一次只读诊断
 3. 需要维护时先隔离，再腾空
-
-[节点操作](command:computedeck.nodeMenu) ｜ [测试能否 SSH](command:computedeck.testSSH)

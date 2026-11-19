@@ -155,5 +155,6 @@
   "隔离节点": "Cordon Node",
   "隔离节点 {0}？": "Cordon node {0}?",
   "集群总览": "Cluster Overview",
-  "需要登录（命令面板：密码登录 / 使用本机密钥）": "Sign in (Command Palette: Password Login / Use Local Key)"
+  "需要登录（命令面板：密码登录 / 使用本机密钥）": "Sign in (Command Palette: Password Login / Use Local Key)",
+  "网页大屏没能直接打开。可点「打开完整看板」，或用浏览器打开。": "Could not open the web dashboard directly. Use Open Full Dashboard, or open in a browser."
 }
