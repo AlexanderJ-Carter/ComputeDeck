@@ -56,7 +56,7 @@ class ComputeDeckClient {
       if (stored !== fromLocal) {
         await this.context.secrets.store(TOKEN_KEY, fromLocal);
         if (output) {
-          output.appendLine(t('已从本机控制面读取 API Token：{0}', localTokenPath() || '(local)'));
+          output.appendLine(t('已自动读取本机登录密钥：{0}', localTokenPath() || '(local)'));
         }
       }
       return fromLocal;
@@ -94,7 +94,7 @@ class ComputeDeckClient {
       data = { raw: text.slice(0, 2000) };
     }
     if (res.status === 401) {
-      throw new ApiError(t('需要登录 ComputeDeck（命令面板：密码登录 / 设置 API Token）'), 401, data);
+      throw new ApiError(t('需要登录（命令面板：密码登录 / 使用本机密钥）'), 401, data);
     }
     if (!res.ok) {
       const message = data.error || data.detail || `HTTP ${res.status}`;
@@ -364,27 +364,32 @@ class ClusterProvider {
       const errText = String(this.lastError.message || this.lastError);
       const localToken = localTokenPath();
       const children = [
-        makeItem(t('控制面未连接'), vscode.TreeItemCollapsibleState.None, {
+        makeItem(t('还没连上'), vscode.TreeItemCollapsibleState.None, {
           description: this.client.base(),
           tooltip: errText,
           iconPath: new vscode.ThemeIcon('error', new vscode.ThemeColor('errorForeground')),
-          command: { command: 'computedeck.login', title: t('登录') },
+          command: { command: 'computedeck.openAccess', title: t('怎么用') },
         }),
       ];
       if (localToken && fs.existsSync(localToken)) {
         children.push(
-          makeItem(t('使用本机 Token'), vscode.TreeItemCollapsibleState.None, {
-            description: t('读取 config/local/secrets/ui_api_token'),
+          makeItem(t('使用本机密钥'), vscode.TreeItemCollapsibleState.None, {
+            description: t('总控上一般点这个就能连'),
             iconPath: new vscode.ThemeIcon('key'),
-            command: { command: 'computedeck.useLocalCredentials', title: t('使用本机 Token') },
+            command: { command: 'computedeck.useLocalCredentials', title: t('使用本机密钥') },
           })
         );
       }
       children.push(
-        makeItem(t('打开上手引导'), vscode.TreeItemCollapsibleState.None, {
-          description: t('5 步了解插件'),
+        makeItem(t('怎么用'), vscode.TreeItemCollapsibleState.None, {
+          description: t('三步说明'),
+          iconPath: new vscode.ThemeIcon('question'),
+          command: { command: 'computedeck.openAccess', title: t('怎么用') },
+        }),
+        makeItem(t('五分钟上手'), vscode.TreeItemCollapsibleState.None, {
+          description: t('跟着点一遍'),
           iconPath: new vscode.ThemeIcon('book'),
-          command: { command: 'computedeck.openWalkthrough', title: t('打开上手引导') },
+          command: { command: 'computedeck.openWalkthrough', title: t('五分钟上手') },
         })
       );
       return [
@@ -420,7 +425,7 @@ class ClusterProvider {
       [t('节点'), t('{0} 在线 / {1} 离线', summary.nodes_online ?? '-', summary.nodes_offline ?? 0), summary.nodes_offline ? 'warning' : 'server'],
       [t('GPU'), t('{0} 空闲 / {1} 占用 / {2} 计入', summary.gpus_free ?? 0, summary.gpus_used ?? 0, summary.gpus_total ?? 0), 'circuit-board'],
       [t('排队'), String(summary.queue_pending ?? 0), 'list-ordered'],
-      [t('租约'), String(summary.leases ?? leases.length), 'lock'],
+      [t('占用中'), String(summary.leases ?? leases.length), 'lock'],
       [t('入口'), layering.summary || (gateway && gateway.preferred) || '-', 'globe'],
     ].map(([label, value, icon]) =>
       makeItem(`${label}`, vscode.TreeItemCollapsibleState.None, {
@@ -473,19 +478,19 @@ class ClusterProvider {
         iconPath: new vscode.ThemeIcon('rocket'),
         contextValue: 'job',
         tooltip: job.description || '',
-        command: { command: 'computedeck.jobMenu', title: t('Job 操作'), arguments: [job] },
+        command: { command: 'computedeck.jobMenu', title: t('任务操作'), arguments: [job] },
       })
     );
     sections.push(
-      makeItem(t('Job'), vscode.TreeItemCollapsibleState.Collapsed, {
+      makeItem(t('任务'), vscode.TreeItemCollapsibleState.Collapsed, {
         description: t('{0} 个', jobRows.length),
         iconPath: new vscode.ThemeIcon('rocket'),
-        children: jobRows.length ? jobRows : [makeItem(t('暂无 Job'), vscode.TreeItemCollapsibleState.None)],
+        children: jobRows.length ? jobRows : [makeItem(t('暂无任务'), vscode.TreeItemCollapsibleState.None)],
       })
     );
 
     const queueRows = [
-      makeItem(t('队列 pending'), vscode.TreeItemCollapsibleState.None, {
+      makeItem(t('等待中的排队'), vscode.TreeItemCollapsibleState.None, {
         description: String(queue.filter((x) => (x.status || '') === 'pending').length),
         iconPath: new vscode.ThemeIcon('list-ordered'),
       }),
@@ -498,8 +503,8 @@ class ClusterProvider {
       ),
     ];
     sections.push(
-      makeItem(t('队列与租约'), vscode.TreeItemCollapsibleState.Collapsed, {
-        description: t('{0} pending · {1} 租约', summary.queue_pending ?? 0, leases.length),
+      makeItem(t('排队'), vscode.TreeItemCollapsibleState.Collapsed, {
+        description: t('{0} 等待 · {1} 占用中', summary.queue_pending ?? 0, leases.length),
         iconPath: new vscode.ThemeIcon('list-ordered'),
         children: queueRows,
       })
@@ -581,9 +586,9 @@ function updateStatusBar(data, error) {
   statusBar.show();
   if (error || !data) {
     statusBar.text = t('$(error) ComputeDeck 未连接');
-    statusBar.tooltip = String((error && error.message) || t('点击登录或刷新'));
+    statusBar.tooltip = String((error && error.message) || t('点击打开「怎么用」'));
     statusBar.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
-    statusBar.command = 'computedeck.login';
+    statusBar.command = 'computedeck.openAccess';
     return;
   }
   const summary = data.overview?.summary || {};
@@ -601,13 +606,11 @@ function updateStatusBar(data, error) {
     [
       t('**ComputeDeck**'),
       '',
-      t('在线 {0} / {1}，离线 {2}，GPU 空闲 {3}/{4}', online, total, offline, free, gpuTotal),
-      unread > 0 ? t('未读监管公告：{0}', unread) : t('监管公告：无未读'),
-      assistantReady
-        ? t('Web 小助手：就绪（{0}）', data.assistant?.model || data.assistant?.mode || 'llm')
-        : t('Web 小助手：未就绪'),
+      t('在线 {0}/{1}，离线 {2}，空闲 GPU {3}/{4}', online, total, offline, free, gpuTotal),
+      unread > 0 ? t('未读公告：{0}', unread) : t('公告：无未读'),
+      assistantReady ? t('小助手：可用') : t('小助手：未就绪'),
       '',
-      t('点击打开工作台；看板 / 助手 / 公告都在编辑器窗口内打开'),
+      t('点击打开工作台'),
     ].join('\n')
   );
   statusBar.backgroundColor = warn
@@ -627,7 +630,7 @@ const CONTROL_PAGES = [
   { id: 'terminal', label: '交互终端', hash: '/#/terminal' },
   { id: 'config', label: '配置', hash: '/#/config' },
   { id: 'assistant', label: '小助手', hash: '/#/assistant' },
-  { id: 'notices', label: '监管公告', hash: '/#/notices' },
+  { id: 'notices', label: '公告', hash: '/#/notices' },
 ];
 
 function controlUiUrl(hash = '') {
@@ -824,6 +827,8 @@ function buildAccessHubHtml(webview, state) {
     }
     btn('打开完整看板', 'simpleBrowser', true);
     btn('打开工作台', 'openWorkbench');
+    btn('使用本机密钥', 'useLocalCredentials');
+    btn('密码登录', 'login');
     btn('用浏览器打开', 'openExternal');
     btn('五分钟上手', 'openWalkthrough');
     btn('刷新', 'refresh');
@@ -878,7 +883,7 @@ function showAccessHub(opts = {}) {
     }
     if (msg.command === 'copyUrl') {
       await vscode.env.clipboard.writeText(cur.browserUrl || cur.localUrl || '');
-      vscode.window.showInformationMessage(t('已复制控制面 URL'));
+      vscode.window.showInformationMessage(t('已复制看板地址'));
       return;
     }
     if (msg.command === 'embed') {
@@ -891,6 +896,14 @@ function showAccessHub(opts = {}) {
     }
     if (msg.command === 'openWalkthrough') {
       await openGettingStarted();
+      return;
+    }
+    if (msg.command === 'useLocalCredentials') {
+      await vscode.commands.executeCommand('computedeck.useLocalCredentials');
+      return;
+    }
+    if (msg.command === 'login') {
+      await vscode.commands.executeCommand('computedeck.login');
       return;
     }
     if (msg.command === 'refresh') {
@@ -955,7 +968,7 @@ async function openControlUiExternal(hash = '') {
 async function pickControlPage() {
   const picked = await vscode.window.showQuickPick(
     CONTROL_PAGES.map((p) => ({ label: p.label, description: p.hash, page: p })),
-    { placeHolder: t('在编辑器窗口打开控制面页面') }
+    { placeHolder: t('打开大屏里的哪一页？') }
   );
   if (!picked) return;
   await openControlUi(picked.page.hash, t('ComputeDeck · {0}', picked.page.label));
@@ -964,23 +977,23 @@ async function pickControlPage() {
 const GUIDE_STEPS = [
   {
     id: 'connect',
-    title: '1. 连接控制面',
+    title: '1. 先连上',
     file: '01-connect.md',
     actions: [
-      { label: '使用本机 Token', command: 'computedeck.useLocalCredentials' },
+      { label: '使用本机密钥', command: 'computedeck.useLocalCredentials' },
       { label: '密码登录', command: 'computedeck.login' },
-      { label: '打开设置', command: 'workbench.action.openSettings', args: ['computedeck'] },
-      { label: '刷新集群', command: 'computedeck.refresh' },
+      { label: '怎么用', command: 'computedeck.openAccess' },
+      { label: '刷新', command: 'computedeck.refresh' },
     ],
   },
   {
     id: 'workbench',
-    title: '2. 工作台与窗口',
+    title: '2. 看集群、开大屏',
     file: '02-cluster.md',
     actions: [
       { label: '打开工作台', command: 'computedeck.openWorkbench' },
-      { label: '打开看板', command: 'computedeck.openDashboard' },
-      { label: '选择页面…', command: 'computedeck.openPage' },
+      { label: '打开完整看板', command: 'computedeck.openDashboard' },
+      { label: '怎么用', command: 'computedeck.openAccess' },
     ],
   },
   {
@@ -988,28 +1001,28 @@ const GUIDE_STEPS = [
     title: '3. 节点终端与诊断',
     file: '03-nodes.md',
     actions: [
-      { label: '节点探活', command: 'computedeck.liveness' },
+      { label: '检查节点是否在线', command: 'computedeck.liveness' },
       { label: '节点操作', command: 'computedeck.nodeMenu' },
-      { label: '测试 SSH', command: 'computedeck.testSSH' },
+      { label: '测试能否 SSH', command: 'computedeck.testSSH' },
     ],
   },
   {
     id: 'jobs',
-    title: '4. 部署与启停 Job',
+    title: '4. 部署与启停任务',
     file: '04-jobs.md',
     actions: [
-      { label: '部署 Job', command: 'computedeck.deployJob' },
+      { label: '部署任务', command: 'computedeck.deployJob' },
       { label: '运行自检', command: 'computedeck.runDoctor' },
     ],
   },
   {
     id: 'mcp',
-    title: '5. MCP · 小助手 · 公告',
+    title: '5. 小助手与 AI 工具',
     file: '05-mcp.md',
     actions: [
-      { label: '注册 MCP', command: 'computedeck.installMcp' },
+      { label: '注册给 AI 用的工具', command: 'computedeck.installMcp' },
       { label: '打开小助手', command: 'computedeck.openAssistant' },
-      { label: '打开监管公告', command: 'computedeck.openNotices' },
+      { label: '打开公告', command: 'computedeck.openNotices' },
     ],
   },
 ];
@@ -1192,7 +1205,7 @@ function showGuide(stepIndex = 0) {
   }
   guidePanel = vscode.window.createWebviewPanel(
     'computedeck.guide',
-    t('ComputeDeck 上手指南'),
+    t('五分钟上手'),
     vscode.ViewColumn.Active,
     { enableScripts: true, retainContextWhenHidden: true }
   );
@@ -1210,7 +1223,7 @@ function showGuide(stepIndex = 0) {
       if (extensionContext) {
         await extensionContext.globalState.update('computedeck.guideCompleted', true);
       }
-      vscode.window.showInformationMessage(t('上手指南已完成。可随时从侧栏或命令面板再打开。'));
+      vscode.window.showInformationMessage(t('五分钟上手已完成。以后可在命令面板搜 ComputeDeck 再打开。'));
       guidePanel?.dispose();
       return;
     }
@@ -1516,13 +1529,13 @@ function buildWorkbenchHtml(webview) {
     </section>
 
     <section class="section">
-      <div class="section-h"><h2>控制面页面</h2><span class="more">在编辑器窗口打开</span></div>
+      <div class="section-h"><h2>大屏页面</h2><span class="more">在编辑器里打开</span></div>
       <div class="pages" id="pages"></div>
     </section>
 
     <section class="grid-2">
       <div class="panel">
-        <h3>连接与 Agent</h3>
+        <h3>连接与小助手</h3>
         <div class="status-rows" id="aiBlock"></div>
         <div class="btn-row" id="authActions"></div>
       </div>
@@ -1536,13 +1549,13 @@ function buildWorkbenchHtml(webview) {
           <div class="label">部署 / 维护</div>
           <div class="btn-row" id="opsMutate"></div>
         </div>
-        <p class="foot">危险操作会二次确认；详情在输出通道「ComputeDeck」。</p>
+        <p class="foot">危险操作会再确认一次；文字结果在输出面板「ComputeDeck」。</p>
       </div>
     </section>
 
     <section class="notices">
       <div class="notices-h">
-        <h3>监管公告</h3>
+        <h3>公告</h3>
         <div class="btn-row" id="noticeActions"></div>
       </div>
       <ul class="notice-list" id="notices"></ul>
@@ -1604,7 +1617,7 @@ function buildWorkbenchHtml(webview) {
       el('connLabel').textContent = connected ? '已连接' : '未连接';
       el('baseLabel').textContent = connected
         ? (state.base || '')
-        : (state.error || '检查 apiBase / Token');
+        : (state.error || '请点「怎么用」或「使用本机密钥」');
       el('heroActions').replaceChildren(
         btn('刷新', 'refresh', 'ghost'),
         btn('怎么用', 'openAccess', 'primary'),
@@ -1626,13 +1639,13 @@ function buildWorkbenchHtml(webview) {
         accessBox.append(title, detail);
       }
       el('kpiMore').textContent = connected
-        ? ('空闲 GPU ' + (s.gpus_free ?? 0) + ' · 租约 ' + (s.leases ?? 0))
+        ? ('空闲 GPU ' + (s.gpus_free ?? 0) + ' · 占用中 ' + (s.leases ?? 0))
         : '';
       el('kpis').replaceChildren(
-        kpiCard('在线节点', (s.nodes_online ?? 0) + '/' + (s.nodes ?? 0), '集群可达节点', offline > 0 ? 'alert' : ''),
-        kpiCard('空闲 GPU', (s.gpus_free ?? 0) + '/' + (s.gpus_total ?? 0), '可调度显卡', Number(s.gpus_free || 0) === 0 ? 'alert' : ''),
-        kpiCard('离线', String(offline), '需探活或检修', offline > 0 ? 'bad' : ''),
-        kpiCard('未读公告', String(unread), '监管与健康提示', unread > 0 ? 'alert' : '')
+        kpiCard('在线节点', (s.nodes_online ?? 0) + '/' + (s.nodes ?? 0), '能连上的机器', offline > 0 ? 'alert' : ''),
+        kpiCard('空闲 GPU', (s.gpus_free ?? 0) + '/' + (s.gpus_total ?? 0), '还能用的显卡', Number(s.gpus_free || 0) === 0 ? 'alert' : ''),
+        kpiCard('离线', String(offline), '需要检查的机器', offline > 0 ? 'bad' : ''),
+        kpiCard('未读公告', String(unread), '健康与提示', unread > 0 ? 'alert' : '')
       );
       const pages = el('pages');
       pages.replaceChildren();
@@ -1642,24 +1655,24 @@ function buildWorkbenchHtml(webview) {
       const a = state.assistant || {};
       const m = state.mcp || {};
       el('aiBlock').replaceChildren(
-        statusRow('小助手', a.ready ? ('就绪 · ' + (a.model || 'llm')) : (a.enabled ? '已启用，未就绪' : '未启用'), a.base_url || a.network_note || '', a.ready ? true : false),
-        statusRow('MCP', m.ready ? '可执行文件就绪' : '未找到 gpu-control-mcp', m.path || '', m.ready ? true : false),
-        statusRow('Token', m.tokenReady ? '就绪' : '需要配置', m.tokenReady ? '本机或 SecretStorage' : '可使用本机 Token / 设置 Token', m.tokenReady ? true : false)
+        statusRow('小助手', a.ready ? '可用' : (a.enabled ? '已启用，未就绪' : '未启用'), a.base_url || a.network_note || '', a.ready ? true : false),
+        statusRow('AI 工具', m.ready ? '已就绪' : '未找到程序', m.path || '', m.ready ? true : false),
+        statusRow('登录密钥', m.tokenReady ? '已就绪' : '需要登录', m.tokenReady ? '本机密钥可用' : '点「使用本机密钥」或「密码登录」', m.tokenReady ? true : false)
       );
       el('authActions').replaceChildren(
-        btn(m.tokenReady ? '使用本机 Token' : '设置 Token', m.tokenReady ? 'useLocalCredentials' : 'setToken'),
-        btn('注册 MCP', 'installMcp'),
+        btn(m.tokenReady ? '使用本机密钥' : '设置登录密钥', m.tokenReady ? 'useLocalCredentials' : 'setToken'),
+        btn('注册给 AI 用的工具', 'installMcp'),
         btn('密码登录', 'login', 'ghost'),
         btn('设置', 'openSettings', 'ghost')
       );
       el('opsDiag').replaceChildren(
         btn('运行自检', 'runDoctor'),
-        btn('节点探活', 'liveness'),
-        btn('测试 SSH', 'testSSH'),
+        btn('检查节点是否在线', 'liveness'),
+        btn('测试能否 SSH', 'testSSH'),
         btn('只读诊断', 'execPreset')
       );
       el('opsMutate').replaceChildren(
-        btn('部署 Job', 'deployJob', 'primary'),
+        btn('部署任务', 'deployJob', 'primary'),
         btn('腾空节点', 'freeNode', 'danger')
       );
       el('accessActions').replaceChildren(
@@ -1834,12 +1847,12 @@ async function pickNode() {
 async function pickJob() {
   const jobs = provider?.data?.jobs || (await client.jobs());
   if (!jobs.length) {
-    vscode.window.showWarningMessage(t('ComputeDeck: 没有已安装 Job'));
+    vscode.window.showWarningMessage(t('还没有已安装的任务'));
     return null;
   }
   const picked = await vscode.window.showQuickPick(
     jobs.map((j) => ({ label: j.name, description: t('{0} GPU', j.gpus_per_node ?? '?'), job: j })),
-    { placeHolder: t('选择 Job') }
+    { placeHolder: t('选择任务') }
   );
   return picked ? picked.job : null;
 }
@@ -1884,7 +1897,7 @@ async function nodeMenu(nodeArg) {
     { label: t('查看 GPU 进程'), action: 'gpu-procs', icon: 'list-unordered' },
     { label: node.cordoned ? t('取消隔离') : t('隔离节点'), action: 'cordon', icon: 'lock' },
     { label: t('腾空节点'), action: 'free', icon: 'debug-stop' },
-    { label: t('打开 Web 节点详情'), action: 'dashboard', icon: 'globe' },
+    { label: t('在大屏里看这台节点'), action: 'dashboard', icon: 'globe' },
   ].map((x) => ({
     label: `${offline && ['terminal', 'nvidia-smi', 'gpu-procs', 'free'].includes(x.action) ? '$(warning) ' : ''}${x.label}`,
     action: x.action,
@@ -1985,7 +1998,7 @@ async function freeNode(nodeArg) {
   if (!node) return;
   const freeLabel = t('腾空');
   const ok = await vscode.window.showWarningMessage(
-    t('腾空 {0}？会停止 Job、结束 GPU 进程并释放租约。', node.name),
+    t('腾空 {0}？会停止任务、结束 GPU 进程并释放占用。', node.name),
     { modal: true },
     freeLabel
   );
@@ -2055,7 +2068,7 @@ function resolveMcpPath() {
 
 function registerMcp(context) {
   if (!vscode.lm || typeof vscode.lm.registerMcpServerDefinitionProvider !== 'function') {
-    output.appendLine(t('当前 VS Code 不支持 MCP Server provider（需要 1.101+）。'));
+    output.appendLine(t('当前编辑器版本太旧，无法注册给 AI 用的工具（需要 1.101+）。'));
     return;
   }
   mcpEmitter = new vscode.EventEmitter();
@@ -2086,7 +2099,7 @@ function registerCommands(context) {
           output.appendLine(`ERROR ${name}: ${message}`);
           if (err && err.status === 401) {
             const login = t('密码登录');
-            const setToken = t('设置 Token');
+            const setToken = t('设置登录密钥');
             const choice = await vscode.window.showWarningMessage(message, login, setToken);
             if (choice === login) return vscode.commands.executeCommand('computedeck.login');
             if (choice === setToken) return vscode.commands.executeCommand('computedeck.setToken');
@@ -2123,7 +2136,7 @@ function registerCommands(context) {
     await openControlUi('/#/assistant', t('ComputeDeck · 小助手'));
   });
   cmd('computedeck.openNotices', async () => {
-    await openControlUi('/#/notices', t('ComputeDeck · 监管公告'));
+    await openControlUi('/#/notices', t('ComputeDeck · 公告'));
   });
   cmd('computedeck.openExternalBrowser', async () => {
     await openControlUiExternal('/#/actions');
@@ -2137,26 +2150,26 @@ function registerCommands(context) {
   });
   cmd('computedeck.login', async () => {
     const password = await vscode.window.showInputBox({
-      prompt: t('ComputeDeck 控制面密码'),
+      prompt: t('总控登录密码'),
       password: true,
       ignoreFocusOut: true,
     });
     if (!password) return;
     await client.login(password);
-    vscode.window.showInformationMessage(t('ComputeDeck 登录成功'));
+    vscode.window.showInformationMessage(t('登录成功'));
     if (mcpEmitter) mcpEmitter.fire();
     await provider.refresh(true);
   });
   cmd('computedeck.setToken', async () => {
     const token = await vscode.window.showInputBox({
-      prompt: t('API Token（gpu-control auth issue-token 生成）'),
+      prompt: t('粘贴登录密钥（总控上可自动读取，一般不用手填）'),
       password: true,
       ignoreFocusOut: true,
     });
     if (!token) return;
     await context.secrets.store(TOKEN_KEY, token.trim());
     await context.secrets.delete(COOKIE_KEY);
-    vscode.window.showInformationMessage(t('ComputeDeck API Token 已保存'));
+    vscode.window.showInformationMessage(t('登录密钥已保存'));
     if (mcpEmitter) mcpEmitter.fire();
     await provider.refresh(true);
   });
@@ -2165,23 +2178,20 @@ function registerCommands(context) {
     const token = readLocalApiToken();
     if (!token) {
       vscode.window.showWarningMessage(
-        t(
-          '未找到本机 Token（{0}）。在控制面仓库执行 gpu-control auth issue-token。',
-          tokenPath || 'config/local/secrets/ui_api_token'
-        )
+        t('没找到本机密钥（{0}）。请先打开「怎么用」，或在总控生成密钥。', tokenPath || '本机密钥文件')
       );
       return;
     }
     await context.secrets.store(TOKEN_KEY, token);
     await context.secrets.delete(COOKIE_KEY);
     if (mcpEmitter) mcpEmitter.fire();
-    vscode.window.showInformationMessage(t('已加载本机 API Token'));
+    vscode.window.showInformationMessage(t('已使用本机密钥登录'));
     await provider.refresh(true);
   });
   cmd('computedeck.logout', async () => {
     await context.secrets.delete(TOKEN_KEY);
     await context.secrets.delete(COOKIE_KEY);
-    vscode.window.showInformationMessage(t('ComputeDeck 凭据已清除'));
+    vscode.window.showInformationMessage(t('已退出登录'));
     if (mcpEmitter) mcpEmitter.fire();
     await provider.refresh(true);
   });
@@ -2256,18 +2266,16 @@ function registerCommands(context) {
     const mcpPath = resolveMcpPath();
     if (!mcpPath || !fs.existsSync(mcpPath)) {
       vscode.window.showWarningMessage(
-        t('未找到 {0}；请在设置 computedeck.mcpPath 指向 bin/gpu-control-mcp', mcpPath || t('(未配置)'))
+        t('没找到 AI 工具程序（{0}）。一般在总控仓库的 bin 目录里。', mcpPath || t('未配置'))
       );
       return;
     }
     const token = await client.resolveToken();
     if (!token) {
-      vscode.window.showWarningMessage(
-        t('MCP 走 HTTP 需要 API Token；请先执行「ComputeDeck: 设置 API Token」')
-      );
+      vscode.window.showWarningMessage(t('给 AI 用的工具需要先登录。请先「使用本机密钥」或「密码登录」。'));
     }
     if (mcpEmitter) mcpEmitter.fire();
-    vscode.window.showInformationMessage(t('ComputeDeck MCP Server 已注册（VS Code / Copilot 可使用）'));
+    vscode.window.showInformationMessage(t('已注册给 AI 用的工具（Copilot 等可以使用）'));
   });
 }
 
@@ -2305,12 +2313,12 @@ function activate(context) {
 
   startPolling();
   const controlRoot = findControlRoot();
-  output.appendLine(t('ComputeDeck 已激活 · API {0}', client.base()));
+  output.appendLine(t('ComputeDeck 已启动 · 地址 {0}', client.base()));
   if (controlRoot) {
-    output.appendLine(t('检测到本机控制面目录：{0}', controlRoot));
+    output.appendLine(t('已识别总控目录：{0}', controlRoot));
   }
   if (config().get('autoLocalAuth', true) && localTokenPath() && fs.existsSync(localTokenPath())) {
-    output.appendLine(t('将自动使用本机 API Token（无需粘贴）'));
+    output.appendLine(t('将自动使用本机密钥登录'));
   }
   provider.refresh(false).catch(() => { });
 

@@ -1233,18 +1233,18 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
                   </header>
                   <div class="remote-scenario-grid">
                     <article class="remote-scenario">
-                      <h3>本机主控</h3>
-                      <p>已在 control 上（含 CodeLab）时直接打开 <code>http://127.0.0.1:8787</code>。VS Code 插件会自动读本机 Token。</p>
+                      <h3>本机总控</h3>
+                      <p>已在总控机上（含 CodeLab）时，打开 <code>http://127.0.0.1:8787</code>。VS Code 插件一般会自动用本机密钥登录，不用粘贴。</p>
                     </article>
                     <article class="remote-scenario">
                       <h3>SSH 端口转发</h3>
-                      <p>笔记本访问主控时最稳妥：</p>
+                      <p>笔记本访问总控时最稳妥：</p>
                       <pre class="snippet remote-snippet" id="remote-ssh-snippet">ssh -N -L 8787:127.0.0.1:8787 &lt;control&gt;</pre>
-                      <p class="meta">然后浏览器打开本机 8787；插件把 <code>apiBase</code> 指到隧道地址。</p>
+                      <p class="meta">然后浏览器打开本机 8787；插件把总控地址指到隧道。</p>
                     </article>
                     <article class="remote-scenario">
-                      <h3>IDE Remote SSH</h3>
-                      <p>工作区在主控仓库时，插件默认 <code>127.0.0.1:8787</code> + 自动 Token，无需再做端口转发。</p>
+                      <h3>IDE 远程进总控</h3>
+                      <p>工作区在总控仓库时，插件默认连本机 8787，并自动用本机密钥，一般不用再做端口转发。不会用就点插件里的「怎么用」。</p>
                     </article>
                     <article class="remote-scenario">
                       <h3>集群外团队</h3>

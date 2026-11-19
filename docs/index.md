@@ -46,6 +46,7 @@ gpu-control docs serve    # 本机预览
 
 ### 接 Agent / IDE
 
+- [开始使用](开始使用.md) — 侧栏 / 工作台 / 完整看板白话说明
 - [AI / MCP 接入](ai-接入.md)
 - [VS Code 插件](vscode插件.md)
 

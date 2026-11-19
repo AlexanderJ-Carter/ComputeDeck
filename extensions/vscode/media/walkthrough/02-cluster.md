@@ -1,6 +1,6 @@
 ## 看集群、开大屏
 
-- **左侧**：只负责找节点、Job。
+- **左侧**：找节点、任务。
 - **工作台**：看空闲卡、公告、常用按钮。[打开工作台](command:computedeck.openWorkbench)
 - **完整大屏**：图表、小助手等。[打开完整看板](command:computedeck.openDashboard)
 
