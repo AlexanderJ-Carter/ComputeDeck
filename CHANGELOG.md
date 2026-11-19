@@ -24,6 +24,10 @@
 
 - 文档 [接入拓扑与鉴权](docs/接入拓扑与鉴权.md)：主控/被控、访问路径、鉴权矩阵、OIDC SSO 方向、VSIX 非 npm 交付约定
 
+### Fixed
+
+- Web 在 VS Code / CodeLab `/proxy/<port>/` 下打开时 CSS/API 丢失：静态资源改相对路径，并识别代理前缀拼 API/WS
+
 ### Changed
 
 - VS Code 插件 `1.2.12`：侧栏「AI 与 MCP」、公告/助手深链、`viewsWelcome`、状态配色；本机 Token 自动登录

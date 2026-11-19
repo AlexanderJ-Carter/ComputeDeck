@@ -797,6 +797,17 @@ function showSteps(steps, title) {
   );
 }
 
+function apiUrl(path) {
+  if (!path) return path;
+  if (/^https?:\/\//i.test(path) || path.startsWith("//")) return path;
+  const withBase = typeof window.__CD_URL__ === "function" ? window.__CD_URL__ : null;
+  if (withBase) return withBase(path);
+  const base = window.__CD_BASE__ || "";
+  if (!base || path.charAt(0) !== "/") return path;
+  if (path === base || path.startsWith(`${base}/`)) return path;
+  return `${base}${path}`;
+}
+
 async function api(path, options = {}) {
   const { timeoutMs = 600000, ...fetchOpts } = options;
   const headers = { "Content-Type": "application/json", ...(fetchOpts.headers || {}) };
@@ -804,7 +815,7 @@ async function api(path, options = {}) {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res;
   try {
-    res = await fetch(path, {
+    res = await fetch(apiUrl(path), {
       credentials: "same-origin",
       ...fetchOpts,
       headers,
@@ -1714,7 +1725,7 @@ function connectTerminal() {
   const cols = term.cols || 120;
   const rows = term.rows || 32;
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  const url = `${proto}//${location.host}/ws/terminal?node=${encodeURIComponent(node)}&cols=${cols}&rows=${rows}`;
+  const url = `${proto}//${location.host}${apiUrl("/ws/terminal")}?node=${encodeURIComponent(node)}&cols=${cols}&rows=${rows}`;
   const ws = new WebSocket(url);
   ws.binaryType = "arraybuffer";
   termState.ws = ws;
@@ -5166,8 +5177,8 @@ async function testIntegrationApi() {
   if (meta) meta.textContent = "检测中…";
   const started = performance.now();
   try {
-    const health = await fetch("/api/health", { credentials: "same-origin" });
-    const catalog = await fetch("/api", { credentials: "same-origin" });
+    const health = await fetch(apiUrl("/api/health"), { credentials: "same-origin" });
+    const catalog = await fetch(apiUrl("/api"), { credentials: "same-origin" });
     const ms = Math.round(performance.now() - started);
     if (meta) meta.textContent = `health ${health.status} · /api ${catalog.status} · ${ms}ms`;
     toast(health.ok && catalog.ok ? "API 正常" : "API 有异常", { tone: health.ok && catalog.ok ? "ok" : "warn" });
@@ -7194,7 +7205,7 @@ async function postAssistantStream(payload, onEvent, { timeoutMs = 240000, contr
   const ctrl = controller || new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const resp = await fetch("/api/assistant/chat", {
+    const resp = await fetch(apiUrl("/api/assistant/chat"), {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
       body: JSON.stringify({ ...payload, stream: true }),
