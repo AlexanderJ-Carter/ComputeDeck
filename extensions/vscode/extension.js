@@ -220,6 +220,46 @@ class ComputeDeckClient {
     return this.request('/api/auth/status', { timeoutMs: 10000 });
   }
 
+  assistantChat(body) {
+    return this.request('/api/assistant/chat', {
+      method: 'POST',
+      body,
+      timeoutMs: 180000,
+    });
+  }
+
+  assistantExecute(body) {
+    return this.request('/api/assistant/execute', {
+      method: 'POST',
+      body,
+      timeoutMs: 180000,
+    });
+  }
+
+  noticesList() {
+    return this.request('/api/notices', { timeoutMs: 15000 });
+  }
+
+  noticesMark(ids, read = true) {
+    return this.request('/api/notices/mark', {
+      method: 'POST',
+      body: { ids, read: !!read },
+      timeoutMs: 15000,
+    });
+  }
+
+  queueList() {
+    return this.request('/api/queue', { timeoutMs: 15000 });
+  }
+
+  queueAction(action, body = {}) {
+    return this.request(`/api/queue/${action}`, {
+      method: 'POST',
+      body,
+      timeoutMs: 30000,
+    });
+  }
+
   exchangeTicket(target) {
     return this.request('/api/auth/exchange', {
       method: 'POST',
@@ -2615,6 +2655,162 @@ function registerMcp(context) {
   );
 }
 
+
+// ── 插件内操作（不打开网页） ───────────────────────────────
+
+let assistantConversation = '';
+
+async function askAssistant(promptText) {
+  let status = null;
+  try {
+    status = await client.assistantStatus();
+  } catch (err) {
+    vscode.window.showErrorMessage(t('读取小助手状态失败：{0}', err.message || err));
+    return;
+  }
+  if (!status || !status.ready) {
+    const choice = await vscode.window.showWarningMessage(
+      t('小助手还没配置好，需要先填模型地址和密钥。'),
+      t('配置小助手 API')
+    );
+    if (choice) await vscode.commands.executeCommand('computedeck.configureAssistant');
+    return;
+  }
+  const message =
+    promptText ||
+    (await vscode.window.showInputBox({
+      prompt: t('问 ComputeDeck 助手（例如：哪些节点空闲？）'),
+      ignoreFocusOut: true,
+    }));
+  if (!message || !String(message).trim()) return;
+  const body = { message: String(message).trim() };
+  if (assistantConversation) body.conversation_id = assistantConversation;
+  try {
+    const data = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: t('ComputeDeck 助手正在处理…'), cancellable: false },
+      () => client.assistantChat(body)
+    );
+    if (data.conversation_id) assistantConversation = data.conversation_id;
+    output.show(true);
+    output.appendLine(`\n> ${body.message}`);
+    if (data.reply) output.appendLine(String(data.reply));
+    if (data.warning) output.appendLine(t('提示：{0}', data.warning));
+    const pending = Array.isArray(data.pending_actions) ? data.pending_actions : [];
+    for (const action of pending) await confirmAssistantAction(action, data.conversation_id);
+  } catch (err) {
+    vscode.window.showErrorMessage(t('小助手请求失败：{0}', err.message || err));
+  }
+}
+
+async function confirmAssistantAction(action, conversationId) {
+  const summary = action.summary || action.label || t('执行该操作');
+  const risk = String(action.risk || 'write');
+  const allow = await vscode.window.showWarningMessage(
+    t('助手请求执行：{0}', summary),
+    { modal: true },
+    t('允许'),
+    t('拒绝')
+  );
+  if (allow !== t('允许')) return;
+  let confirm = true;
+  if (risk === 'destructive' || String(action.confirm_level || '') === 'double') {
+    const again = await vscode.window.showWarningMessage(
+      t('这是破坏性操作，确认执行？\n{0}', summary),
+      { modal: true },
+      t('再次确认')
+    );
+    if (again !== t('再次确认')) return;
+    confirm = 'EXECUTE';
+  }
+  try {
+    const result = await client.assistantExecute({
+      conversation_id: conversationId,
+      action_id: action.id,
+      confirm,
+    });
+    output.show(true);
+    output.appendLine(`\n[${action.label || action.tool || 'action'}] ${result.ok ? t('已执行') : t('失败')}`);
+    if (result.reply) output.appendLine(String(result.reply));
+    if (result.ok) vscode.window.showInformationMessage(t('操作已执行'));
+    else vscode.window.showErrorMessage(t('执行失败：{0}', result.error || result.reply || t('未知错误')));
+  } catch (err) {
+    vscode.window.showErrorMessage(t('执行失败：{0}', err.message || err));
+  }
+}
+
+async function openNoticesNative() {
+  let data = null;
+  try {
+    data = await client.noticesList();
+  } catch (err) {
+    vscode.window.showErrorMessage(t('读取公告失败：{0}', err.message || err));
+    return;
+  }
+  const items = (data.items || []).filter((n) => !n.dismissed);
+  if (!items.length) {
+    vscode.window.showInformationMessage(t('没有未处理公告'));
+    return;
+  }
+  const picked = await vscode.window.showQuickPick(
+    items.map((n) => ({
+      label: `${n.severity === 'error' ? '$(error)' : n.severity === 'warn' ? '$(warning)' : '$(info)'} ${n.title || n.id || t('公告')}`,
+      description: n.detail || '',
+      detail: [n.source, n.detail].filter(Boolean).join(' · '),
+      notice: n,
+    })),
+    { placeHolder: t('公告（选中标记已读）') }
+  );
+  if (!picked) return;
+  try {
+    await client.noticesMark([picked.notice.id], true);
+    provider.refresh(false).catch(() => {});
+  } catch (_) {
+    // 标记已读失败不影响阅读
+  }
+  output.show(true);
+  output.appendLine(`\n[${picked.notice.title || picked.notice.id}]`);
+  if (picked.notice.detail) output.appendLine(String(picked.notice.detail));
+}
+
+async function openConfigFile() {
+  const root = findControlRoot() || (vscode.workspace.workspaceFolders || [])[0]?.uri.fsPath;
+  if (!root) {
+    vscode.window.showWarningMessage(t('找不到主控仓库；请在主控仓库里打开工作区。'));
+    return;
+  }
+  const local = path.join(root, 'config', 'local');
+  const candidates = [
+    { label: 'cluster.json', path: path.join(local, 'cluster.json') },
+    { label: 'nodes.json', path: path.join(local, 'nodes.json') },
+    { label: 'models.json', path: path.join(local, 'models.json') },
+    { label: 'toolkits.json', path: path.join(local, 'toolkits.json') },
+  ];
+  try {
+    for (const name of fs.readdirSync(path.join(local, 'jobs'))) {
+      if (name.endsWith('.json')) {
+        candidates.push({ label: `jobs/${name}`, path: path.join(local, 'jobs', name) });
+      }
+    }
+  } catch (_) {
+    // jobs 目录可选
+  }
+  const picked = await vscode.window.showQuickPick(
+    candidates.map((item) => ({
+      label: item.label,
+      description: fs.existsSync(item.path) ? item.path : t('尚未创建'),
+      path: item.path,
+    })),
+    { placeHolder: t('打开控制面配置文件') }
+  );
+  if (!picked) return;
+  if (!fs.existsSync(picked.path)) {
+    vscode.window.showWarningMessage(t('文件不存在：{0}', picked.path));
+    return;
+  }
+  const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(picked.path));
+  await vscode.window.showTextDocument(doc, { preview: false });
+}
+
 // ── 命令与动作用户界面 ─────────────────────────────────────
 function registerCommands(context) {
   const cmd = (name, fn) =>
@@ -2666,13 +2862,16 @@ function registerCommands(context) {
     await pickControlPage();
   });
   cmd('computedeck.openAssistant', async () => {
-    await openControlUi('/#/assistant', t('ComputeDeck · 小助手'));
+    await askAssistant();
   });
   cmd('computedeck.configureAssistant', async () => {
     await configureAssistant();
   });
   cmd('computedeck.openNotices', async () => {
-    await openControlUi('/#/notices', t('ComputeDeck · 公告'));
+    await openNoticesNative();
+  });
+  cmd('computedeck.openConfig', async () => {
+    await openConfigFile();
   });
   cmd('computedeck.openExternalBrowser', async () => {
     await openControlUiExternal('/#/actions');

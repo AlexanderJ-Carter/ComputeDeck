@@ -2,7 +2,7 @@
   "name": "computedeck-vscode",
   "displayName": "%computedeck.displayName%",
   "description": "%computedeck.description%",
-  "version": "1.3.3",
+  "version": "1.3.4",
   "publisher": "computedeck",
   "license": "AGPL-3.0-only",
   "icon": "media/icon.png",
@@ -87,6 +87,12 @@
         "title": "%computedeck.command.configureAssistant%",
         "category": "%computedeck.category%",
         "icon": "$(settings-gear)"
+      },
+      {
+        "command": "computedeck.openConfig",
+        "title": "%computedeck.command.openConfig%",
+        "category": "%computedeck.category%",
+        "icon": "$(json)"
       },
       {
         "command": "computedeck.openExternalBrowser",

@@ -49,5 +49,6 @@
   "computedeck.command.openAssistant": "Open Assistant",
   "computedeck.command.configureAssistant": "Configure Assistant API",
   "computedeck.command.openNotices": "Open Notices",
-  "computedeck.welcome.disconnected": "Not connected yet. On the control host this usually signs in automatically.\n[Use Local Key](command:computedeck.useLocalCredentials)\n[Password Login](command:computedeck.login)\n[How to Use](command:computedeck.openAccess)\n[Open Workbench](command:computedeck.openWorkbench)\n[5-Minute Getting Started](command:computedeck.openWalkthrough)"
+  "computedeck.welcome.disconnected": "Not connected yet. On the control host this usually signs in automatically.\n[Use Local Key](command:computedeck.useLocalCredentials)\n[Password Login](command:computedeck.login)\n[How to Use](command:computedeck.openAccess)\n[Open Workbench](command:computedeck.openWorkbench)\n[5-Minute Getting Started](command:computedeck.openWalkthrough)",
+  "computedeck.command.openConfig": "Open Config File"
 }
