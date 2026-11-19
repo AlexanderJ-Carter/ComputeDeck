@@ -1,7 +1,15 @@
-## 小助手、公告、AI 帮忙
+## 小助手与 AI
 
-1. [打开工作台](command:computedeck.openWorkbench) 看小助手是否可用、有没有未读公告。
-2. 完整对话在大屏里：[打开小助手](command:computedeck.openAssistant)
-3. 想让 Copilot 等直接调集群工具：点 [注册给 AI 用的工具](command:computedeck.installMcp)（在总控上一般已自动带好密钥）。
+ComputeDeck 里有两套「AI」能力，别混：
 
-[怎么用](command:computedeck.openAccess) ｜ [打开完整看板](command:computedeck.openDashboard)
+1. **网页小助手**（看板里聊天）  
+   - 先配好模型接口地址、密钥、模型名。  
+   - 配好后：侧栏点「打开小助手」，或工作台里同名按钮。  
+   - 命令面板也可搜「配置小助手 API」。
+
+2. **给编辑器 AI 用的工具**（Copilot / CatPaw 等）  
+   - 点「注册给 AI 用的工具」。  
+   - 在总控上一般会自动带登录密钥。  
+   - 这是让外面的 AI **调集群命令**，不是网页聊天窗。
+
+工作台「小助手与 AI」一栏能看到是否就绪、当前模型、密钥有没有配。

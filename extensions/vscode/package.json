@@ -2,7 +2,7 @@
   "name": "computedeck-vscode",
   "displayName": "%computedeck.displayName%",
   "description": "%computedeck.description%",
-  "version": "1.2.20",
+  "version": "1.2.21",
   "publisher": "computedeck",
   "license": "AGPL-3.0-only",
   "icon": "media/icon.png",
@@ -78,6 +78,12 @@
         "title": "%computedeck.command.openAssistant%",
         "category": "%computedeck.category%",
         "icon": "$(sparkle)"
+      },
+      {
+        "command": "computedeck.configureAssistant",
+        "title": "%computedeck.command.configureAssistant%",
+        "category": "%computedeck.category%",
+        "icon": "$(settings-gear)"
       },
       {
         "command": "computedeck.openExternalBrowser",
@@ -279,8 +285,8 @@
             },
             "completionEvents": [
               "onCommand:computedeck.installMcp",
-              "onCommand:computedeck.openDashboard",
               "onCommand:computedeck.openAssistant",
+              "onCommand:computedeck.configureAssistant",
               "onCommand:computedeck.openWorkbench"
             ]
           }

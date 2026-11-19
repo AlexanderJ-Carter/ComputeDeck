@@ -53,7 +53,7 @@
   "computedeck.walkthrough.jobs.description": "Deploy by GPU count or pick a node; start / restart / stop inline.\n[Deploy Task](command:computedeck.deployJob)",
   "computedeck.walkthrough.jobs.alt": "Task actions",
   "computedeck.walkthrough.mcp.title": "Assistant and AI Tools",
-  "computedeck.walkthrough.mcp.description": "Check assistant status in the workbench; full chat is in the dashboard; register tools for Copilot if needed.\n[Register AI Tools](command:computedeck.installMcp)\n[Open Assistant](command:computedeck.openAssistant)\n[Open Workbench](command:computedeck.openWorkbench)",
+  "computedeck.walkthrough.mcp.description": "Configure the assistant API first, then chat on the dashboard; optionally register tools for Copilot.\n[Open Assistant](command:computedeck.openAssistant)\n[Configure Assistant API](command:computedeck.configureAssistant)\n[Register AI Tools](command:computedeck.installMcp)",
   "computedeck.walkthrough.mcp.alt": "Assistant and AI",
   "computedeck.command.useLocalCredentials": "Use Local Key",
   "computedeck.config.autoLocalAuth": "Sign in automatically when this workspace is the control-host repo.",
@@ -65,6 +65,7 @@
   "computedeck.config.uiOpenMode.embed": "Advanced: try embedding (may fail in some environments).",
   "computedeck.config.uiOpenMode.external": "Always open in the system browser.",
   "computedeck.command.openAssistant": "Open Assistant",
+  "computedeck.command.configureAssistant": "Configure Assistant API",
   "computedeck.command.openNotices": "Open Notices",
   "computedeck.welcome.disconnected": "Not connected yet. On the control host this usually signs in automatically.\n[Use Local Key](command:computedeck.useLocalCredentials)\n[Password Login](command:computedeck.login)\n[How to Use](command:computedeck.openAccess)\n[Open Workbench](command:computedeck.openWorkbench)\n[5-Minute Getting Started](command:computedeck.openWalkthrough)"
 }

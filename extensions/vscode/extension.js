@@ -199,6 +199,18 @@ class ComputeDeckClient {
     return this.request('/api/assistant/status', { timeoutMs: 15000 });
   }
 
+  assistantConfig(body) {
+    return this.request('/api/assistant/config', { method: 'POST', body, timeoutMs: 30000 });
+  }
+
+  assistantProbe(body = {}) {
+    return this.request('/api/assistant/probe', { method: 'POST', body, timeoutMs: 45000 });
+  }
+
+  assistantModels(body = {}) {
+    return this.request('/api/assistant/models', { method: 'POST', body, timeoutMs: 60000 });
+  }
+
   notices() {
     return this.request('/api/notices', { timeoutMs: 15000 });
   }
@@ -568,11 +580,21 @@ class ClusterProvider {
         description:
           unread > 0
             ? t('{0} 未读公告', unread)
-            : assistant.ready
-              ? t('助手就绪')
-              : t('{0} 节点 · {1} 空闲 GPU', summary.nodes ?? nodes.length, summary.gpus_free ?? 0),
+            : t('{0} 节点 · {1} 空闲 GPU', summary.nodes ?? nodes.length, summary.gpus_free ?? 0),
         iconPath: new vscode.ThemeIcon('window'),
         command: { command: 'computedeck.openWorkbench', title: t('打开工作台') },
+      }),
+      makeItem(t('打开小助手'), vscode.TreeItemCollapsibleState.None, {
+        description: assistant.ready
+          ? t('可用 · {0}', assistant.model || 'llm')
+          : assistant.enabled
+            ? t('已启用，待配置 API')
+            : t('未启用 · 点此配置'),
+        iconPath: new vscode.ThemeIcon(assistant.ready ? 'sparkle' : 'tools'),
+        command: {
+          command: assistant.ready ? 'computedeck.openAssistant' : 'computedeck.configureAssistant',
+          title: assistant.ready ? t('打开小助手') : t('配置小助手 API'),
+        },
       })
     );
     return sections;
@@ -609,7 +631,9 @@ function updateStatusBar(data, error) {
       '',
       t('在线 {0}/{1}，离线 {2}，空闲 GPU {3}/{4}', online, total, offline, free, gpuTotal),
       unread > 0 ? t('未读公告：{0}', unread) : t('公告：无未读'),
-      assistantReady ? t('小助手：可用') : t('小助手：未就绪'),
+      assistantReady
+        ? t('小助手：可用 · {0}', data.assistant?.model || 'llm')
+        : t('小助手：未就绪（可配置 API）'),
       '',
       t('点击打开工作台'),
     ].join('\n')
@@ -670,6 +694,7 @@ function isWebIde() {
 function accessProfile() {
   const data = provider?.data || null;
   const auth = data?.auth || {};
+  const assistant = data?.assistant || {};
   const controlRoot = findControlRoot();
   const localToken = Boolean(readLocalApiToken());
   const envToken = Boolean(String(process.env.GPU_CONTROL_API_TOKEN || '').trim());
@@ -690,6 +715,10 @@ function accessProfile() {
     envToken,
     passwordlessPlugin: localToken || envToken,
     passwordlessWorkers: true,
+    assistantReady: Boolean(assistant.ready),
+    assistantEnabled: Boolean(assistant.enabled),
+    assistantModel: assistant.model || '',
+    assistantBaseUrl: assistant.base_url || '',
   };
 }
 
@@ -778,36 +807,42 @@ function buildAccessHubHtml(webview, state) {
     <header>
       <div class="pill"><span class="dot ${state.apiOk ? 'on' : 'off'}"></span>${state.apiOk ? '已经连上，可以直接用' : '还没连上，先看下面第 1 步'}</div>
       <h1 style="margin-top:12px">怎么用 ComputeDeck</h1>
-      <p class="sub">不用记术语。日常就三件事：看机器、开大屏、需要时再登录。</p>
+      <p class="sub">日常主要用到三处：左侧看机器，完整看板看图表和助手，偶尔登录一次。</p>
       <div class="actions" id="topActions"></div>
     </header>
 
     <section class="card">
-      <h2>日常怎么用</h2>
+      <h2>常用操作</h2>
       <ol>
-        <li><strong>看集群</strong>：左侧 ComputeDeck，或点「打开工作台」。</li>
-        <li><strong>看完整大屏</strong>：点「打开完整看板」（会在编辑器里打开网页）。</li>
-        <li><strong>连不上大屏</strong>：点「用浏览器打开」；左侧还能刷集群就说明总控是好的。</li>
+        <li>点左侧的 ComputeDeck，或打开工作台，查看节点和任务。</li>
+        <li>需要图表和助手时，点「打开完整看板」，会在编辑器里打开网页。</li>
+        <li>看板打不开时，点「用浏览器打开」。左侧还能刷新集群，说明主控本身是好的。</li>
       </ol>
     </section>
 
     <section class="card">
-      <h2>三种机器，各干什么</h2>
-      <ul>
-        <li><strong>总控机</strong>（你现在多半就在这台）：管调度、网页、插件。在这台电脑上用插件，一般<strong>不用输密码</strong>。</li>
-        <li><strong>GPU 干活机</strong>：真正跑任务的机器。你不用单独登录它们，总控会自动连过去。</li>
-        <li><strong>你自己的笔记本</strong>（如果没直接坐在总控上）：先用远程桌面 / CodeLab / SSH 进到总控，再按上面两步用。</li>
-      </ul>
+      <h2>主控、工作节点和个人电脑</h2>
+      <p>你多半在总控机上。这台机器负责调度、网页和插件，用插件时通常不需要输密码。</p>
+      <p>GPU 工作节点只负责跑任务，由主控通过 SSH 连接，不需要单独登录它们的网页。</p>
+      <p>如果人不在总控机旁边，先用远程桌面、CodeLab 或 SSH 连过去，再按上面的步骤操作。</p>
     </section>
 
     <section class="card">
-      <h2>什么时候要输密码？</h2>
+      <h2>什么时候需要登录</h2>
       <ul>
-        <li><strong>插件 / 侧栏 / 工作台</strong>：在总控上打开仓库时，多数情况自动登录。${state.passwordlessPlugin ? '你现在就是这种。' : '若提示未连接，点「使用本机密钥」或「密码登录」。'}</li>
-        <li><strong>完整大屏网页</strong>：第一次可能要登录一次；之后一段时间内不用再输。</li>
-        <li><strong>GPU 干活机</strong>：不用你输网页密码。</li>
+        <li><strong>插件侧栏和工作台</strong>：在总控机上打开仓库时通常会自动登录。${state.passwordlessPlugin ? '你现在就是这种情况。' : '如果提示未连接，点「使用本机密钥」或「密码登录」。'}</li>
+        <li><strong>完整看板网页</strong>：第一次打开可能需要登录一次；之后一段时间内不用再输。</li>
+        <li><strong>GPU 工作节点</strong>：不需要输入网页密码。</li>
       </ul>
       <p class="muted">当前状态：${state.apiOk ? '插件已连上' : '插件未连上'} · ${state.passwordlessPlugin ? '免密可用' : '可能需要登录一次'}</p>
+    </section>
+
+    <section class="card">
+      <h2>小助手和 AI 工具</h2>
+      <p>网页小助手在看板里聊天，能查看集群状态并给出建议。使用前要先配置模型地址和密钥。</p>
+      <p>注册「给 AI 用的工具」后，编辑器里的 Copilot 等可以直接调用集群命令。</p>
+      <p class="muted">当前：${state.assistantReady ? `小助手可用（${state.assistantModel || '已配置'}）` : '小助手还没配置 API，可以点下面的按钮设置。'}</p>
+      <div class="actions" id="aiActions" style="margin-top:12px"></div>
     </section>
 
     ${
@@ -818,13 +853,12 @@ function buildAccessHubHtml(webview, state) {
   </div>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
-    const actions = document.getElementById('topActions');
-    function btn(label, command, primary) {
+    function btn(label, command, primary, parent) {
       const b = document.createElement('button');
       b.textContent = label;
       if (primary) b.className = 'primary';
       b.addEventListener('click', () => vscode.postMessage({ command }));
-      actions.append(b);
+      (parent || document.getElementById('topActions')).append(b);
     }
     btn('打开完整看板', 'simpleBrowser', true);
     btn('打开工作台', 'openWorkbench');
@@ -833,6 +867,11 @@ function buildAccessHubHtml(webview, state) {
     btn('用浏览器打开', 'openExternal');
     btn('五分钟上手', 'openWalkthrough');
     btn('刷新', 'refresh');
+    const ai = document.getElementById('aiActions');
+    ${state.assistantReady
+      ? "btn('打开小助手', 'openAssistant', true, ai); btn('改配置', 'configureAssistant', false, ai);"
+      : "btn('配置小助手 API', 'configureAssistant', true, ai); btn('打开小助手', 'openAssistant', false, ai);"}
+    btn('注册给 AI 用的工具', 'installMcp', false, ai);
   </script>
 </body>
 </html>`;
@@ -908,6 +947,18 @@ function showAccessHub(opts = {}) {
       await vscode.commands.executeCommand('computedeck.login');
       return;
     }
+    if (msg.command === 'openAssistant') {
+      await vscode.commands.executeCommand('computedeck.openAssistant');
+      return;
+    }
+    if (msg.command === 'configureAssistant') {
+      await vscode.commands.executeCommand('computedeck.configureAssistant');
+      return;
+    }
+    if (msg.command === 'installMcp') {
+      await vscode.commands.executeCommand('computedeck.installMcp');
+      return;
+    }
     if (msg.command === 'refresh') {
       await provider.refresh(true);
       const browserUrl = await resolveUiUrl(cur.hash || '/#/actions');
@@ -969,7 +1020,7 @@ async function openControlUi(hash = '', title) {
     return 'access';
   }
 
-  // auto：先开真正的网页大屏；失败再给「怎么用」（标题不再冒充看板）。
+  // auto：先开真正的网页看板；失败再给「怎么用」（标题不再冒充看板）。
   if (await trySimpleBrowser(browserUrl)) return 'simpleBrowser';
   showAccessHub({
     hash,
@@ -988,7 +1039,7 @@ async function openControlUiExternal(hash = '') {
 async function pickControlPage() {
   const picked = await vscode.window.showQuickPick(
     CONTROL_PAGES.map((p) => ({ label: p.label, description: p.hash, page: p })),
-    { placeHolder: t('打开大屏里的哪一页？') }
+    { placeHolder: t('打开看板里的哪一页？') }
   );
   if (!picked) return;
   await openControlUi(picked.page.hash, t('ComputeDeck · {0}', picked.page.label));
@@ -1008,7 +1059,7 @@ const GUIDE_STEPS = [
   },
   {
     id: 'workbench',
-    title: '2. 看集群、开大屏',
+    title: '2. 看集群、开看板',
     file: '02-cluster.md',
     actions: [
       { label: '打开工作台', command: 'computedeck.openWorkbench' },
@@ -1040,12 +1091,206 @@ const GUIDE_STEPS = [
     title: '5. 小助手与 AI 工具',
     file: '05-mcp.md',
     actions: [
-      { label: '注册给 AI 用的工具', command: 'computedeck.installMcp' },
       { label: '打开小助手', command: 'computedeck.openAssistant' },
-      { label: '打开公告', command: 'computedeck.openNotices' },
+      { label: '配置小助手 API', command: 'computedeck.configureAssistant' },
+      { label: '注册给 AI 用的工具', command: 'computedeck.installMcp' },
     ],
   },
 ];
+
+async function configureAssistant() {
+  let status = {};
+  try {
+    status = await client.assistantStatus();
+  } catch (err) {
+    vscode.window.showErrorMessage(t('读不到小助手状态：{0}', err.message || err));
+    return;
+  }
+
+  const start = await vscode.window.showQuickPick(
+    [
+      {
+        label: status.ready ? t('打开小助手聊天') : t('开始配置 API'),
+        description: status.ready
+          ? t('当前模型 {0}', status.model || '')
+          : t('填写地址 / 密钥 / 模型'),
+        action: status.ready ? 'open' : 'setup',
+      },
+      {
+        label: t('配置或修改 API'),
+        description: status.base_url || t('还没填地址'),
+        action: 'setup',
+      },
+      {
+        label: t('只打开看板里的设置页'),
+        description: t('图表旁边的完整配置界面'),
+        action: 'web',
+      },
+    ],
+    { placeHolder: t('小助手：聊天还是先配 API？') }
+  );
+  if (!start) return;
+  if (start.action === 'open') {
+    await openControlUi('/#/assistant', t('ComputeDeck · 小助手'));
+    return;
+  }
+  if (start.action === 'web') {
+    await openControlUi('/#/assistant', t('ComputeDeck · 小助手'));
+    return;
+  }
+
+  const presets = Array.isArray(status.presets) ? status.presets : [];
+  const presetPick = await vscode.window.showQuickPick(
+    [
+      ...presets.map((p) => ({
+        label: p.label || p.id,
+        description: p.base_url || '',
+        base_url: p.base_url || '',
+      })),
+      {
+        label: t('保留当前地址'),
+        description: status.base_url || t('（空）'),
+        base_url: status.base_url || '',
+      },
+    ],
+    { placeHolder: t('选模型接口类型（内网一般选自定义）') }
+  );
+  if (!presetPick) return;
+
+  const baseUrl = await vscode.window.showInputBox({
+    prompt: t('模型接口地址（总控机能访问的，通常带 /v1）'),
+    value: presetPick.base_url || status.base_url || '',
+    ignoreFocusOut: true,
+    placeHolder: 'https://example.com/v1',
+  });
+  if (baseUrl === undefined) return;
+  if (!String(baseUrl).trim()) {
+    vscode.window.showWarningMessage(t('地址不能为空'));
+    return;
+  }
+
+  let apiKey;
+  const keyPrompt = status.api_key_configured
+    ? t('API 密钥（留空表示沿用已保存的）')
+    : t('API 密钥（会保存在总控本机，不会进 git）');
+  apiKey = await vscode.window.showInputBox({
+    prompt: keyPrompt,
+    password: true,
+    ignoreFocusOut: true,
+  });
+  if (apiKey === undefined) return;
+
+  const draft = {
+    base_url: String(baseUrl).trim(),
+  };
+  if (String(apiKey || '').trim()) draft.api_key = String(apiKey).trim();
+
+  const probeChoice = await vscode.window.showQuickPick(
+    [
+      { label: t('先探测能不能连上'), action: 'probe' },
+      { label: t('跳过探测，直接选模型'), action: 'skip' },
+    ],
+    { placeHolder: t('要不要先测一下接口？') }
+  );
+  if (!probeChoice) return;
+  if (probeChoice.action === 'probe') {
+    try {
+      const probe = await client.assistantProbe(draft);
+      if (probe && probe.ok === false) {
+        const detail = probe.hint || probe.error || probe.message || t('探测失败');
+        const cont = await vscode.window.showWarningMessage(
+          t('探测未通过：{0}', detail),
+          t('仍然继续'),
+          t('取消')
+        );
+        if (cont !== t('仍然继续')) return;
+      } else {
+        vscode.window.showInformationMessage(t('探测通过，可以选模型了'));
+      }
+    } catch (err) {
+      const cont = await vscode.window.showWarningMessage(
+        t('探测出错：{0}', err.message || err),
+        t('仍然继续'),
+        t('取消')
+      );
+      if (cont !== t('仍然继续')) return;
+    }
+  }
+
+  let model = status.model || '';
+  try {
+    const listed = await client.assistantModels(draft);
+    const models = Array.isArray(listed?.models)
+      ? listed.models
+      : Array.isArray(listed?.data)
+        ? listed.data
+        : [];
+    const ids = models
+      .map((m) => (typeof m === 'string' ? m : m.id || m.name || ''))
+      .filter(Boolean);
+    if (ids.length) {
+      const picked = await vscode.window.showQuickPick(
+        [
+          ...ids.slice(0, 80).map((id) => ({ label: id, description: id === model ? t('当前') : '' })),
+          { label: t('手动输入模型名…'), description: '', manual: true },
+        ],
+        { placeHolder: t('选择模型') }
+      );
+      if (!picked) return;
+      if (picked.manual) {
+        model =
+          (await vscode.window.showInputBox({
+            prompt: t('模型名'),
+            value: model,
+            ignoreFocusOut: true,
+          })) || '';
+      } else {
+        model = picked.label;
+      }
+    } else {
+      model =
+        (await vscode.window.showInputBox({
+          prompt: t('没拉到模型列表，请手动填写模型名'),
+          value: model,
+          ignoreFocusOut: true,
+        })) || '';
+    }
+  } catch (err) {
+    model =
+      (await vscode.window.showInputBox({
+        prompt: t('拉取模型失败（{0}），请手动填写模型名', err.message || err),
+        value: model,
+        ignoreFocusOut: true,
+      })) || '';
+  }
+  if (!String(model).trim()) {
+    vscode.window.showWarningMessage(t('模型名不能为空'));
+    return;
+  }
+
+  const body = {
+    base_url: String(baseUrl).trim(),
+    model: String(model).trim(),
+    enabled: true,
+  };
+  if (String(apiKey || '').trim()) body.api_key = String(apiKey).trim();
+
+  try {
+    const saved = await client.assistantConfig(body);
+    output.appendLine(t('小助手 API 已保存：模型 {0} · {1}', saved.model || body.model, saved.base_url || body.base_url));
+    vscode.window.showInformationMessage(
+      saved.ready ? t('小助手已就绪') : t('已保存，但尚未就绪，请检查地址或密钥')
+    );
+    await provider.refresh(true);
+    if (saved.ready) {
+      const open = t('打开小助手');
+      const choice = await vscode.window.showInformationMessage(t('要现在打开聊天吗？'), open);
+      if (choice === open) await openControlUi('/#/assistant', t('ComputeDeck · 小助手'));
+    }
+  } catch (err) {
+    vscode.window.showErrorMessage(t('保存失败：{0}', err.message || err));
+  }
+}
 
 function readGuideMarkdown(fileName) {
   if (!extensionContext) return '';
@@ -1360,8 +1605,11 @@ function workbenchSnapshot() {
     assistant: {
       enabled: Boolean(assistant.enabled),
       ready: Boolean(assistant.ready),
-      model: assistant.model || assistant.mode || '',
+      model: assistant.model || '',
+      mode: assistant.mode || '',
       base_url: assistant.base_url || '',
+      api_key_configured: Boolean(assistant.api_key_configured),
+      setup_hint: assistant.setup_hint || '',
       network_note: assistant.network_note || '',
     },
     notices: {
@@ -1609,14 +1857,32 @@ function buildWorkbenchHtml(webview) {
     </section>
 
     <section class="section">
-      <div class="section-h"><h2>大屏页面</h2><span class="more">在编辑器里打开</span></div>
+      <div class="section-h"><h2>看板页面</h2><span class="more">在编辑器里打开</span></div>
       <div class="pages" id="pages"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-h"><h2>小助手与 AI</h2><span class="more" id="aiMore"></span></div>
+      <div class="grid-2">
+        <div class="panel">
+          <h3>网页小助手</h3>
+          <div class="status-rows" id="assistantBlock"></div>
+          <div class="btn-row" id="assistantActions"></div>
+          <p class="foot" id="assistantHint"></p>
+        </div>
+        <div class="panel">
+          <h3>给编辑器 AI 用的工具</h3>
+          <div class="status-rows" id="mcpBlock"></div>
+          <div class="btn-row" id="mcpActions"></div>
+          <p class="foot">注册后，Copilot / CatPaw 等可直接调集群命令。完整对话仍在网页小助手里。</p>
+        </div>
+      </div>
     </section>
 
     <section class="grid-2">
       <div class="panel">
-        <h3>连接与小助手</h3>
-        <div class="status-rows" id="aiBlock"></div>
+        <h3>登录</h3>
+        <div class="status-rows" id="authBlock"></div>
         <div class="btn-row" id="authActions"></div>
       </div>
       <div class="panel">
@@ -1715,7 +1981,7 @@ function buildWorkbenchHtml(webview) {
           : '若刷不出集群，点「怎么用」里的登录按钮';
         const detail = document.createElement('div');
         detail.className = 'notice-detail';
-        detail.textContent = '完整大屏点「打开完整看板」；打不开再用「用浏览器打开」。';
+        detail.textContent = '需要完整界面时点「打开完整看板」；打不开再用「用浏览器打开」。';
         accessBox.append(title, detail);
       }
       el('kpiMore').textContent = connected
@@ -1734,16 +2000,36 @@ function buildWorkbenchHtml(webview) {
       }
       const a = state.assistant || {};
       const m = state.mcp || {};
-      el('aiBlock').replaceChildren(
-        statusRow('小助手', a.ready ? '可用' : (a.enabled ? '已启用，未就绪' : '未启用'), a.base_url || a.network_note || '', a.ready ? true : false),
-        statusRow('AI 工具', m.ready ? '已就绪' : '未找到程序', m.path || '', m.ready ? true : false),
-        statusRow('登录密钥', m.tokenReady ? '已就绪' : '需要登录', m.tokenReady ? '本机密钥可用' : '点「使用本机密钥」或「密码登录」', m.tokenReady ? true : false)
+      el('aiMore').textContent = a.ready
+        ? ('模型 ' + (a.model || '已配置'))
+        : (a.setup_hint || '需要配置 API');
+      el('assistantBlock').replaceChildren(
+        statusRow('状态', a.ready ? '可用' : (a.enabled ? '已启用，未就绪' : '未启用'), a.model || '', a.ready ? true : false),
+        statusRow('接口地址', a.base_url || '未填写', a.network_note || '', a.base_url ? true : false),
+        statusRow('密钥', a.api_key_configured ? '已配置' : '未配置', a.api_key_configured ? '保存在总控本机' : '配置时粘贴一次即可', a.api_key_configured ? true : false)
+      );
+      el('assistantActions').replaceChildren(
+        btn(a.ready ? '打开小助手' : '配置小助手 API', a.ready ? 'openAssistant' : 'configureAssistant', 'primary'),
+        btn(a.ready ? '改配置' : '打开看板配置页', a.ready ? 'configureAssistant' : 'openAssistant', 'ghost')
+      );
+      el('assistantHint').textContent = a.ready
+        ? '聊天、看集群建议、危险操作会二次确认。'
+        : (a.setup_hint || '填总控能访问的模型地址、密钥和模型名。内网请用兼容网关。');
+      el('mcpBlock').replaceChildren(
+        statusRow('工具程序', m.ready ? '已找到' : '未找到', m.path || '一般在 bin/gpu-control-mcp', m.ready ? true : false),
+        statusRow('登录密钥', m.tokenReady ? '已就绪' : '需要登录', m.tokenReady ? '本机密钥可用' : '先登录再注册', m.tokenReady ? true : false)
+      );
+      el('mcpActions').replaceChildren(
+        btn('注册给 AI 用的工具', 'installMcp', m.ready ? 'primary' : 'ghost'),
+        btn('打开小助手', 'openAssistant', 'ghost')
+      );
+      el('authBlock').replaceChildren(
+        statusRow('总控登录', m.tokenReady ? '已就绪' : '需要登录', state.base || '', m.tokenReady ? true : false)
       );
       el('authActions').replaceChildren(
         btn(m.tokenReady ? '使用本机密钥' : '设置登录密钥', m.tokenReady ? 'useLocalCredentials' : 'setToken'),
-        btn('注册给 AI 用的工具', 'installMcp'),
         btn('密码登录', 'login', 'ghost'),
-        btn('设置', 'openSettings', 'ghost')
+        btn('插件设置', 'openSettings', 'ghost')
       );
       el('opsDiag').replaceChildren(
         btn('运行自检', 'runDoctor'),
@@ -1863,6 +2149,7 @@ function showWorkbench() {
     const map = {
       openDashboard: 'computedeck.openDashboard',
       openAssistant: 'computedeck.openAssistant',
+      configureAssistant: 'computedeck.configureAssistant',
       openNotices: 'computedeck.openNotices',
       openWalkthrough: 'computedeck.openWalkthrough',
       openGuide: 'computedeck.openGuide',
@@ -1990,7 +2277,7 @@ async function nodeMenu(nodeArg) {
     { label: t('查看 GPU 进程'), action: 'gpu-procs', icon: 'list-unordered' },
     { label: node.cordoned ? t('取消隔离') : t('隔离节点'), action: 'cordon', icon: 'lock' },
     { label: t('腾空节点'), action: 'free', icon: 'debug-stop' },
-    { label: t('在大屏里看这台节点'), action: 'dashboard', icon: 'globe' },
+    { label: t('在看板里查看这台节点'), action: 'dashboard', icon: 'globe' },
   ].map((x) => ({
     label: `${offline && ['terminal', 'nvidia-smi', 'gpu-procs', 'free'].includes(x.action) ? '$(warning) ' : ''}${x.label}`,
     action: x.action,
@@ -2223,7 +2510,7 @@ function registerCommands(context) {
     const opened = await openControlUi('/#/actions', t('ComputeDeck · 看板'));
     if (opened === 'access') {
       vscode.window.showInformationMessage(
-        t('网页大屏没能直接打开。可点「打开完整看板」，或用浏览器打开。')
+        t('网页看板没能直接打开。可以点「打开完整看板」，或用浏览器打开。')
       );
     }
   });
@@ -2232,6 +2519,9 @@ function registerCommands(context) {
   });
   cmd('computedeck.openAssistant', async () => {
     await openControlUi('/#/assistant', t('ComputeDeck · 小助手'));
+  });
+  cmd('computedeck.configureAssistant', async () => {
+    await configureAssistant();
   });
   cmd('computedeck.openNotices', async () => {
     await openControlUi('/#/notices', t('ComputeDeck · 公告'));
