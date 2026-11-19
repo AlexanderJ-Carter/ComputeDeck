@@ -1436,6 +1436,34 @@ SETUP_GUIDE = [
         ],
     },
     {
+        "id": "distributed",
+        "title": "多机协同",
+        "body": "两台 4 卡机可以组成一个 8 卡作业；先规划 rank / MASTER_ADDR，再部署。显存不会合并。",
+        "cli": [
+            "gpu-control plan --gpus 8 --job train-job",
+            "gpu-control deploy train-job --nodes gpu-1,gpu-2 --gpus 8",
+        ],
+    },
+    {
+        "id": "gateway",
+        "title": "入口与 TLS",
+        "body": "配置 Edge / LiteLLM / nginx；对外前开鉴权并启用 TLS。",
+        "cli": [
+            "gpu-control gateway ensure",
+            "gpu-control tls init --domain api.example.com",
+            "gpu-control gateway nginx --apply",
+        ],
+    },
+    {
+        "id": "remote",
+        "title": "远程接入与配对",
+        "body": "笔记本用 SSH 隧道；临时设备用一次性配对链接；公网加 Tailscale / Cloudflare。",
+        "cli": [
+            "ssh -N -L 8787:127.0.0.1:8787 <control>",
+            "gpu-control auth pair --ttl 300",
+        ],
+    },
+    {
         "id": "models",
         "title": "模型工具（可选）",
         "body": "先检查依赖；节点缺少拉取工具时再安装。",
@@ -1507,6 +1535,34 @@ def build_setup_status() -> dict:
     api_port = int(control.get("ui_port") or 8787)
     nodes_count = len(nodes_doc.get("nodes") or {})
     key_ok = bool(key_path) and Path(key_path).is_file()
+    liveness = _read_json(STATE_DIR / "liveness.json", {})
+    live_summary = liveness.get("summary") or {}
+    online = int(live_summary.get("online") or 0)
+    offline = int(live_summary.get("offline") or 0)
+    distributed_jobs = [job for job in jobs if job.get("distributed")]
+    gateway = cluster.get("gateway") or {}
+    try:
+        from ingress_tls import normalize_ingress, probe_tls
+        from nginx_ops import normalize_settings, status_for
+
+        ingress = normalize_ingress(gateway.get("ingress") or {}, gateway=gateway)
+        tls = probe_tls(ingress.get("tls") or {})
+        nginx_settings = normalize_settings(gateway)
+        apply_path = str(nginx_settings.get("apply_path") or "").strip()
+        artifact = STATE_DIR / "gateway" / "nginx-inference-pool.conf"
+        nginx_ok = True
+        nginx_detail = "nginx 未启用 apply_path"
+        if apply_path and artifact.is_file():
+            current = status_for(apply_path, artifact.read_text(encoding="utf-8"))
+            nginx_ok = bool(current.get("in_sync"))
+            nginx_detail = "nginx 配置已同步" if nginx_ok else "nginx 配置待应用（gateway nginx --apply）"
+        elif apply_path:
+            nginx_ok = False
+            nginx_detail = "nginx 片段未生成（gateway render）"
+    except Exception:  # noqa: BLE001 - 状态页不能因可选组件报错
+        tls = {"enabled": False, "ready": False}
+        nginx_ok = True
+        nginx_detail = "未检查"
     steps = [
         {
             "id": "auth",
@@ -1523,11 +1579,40 @@ def build_setup_status() -> dict:
             "anchor": "cfg-nodes",
         },
         {
+            "id": "connection",
+            "title": "节点连接",
+            "ok": online > 0 if nodes_count else False,
+            "detail": f"{online}/{live_summary.get('nodes') or nodes_count} 在线 · {offline} 离线（最近探活）",
+            "anchor": "cfg-nodes",
+        },
+        {
             "id": "jobs",
             "title": "Job 与模型",
             "ok": bool(jobs),
-            "detail": f"{len(jobs)} 个已安装 Job",
+            "detail": f"{len(jobs)} 个已安装 Job" + (f" · {len(distributed_jobs)} 个支持多机" if distributed_jobs else ""),
             "anchor": "cfg-job",
+        },
+        {
+            "id": "distributed",
+            "title": "多机协同",
+            "ok": nodes_count >= 2 and bool(distributed_jobs),
+            "detail": (
+                f"{nodes_count} 个节点 + {len(distributed_jobs)} 个 distributed Job；可用 gpu-control plan --gpus 8 规划"
+                if nodes_count >= 2 and distributed_jobs
+                else "需要至少 2 个节点和一个 distributed=true 的 Job"
+            ),
+            "anchor": "cfg-job",
+        },
+        {
+            "id": "tls",
+            "title": "TLS 与 nginx",
+            "ok": (not tls.get("enabled") or bool(tls.get("ready"))) and nginx_ok,
+            "detail": (
+                ("TLS 就绪" if tls.get("enabled") and tls.get("ready") else "TLS 未启用")
+                + " · "
+                + nginx_detail
+            ),
+            "anchor": "endpoints",
         },
         {
             "id": "gateway",

@@ -5,10 +5,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ComputeDeck</title>
-  <link rel="icon" href="static/logo.svg?v=__UI_VERSION__.dash38" type="image/svg+xml" />
+  <link rel="icon" href="static/logo.svg?v=__UI_VERSION__.dash39" type="image/svg+xml" />
   <link rel="stylesheet" href="static/vendor/xterm/xterm-6.1.0.css" />
-  <link rel="stylesheet" href="static/tokens.css?v=__UI_VERSION__.dash38" />
-  <link rel="stylesheet" href="static/style.css?v=__UI_VERSION__.dash38" />
+  <link rel="stylesheet" href="static/tokens.css?v=__UI_VERSION__.dash39" />
+  <link rel="stylesheet" href="static/style.css?v=__UI_VERSION__.dash39" />
   <script src="static/theme-boot.js?v=__UI_VERSION__"></script>
 </head>
 
@@ -16,7 +16,7 @@
   <div class="layout">
     <aside class="rail">
       <div class="rail-brand">
-        <img class="logo" src="static/logo.svg?v=__UI_VERSION__.dash38" width="42" height="42" alt="ComputeDeck" />
+        <img class="logo" src="static/logo.svg?v=__UI_VERSION__.dash39" width="42" height="42" alt="ComputeDeck" />
         <div>
           <div class="logo-title">ComputeDeck</div>
           <div class="logo-sub" id="ui-version">v__UI_VERSION__</div>
@@ -1304,6 +1304,7 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
                   <p class="meta">汇总配置文件、SSH、inventory、Job 与运行环境；异常可跳回对应分页。</p>
                 </div>
                 <div class="btn-row">
+                  <button id="btn-setup-probe" class="ghost tiny" data-keep-enabled="1" title="立即 SSH / API 探活，再刷新步骤状态">立即探活</button>
                   <button id="btn-reload-setup" class="ghost tiny" data-keep-enabled="1">刷新</button>
                   <button id="btn-doctor-2" class="primary tiny" data-keep-enabled="1">运行自检</button>
                 </div>
@@ -1669,7 +1670,7 @@ gpu-control ui --background</pre>
   </div>
   <script src="static/vendor/xterm/xterm-6.1.0.min.js"></script>
   <script src="static/xterm-fit.js?v=__UI_VERSION__"></script>
-  <script src="static/app.js?v=__UI_VERSION__.dash38"></script>
+  <script src="static/app.js?v=__UI_VERSION__.dash39"></script>
 </body>
 
 </html>

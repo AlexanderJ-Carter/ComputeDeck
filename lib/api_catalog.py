@@ -788,6 +788,7 @@ def cli_commands() -> list[dict[str, str]]:
         {"cmd": "gpu-control tls init|show|check", "summary": "入口 TLS 证书"},
         {"cmd": "gpu-control auth pair", "summary": "一次性远程配对链接"},
         {"cmd": "gpu-control bench", "summary": "控制面 API / 静态资源基准"},
+        {"cmd": "gpu-control plan --gpus N", "summary": "规划多机任务（2×4 卡 = 8 卡作业）"},
         {"cmd": "gpu-control diagnose check|repair", "summary": "一键检测 / 安全修复"},
         {"cmd": "gpu-control logs [--limit N] [--kind oneclick]", "summary": "运行日志"},
         {"cmd": "gpu-control overview", "summary": "总览"},

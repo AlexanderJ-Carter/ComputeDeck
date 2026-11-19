@@ -5928,6 +5928,18 @@ async function boot() {
   document.getElementById("btn-auth-token-issue")?.addEventListener("click", issueAuthToken);
   document.getElementById("btn-auth-token-clear")?.addEventListener("click", clearAuthToken);
   document.getElementById("btn-oidc-check")?.addEventListener("click", checkOidcStatus);
+  document.getElementById("btn-setup-probe")?.addEventListener("click", async () => {
+    setBusy(true);
+    try {
+      await api("/api/liveness/check", { method: "POST", body: "{}", timeoutMs: 90000 });
+      await loadSetup();
+      toastOk("探活完成，状态已更新");
+    } catch (err) {
+      toastBad(`探活失败：${err.message || err}`);
+    } finally {
+      setBusy(false);
+    }
+  });
   document.getElementById("btn-setup-recheck")?.addEventListener("click", async () => {
     setBusy(true);
     try {

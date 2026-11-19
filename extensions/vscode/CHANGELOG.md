@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.2
+
+- 与产品 1.3.2 对齐；插件本身无功能变化，保持与 Release VSIX 同版本
+
 ## 1.3.1
 
 - Marketplace 元数据（homepage / bugs / pricing）与 README 截图
