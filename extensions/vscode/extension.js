@@ -202,6 +202,10 @@ class ComputeDeckClient {
   notices() {
     return this.request('/api/notices', { timeoutMs: 15000 });
   }
+
+  authStatus() {
+    return this.request('/api/auth/status', { timeoutMs: 10000 });
+  }
 }
 
 function config() {
@@ -320,15 +324,16 @@ class ClusterProvider {
 
   async refresh(showErrors = false) {
     try {
-      const [overview, live, jobs, gateway, assistant, notices] = await Promise.all([
+      const [overview, live, jobs, gateway, assistant, notices, auth] = await Promise.all([
         this.client.overview(true),
         this.client.liveness().catch(() => null),
         this.client.jobs().catch(() => []),
         this.client.gatewayStatus().catch(() => null),
         this.client.assistantStatus().catch(() => null),
         this.client.notices().catch(() => null),
+        this.client.authStatus().catch(() => null),
       ]);
-      this.data = { overview, live, jobs, gateway, assistant, notices };
+      this.data = { overview, live, jobs, gateway, assistant, notices, auth };
       this.lastError = null;
       setDisconnectedContext(false);
     } catch (err) {
@@ -645,133 +650,369 @@ async function resolveUiUrl(hash = '') {
   }
 }
 
-function pageTitleForUrl(url) {
-  const hash = String(url).split('#')[1] || '/actions';
-  const id = hash.replace(/^\/?/, '').split('/')[0] || 'actions';
+function pageTitleForHash(hash = '') {
+  const id = String(hash || '/#/actions')
+    .replace(/^\/#\/?/, '')
+    .replace(/^#\/?/, '')
+    .split('/')[0] || 'actions';
   const page = CONTROL_PAGES.find((p) => p.id === id);
-  return page ? t('ComputeDeck · {0}', page.label) : t('ComputeDeck 看板');
+  return page ? t('ComputeDeck · {0}', page.label) : t('ComputeDeck 接入');
 }
 
-function buildControlUiHtml(webview, url) {
+function isWebIde() {
+  return vscode.env.uiKind === vscode.UIKind.Web;
+}
+
+function accessProfile() {
+  const data = provider?.data || null;
+  const auth = data?.auth || {};
+  const controlRoot = findControlRoot();
+  const localToken = Boolean(readLocalApiToken());
+  const envToken = Boolean(String(process.env.GPU_CONTROL_API_TOKEN || '').trim());
+  const apiOk = Boolean(data) && !provider?.lastError;
+  const mode = String(auth.mode || (apiOk ? 'unknown' : '—'));
+  return {
+    apiOk,
+    apiBase: client.base(),
+    controlRoot: controlRoot || '',
+    uiKind: isWebIde() ? 'web' : 'desktop',
+    authMode: mode,
+    authEnabled: Boolean(auth.enabled),
+    passwordConfigured: Boolean(auth.password_configured),
+    apiTokenConfigured: Boolean(auth.api_token_configured),
+    sessionAuthenticated: Boolean(auth.authenticated),
+    oidcReady: Boolean(auth.oidc_ready || auth.oidc?.ready),
+    localToken,
+    envToken,
+    passwordlessPlugin: localToken || envToken,
+    passwordlessWorkers: true,
+  };
+}
+
+function buildAccessHubHtml(webview, state) {
   const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  let origin = '*';
-  try {
-    origin = new URL(url).origin;
-  } catch (_) { }
   const csp = [
     `default-src 'none'`,
     `style-src ${webview.cspSource} 'unsafe-inline'`,
     `script-src 'nonce-${nonce}'`,
-    `frame-src ${origin} http: https:`,
-  ].join('; ');
-  const safeUrl = String(url).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    state.tryEmbed && state.browserUrl
+      ? `frame-src ${(() => {
+          try {
+            return new URL(state.browserUrl).origin;
+          } catch (_) {
+            return 'http: https:';
+          }
+        })()} http: https:`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('; ');
+  const safeEmbed = state.tryEmbed && state.browserUrl
+    ? String(state.browserUrl).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+    : '';
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ComputeDeck</title>
+  <title>ComputeDeck 接入</title>
   <style>
-    html, body { margin: 0; height: 100%; background: var(--vscode-editor-background); }
-    .bar {
-      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-      padding: 6px 10px; border-bottom: 1px solid var(--vscode-widget-border, rgba(127,127,127,.35));
-      font: 12px/1.3 var(--vscode-font-family); color: var(--vscode-foreground);
+    :root {
+      color-scheme: light dark;
+      --line: var(--vscode-widget-border, rgba(127,127,127,.28));
+      --soft: color-mix(in srgb, var(--vscode-editor-background) 92%, var(--vscode-foreground) 5%);
+      --accent: #0f766e;
     }
-    .bar button {
-      appearance: none; border: 1px solid var(--vscode-button-border, transparent);
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 22px 24px 36px;
+      font: 13px/1.5 var(--vscode-font-family);
+      color: var(--vscode-foreground);
+      background:
+        radial-gradient(900px 360px at 100% -20%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 55%),
+        var(--vscode-editor-background);
+    }
+    .shell { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
+    h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
+    .sub { margin: 6px 0 0; opacity: .68; font-size: 12px; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px;
+      background: var(--soft); font-size: 12px;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #94a3b8; }
+    .dot.on { background: #16a34a; } .dot.off { background: #dc2626; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    button {
+      appearance: none; font: inherit; cursor: pointer; border-radius: 8px;
+      border: 1px solid var(--line); padding: 7px 12px;
       background: var(--vscode-button-secondaryBackground);
       color: var(--vscode-button-secondaryForeground);
-      border-radius: 4px; padding: 3px 8px; font: inherit; cursor: pointer;
     }
-    .bar .url { opacity: .65; flex: 1; min-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    iframe { border: 0; width: 100%; height: calc(100% - 34px); display: block; background: #fff; }
+    button.primary {
+      border-color: transparent; font-weight: 600;
+      background: var(--vscode-button-background, var(--accent));
+      color: var(--vscode-button-foreground, #f0fdfa);
+    }
+    button.ghost { background: transparent; }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+    .card {
+      border: 1px solid var(--line); border-radius: 12px; background: var(--soft);
+      padding: 14px 14px 12px; display: grid; gap: 8px; align-content: start;
+    }
+    .card h2 { margin: 0; font-size: 14px; font-weight: 700; }
+    .card p, .card li { margin: 0; font-size: 12.5px; opacity: .86; }
+    .card ul { margin: 0; padding-left: 1.1em; display: grid; gap: 4px; }
+    .card .tag {
+      justify-self: start; font-size: 11px; font-weight: 650;
+      border-radius: 999px; padding: 2px 8px; border: 1px solid var(--line);
+    }
+    .tag.ok { color: #166534; background: color-mix(in srgb, #22c55e 12%, transparent); }
+    .tag.warn { color: #9a3412; background: color-mix(in srgb, #f97316 12%, transparent); }
+    table {
+      width: 100%; border-collapse: collapse; font-size: 12.5px;
+      border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+      background: var(--soft);
+    }
+    th, td { padding: 10px 12px; text-align: left; border-top: 1px solid var(--line); vertical-align: top; }
+    th { background: color-mix(in srgb, var(--soft) 70%, var(--vscode-foreground) 4%); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; opacity: .72; border-top: 0; }
+    code {
+      font-family: var(--vscode-editor-font-family, monospace); font-size: 12px;
+      padding: 1px 5px; border-radius: 4px;
+      background: color-mix(in srgb, var(--vscode-editor-background) 78%, var(--vscode-foreground) 12%);
+    }
+    .callout {
+      border: 1px solid color-mix(in srgb, #0f766e 30%, var(--line));
+      background: color-mix(in srgb, #0f766e 8%, var(--soft));
+      border-radius: 12px; padding: 12px 14px; font-size: 12.5px;
+    }
+    .embed-wrap {
+      border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #fff;
+      min-height: 360px;
+    }
+    .embed-wrap iframe { border: 0; width: 100%; height: 70vh; display: block; }
+    .muted { opacity: .65; }
+    .url { word-break: break-all; font-size: 12px; }
   </style>
 </head>
 <body>
-  <div class="bar">
-    <button type="button" id="reload">刷新</button>
-    <button type="button" id="openExternal">系统浏览器</button>
-    <span class="url" id="urlLabel"></span>
+  <div class="shell">
+    <header>
+      <div class="pill"><span class="dot ${state.apiOk ? 'on' : 'off'}"></span>${state.apiOk ? '插件 API 已连接' : '插件 API 未连接'}</div>
+      <h1 style="margin-top:10px">接入 · 鉴权 · 打开看板</h1>
+      <p class="sub">先分清三条线：客户端→主控（HTTP）、主控→被控（SSH）、人怎么打开完整 Web UI。</p>
+      <div class="actions" id="topActions"></div>
+    </header>
+
+    <section class="grid">
+      <article class="card">
+        <span class="tag ok">主控 control</span>
+        <h2>控制机怎么连</h2>
+        <ul>
+          <li>唯一控制面：UI/API <code>:8787</code>、调度、租约、入口</li>
+          <li>CodeLab / Remote SSH 坐在主控上时，插件 <code>apiBase=127.0.0.1:8787</code></li>
+          <li>本机有仓库 + <code>ui_api_token</code> → <strong>插件免密</strong></li>
+        </ul>
+        <p class="muted">当前 API：<code>${state.apiBase || ''}</code></p>
+      </article>
+      <article class="card">
+        <span class="tag ${state.uiKind === 'web' ? 'warn' : 'ok'}">远程 / IDE</span>
+        <h2>远程怎么连</h2>
+        <ul>
+          <li>人在笔记本：SSH 隧道 <code>-L 8787:127.0.0.1:8787</code></li>
+          <li>CodeLab Web：插件 API 走扩展宿主本机；完整看板需端口代理 URL</li>
+          <li>Webview 直嵌 <code>/proxy/8787</code> 常被拒 — 请用下方「Simple Browser / 平台打开」</li>
+        </ul>
+      </article>
+      <article class="card">
+        <span class="tag ok">被控 workers</span>
+        <h2>被控怎么连</h2>
+        <ul>
+          <li>不跑控制面，不登录 UI</li>
+          <li>主控用 Ansible/SSH（<code>nodes.json</code> 用户与密钥）管理</li>
+          <li><strong>天然免密</strong>（密钥信任），与 password/OIDC 无关</li>
+        </ul>
+      </article>
+    </section>
+
+    <section>
+      <table>
+        <thead><tr><th>谁</th><th>凭证</th><th>能否免密</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>插件 / MCP（主控本机）</td>
+            <td><code>config/local/secrets/ui_api_token</code></td>
+            <td>${state.passwordlessPlugin ? '✅ 当前可免密' : '需 Token / 密码登录'}</td>
+          </tr>
+          <tr>
+            <td>浏览器 Session</td>
+            <td>password / OIDC Cookie</td>
+            <td>否（完整看板登录态）</td>
+          </tr>
+          <tr>
+            <td>被控节点</td>
+            <td>SSH key</td>
+            <td>✅ 免 UI 密码</td>
+          </tr>
+          <tr>
+            <td>当前鉴权模式</td>
+            <td colspan="2"><code>${state.authMode || '—'}</code> · Token 文件 ${state.apiTokenConfigured ? '已配置' : '未配置'} · 密码 ${state.passwordConfigured ? '已配置' : '未配置'}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="callout">
+      <strong>你截图里的「连接被拒绝」</strong>：侧栏能刷集群，说明扩展宿主访问 <code>127.0.0.1:8787</code> 正常；
+      看板 iframe 访问的是 CodeLab 代理 <code>${state.browserUrl || ''}</code>，在 Webview 里经常 TCP 被拒。
+      完整看板请用 <strong>Simple Browser</strong> 或平台打开代理 URL，不要依赖嵌入 iframe。
+      <div class="url muted" style="margin-top:8px">本地：${state.localUrl || ''} · 浏览器：${state.browserUrl || ''}</div>
+    </section>
+
+    ${
+      state.tryEmbed && safeEmbed
+        ? `<section class="embed-wrap"><iframe src="${safeEmbed}" title="ComputeDeck embed"></iframe></section>`
+        : ''
+    }
   </div>
-  <iframe id="frame" src="${safeUrl}" title="ComputeDeck"></iframe>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
-    const frame = document.getElementById('frame');
-    const urlLabel = document.getElementById('urlLabel');
-    function setUrl(u) {
-      urlLabel.textContent = u || '';
-      if (u && frame.getAttribute('src') !== u) frame.setAttribute('src', u);
+    const actions = document.getElementById('topActions');
+    function btn(label, command, primary) {
+      const b = document.createElement('button');
+      b.textContent = label;
+      if (primary) b.className = 'primary';
+      b.addEventListener('click', () => vscode.postMessage({ command }));
+      actions.append(b);
     }
-    setUrl(${JSON.stringify(url)});
-    document.getElementById('reload').addEventListener('click', () => {
-      frame.src = frame.src;
-    });
-    document.getElementById('openExternal').addEventListener('click', () => {
-      vscode.postMessage({ command: 'openExternal', url: frame.getAttribute('src') || '' });
-    });
-    window.addEventListener('message', (ev) => {
-      if (ev.data && ev.data.type === 'navigate') setUrl(ev.data.url || '');
-    });
+    btn('Simple Browser 打开', 'simpleBrowser', true);
+    btn('平台打开代理 URL', 'openExternal');
+    btn('复制代理 URL', 'copyUrl');
+    btn('打开工作台', 'openWorkbench');
+    btn('尝试嵌入（不推荐）', 'embed');
+    btn('上手指南', 'openWalkthrough');
+    btn('刷新状态', 'refresh');
   </script>
 </body>
 </html>`;
 }
 
-function showControlUiEditor(url, title) {
-  const panelTitle = title || pageTitleForUrl(url);
+function showAccessHub(opts = {}) {
+  const profile = accessProfile();
+  const state = {
+    ...profile,
+    title: opts.title || t('ComputeDeck 接入'),
+    hash: opts.hash || '/#/actions',
+    localUrl: opts.localUrl || controlUiUrl(opts.hash || '/#/actions'),
+    browserUrl: opts.browserUrl || '',
+    tryEmbed: Boolean(opts.tryEmbed),
+  };
+  const panelTitle = opts.title || pageTitleForHash(opts.hash);
   if (controlUiPanel) {
     controlUiPanel.title = panelTitle;
     controlUiPanel.reveal(vscode.ViewColumn.Beside, false);
-    controlUiPanel.webview.html = buildControlUiHtml(controlUiPanel.webview, url);
+    controlUiPanel.webview.html = buildAccessHubHtml(controlUiPanel.webview, state);
+    controlUiPanel._cdAccess = state;
     return;
   }
   controlUiPanel = vscode.window.createWebviewPanel(
     'computedeck.controlUi',
     panelTitle,
     vscode.ViewColumn.Beside,
-    {
-      enableScripts: true,
-      retainContextWhenHidden: true,
-      // Allow embedding the local control plane.
-    }
+    { enableScripts: true, retainContextWhenHidden: true }
   );
-  controlUiPanel.webview.html = buildControlUiHtml(controlUiPanel.webview, url);
+  controlUiPanel._cdAccess = state;
+  controlUiPanel.webview.html = buildAccessHubHtml(controlUiPanel.webview, state);
   controlUiPanel.onDidDispose(() => {
     controlUiPanel = undefined;
   });
   controlUiPanel.webview.onDidReceiveMessage(async (msg) => {
-    if (msg && msg.command === 'openExternal' && msg.url) {
-      await vscode.env.openExternal(vscode.Uri.parse(msg.url));
+    const cur = controlUiPanel?._cdAccess || state;
+    if (!msg || !msg.command) return;
+    if (msg.command === 'simpleBrowser') {
+      try {
+        await vscode.commands.executeCommand('simpleBrowser.show', cur.browserUrl || cur.localUrl);
+      } catch (_) {
+        await vscode.env.openExternal(vscode.Uri.parse(cur.browserUrl || cur.localUrl));
+      }
+      return;
+    }
+    if (msg.command === 'openExternal') {
+      await vscode.env.openExternal(vscode.Uri.parse(cur.browserUrl || cur.localUrl));
+      return;
+    }
+    if (msg.command === 'copyUrl') {
+      await vscode.env.clipboard.writeText(cur.browserUrl || cur.localUrl || '');
+      vscode.window.showInformationMessage(t('已复制控制面 URL'));
+      return;
+    }
+    if (msg.command === 'embed') {
+      showAccessHub({ ...cur, tryEmbed: true, title: cur.title });
+      return;
+    }
+    if (msg.command === 'openWorkbench') {
+      showWorkbench();
+      return;
+    }
+    if (msg.command === 'openWalkthrough') {
+      await openGettingStarted();
+      return;
+    }
+    if (msg.command === 'refresh') {
+      await provider.refresh(true);
+      const browserUrl = await resolveUiUrl(cur.hash || '/#/actions');
+      showAccessHub({
+        ...cur,
+        ...accessProfile(),
+        browserUrl,
+        localUrl: controlUiUrl(cur.hash || '/#/actions'),
+      });
     }
   });
 }
 
 async function openControlUi(hash = '', title) {
-  const url = await resolveUiUrl(hash);
-  const mode = String(config().get('uiOpenMode', 'editor') || 'editor');
+  const localUrl = controlUiUrl(hash);
+  const browserUrl = await resolveUiUrl(hash);
+  const mode = String(config().get('uiOpenMode', 'auto') || 'auto');
+  const panelTitle = title || pageTitleForHash(hash);
 
   if (mode === 'external') {
-    await vscode.env.openExternal(vscode.Uri.parse(url));
+    await vscode.env.openExternal(vscode.Uri.parse(browserUrl));
     return 'external';
   }
 
-  if (mode === 'simpleBrowser' || mode === 'auto') {
+  if (mode === 'simpleBrowser') {
     try {
-      await vscode.commands.executeCommand('simpleBrowser.show', url);
+      await vscode.commands.executeCommand('simpleBrowser.show', browserUrl);
       return 'simpleBrowser';
     } catch (_) {
-      if (mode === 'simpleBrowser') {
-        vscode.window.showWarningMessage(
-          t('当前环境没有 Simple Browser，已改用编辑器窗口打开。')
-        );
-      }
+      showAccessHub({ hash, title: panelTitle, localUrl, browserUrl, tryEmbed: false });
+      return 'access';
     }
   }
 
-  showControlUiEditor(url, title);
-  return 'editor';
+  if (mode === 'embed') {
+    showAccessHub({ hash, title: panelTitle, localUrl, browserUrl, tryEmbed: true });
+    return 'embed';
+  }
+
+  // auto / access：CodeLab Web 默认进接入页，避免坏掉的 iframe。
+  if (mode === 'access' || mode === 'auto' || isWebIde()) {
+    if (mode === 'auto' && !isWebIde()) {
+      try {
+        await vscode.commands.executeCommand('simpleBrowser.show', browserUrl);
+        return 'simpleBrowser';
+      } catch (_) { }
+    }
+    showAccessHub({ hash, title: panelTitle, localUrl, browserUrl, tryEmbed: false });
+    return 'access';
+  }
+
+  showAccessHub({ hash, title: panelTitle, localUrl, browserUrl, tryEmbed: false });
+  return 'access';
 }
 
 async function openControlUiExternal(hash = '') {
@@ -1075,10 +1316,12 @@ function workbenchSnapshot() {
   const mcpPath = resolveMcpPath();
   const mcpReady = Boolean(mcpPath && fs.existsSync(mcpPath));
   const tokenReady = Boolean(readLocalApiToken() || process.env.GPU_CONTROL_API_TOKEN);
+  const access = accessProfile();
   return {
     connected: Boolean(data) && !error,
     error: error ? String(error.message || error) : '',
     base: client.base(),
+    access,
     summary: {
       nodes: summary.nodes ?? 0,
       nodes_online: summary.nodes_online ?? 0,
@@ -1326,6 +1569,14 @@ function buildWorkbenchHtml(webview) {
       <div class="hero-actions" id="heroActions"></div>
     </header>
 
+    <section class="notices" style="border-style:solid">
+      <div class="notices-h">
+        <h3>接入速览</h3>
+        <div class="btn-row" id="accessActions"></div>
+      </div>
+      <div class="empty" id="accessBox" style="padding:12px 14px">加载中…</div>
+    </section>
+
     <section class="section">
       <div class="section-h"><h2>集群状态</h2><span class="more" id="kpiMore"></span></div>
       <div class="kpis" id="kpis"></div>
@@ -1423,9 +1674,24 @@ function buildWorkbenchHtml(webview) {
         : (state.error || '检查 apiBase / Token');
       el('heroActions').replaceChildren(
         btn('刷新', 'refresh', 'ghost'),
-        btn('打开看板', 'openDashboard', 'primary'),
+        btn('接入说明', 'openAccess', 'primary'),
+        btn('打开看板', 'openDashboard', 'ghost'),
         btn('上手指南', 'openWalkthrough', 'ghost')
       );
+      const access = state.access || {};
+      const accessBox = el('accessBox');
+      if (accessBox) {
+        accessBox.replaceChildren();
+        const title = document.createElement('div');
+        title.className = 'notice-title';
+        title.textContent = access.passwordlessPlugin
+          ? '主控本机：插件 API 已免密（ui_api_token）'
+          : '主控 API 需 Token / 密码；被控节点仍走 SSH 免密';
+        const detail = document.createElement('div');
+        detail.className = 'notice-detail';
+        detail.textContent = '客户端→主控 HTTP · 主控→被控 SSH · 完整 Web 看板在 CodeLab 请用接入页的 Simple Browser（不要硬嵌 /proxy/8787 iframe）';
+        accessBox.append(title, detail);
+      }
       el('kpiMore').textContent = connected
         ? ('空闲 GPU ' + (s.gpus_free ?? 0) + ' · 租约 ' + (s.leases ?? 0))
         : '';
@@ -1462,6 +1728,10 @@ function buildWorkbenchHtml(webview) {
       el('opsMutate').replaceChildren(
         btn('部署 Job', 'deployJob', 'primary'),
         btn('腾空节点', 'freeNode', 'danger')
+      );
+      el('accessActions').replaceChildren(
+        btn('接入说明', 'openAccess', 'primary'),
+        btn('Simple Browser', 'openDashboard', 'ghost')
       );
       el('noticeActions').replaceChildren(
         btn(unread > 0 ? ('查看全部 · ' + unread) : '打开公告页', 'openNotices', 'ghost')
@@ -1547,12 +1817,17 @@ function showWorkbench() {
       await vscode.commands.executeCommand('workbench.action.openSettings', 'computedeck');
       return;
     }
+    if (command === 'openAccess') {
+      await vscode.commands.executeCommand('computedeck.openAccess');
+      return;
+    }
     const map = {
       openDashboard: 'computedeck.openDashboard',
       openAssistant: 'computedeck.openAssistant',
       openNotices: 'computedeck.openNotices',
       openWalkthrough: 'computedeck.openWalkthrough',
       openGuide: 'computedeck.openGuide',
+      openAccess: 'computedeck.openAccess',
       runDoctor: 'computedeck.runDoctor',
       liveness: 'computedeck.liveness',
       testSSH: 'computedeck.testSSH',
@@ -1894,6 +2169,16 @@ function registerCommands(context) {
   });
   cmd('computedeck.openWorkbench', async () => {
     showWorkbench();
+  });
+  cmd('computedeck.openAccess', async () => {
+    const hash = '/#/actions';
+    showAccessHub({
+      hash,
+      title: t('ComputeDeck 接入'),
+      localUrl: controlUiUrl(hash),
+      browserUrl: await resolveUiUrl(hash),
+      tryEmbed: false,
+    });
   });
   cmd('computedeck.openDashboard', async () => {
     await openControlUi('/#/actions', t('ComputeDeck · 看板'));

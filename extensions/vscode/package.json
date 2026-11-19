@@ -2,7 +2,7 @@
   "name": "computedeck-vscode",
   "displayName": "%computedeck.displayName%",
   "description": "%computedeck.description%",
-  "version": "1.2.16",
+  "version": "1.2.17",
   "publisher": "computedeck",
   "license": "AGPL-3.0-only",
   "icon": "media/icon.png",
@@ -48,6 +48,12 @@
         "title": "%computedeck.command.openWorkbench%",
         "category": "%computedeck.category%",
         "icon": "$(window)"
+      },
+      {
+        "command": "computedeck.openAccess",
+        "title": "%computedeck.command.openAccess%",
+        "category": "%computedeck.category%",
+        "icon": "$(shield)"
       },
       {
         "command": "computedeck.openDashboard",
@@ -411,17 +417,19 @@
         },
         "computedeck.uiOpenMode": {
           "type": "string",
-          "default": "editor",
+          "default": "auto",
           "enum": [
             "auto",
+            "access",
             "simpleBrowser",
-            "editor",
+            "embed",
             "external"
           ],
           "enumDescriptions": [
             "%computedeck.config.uiOpenMode.auto%",
+            "%computedeck.config.uiOpenMode.access%",
             "%computedeck.config.uiOpenMode.simpleBrowser%",
-            "%computedeck.config.uiOpenMode.editor%",
+            "%computedeck.config.uiOpenMode.embed%",
             "%computedeck.config.uiOpenMode.external%"
           ],
           "description": "%computedeck.config.uiOpenMode%"

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.17
+
+- 新增「接入说明」页：主控 / 远程 / 被控、鉴权与免密矩阵；解释 CodeLab iframe 代理失败原因
+- 打开看板默认不再盲嵌 `/proxy/8787`；Web IDE 走接入说明 + Simple Browser / 平台打开
+- 工作台增加接入速览；`uiOpenMode` 支持 `auto` / `access` / `simpleBrowser` / `embed` / `external`
+
 ## 1.2.16
 
 - 工作台 UI 重排：页头状态、四格 KPI、页面分段导航、连接/操作分区、公告列表层次更清晰
