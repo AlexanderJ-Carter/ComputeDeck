@@ -1,8 +1,11 @@
 # VS Code 插件（ComputeDeck）
 
-Web 看板适合大屏与完整操作；VS Code 插件适合“边写代码边看集群、顺手开终端/部署”的日常流。
+Web 看板适合大屏与完整操作；VS Code 插件适合“边写代码边看集群、顺手开终端/部署”的日常流。  
+主控/隧道/OIDC/SSO 总图见 [接入拓扑与鉴权](接入拓扑与鉴权.md)。
 
 源码：[extensions/vscode/](https://github.com/AlexanderJ-Carter/ComputeDeck/tree/main/extensions/vscode)
+
+当前扩展版本见 `extensions/vscode/package.json`；发版时与仓库根 `VERSION` 对齐（见 [打包与发布](打包与发布.md)）。分发形态为 **VSIX**，不发 npm。
 
 ## 1. 功能
 
@@ -44,11 +47,27 @@ code --extensionDevelopmentPath="$PWD"
 打包安装：
 
 ```bash
-./scripts/package_extension.sh
+cd extensions/vscode && npm run package
 code --install-extension extensions/vscode/computedeck-vscode-*.vsix
 ```
 
+连真实控制面预览（签发 Token + Extension Development Host）：
+
+```bash
+./scripts/preview_extension.sh
+# 或 CONTROL_HOST=<主控> ./scripts/preview_extension.sh --api http://127.0.0.1:8787
+```
+
 CI：`.github/workflows/vscode.yml` 会在 `extensions/vscode/**` 变更时打包 VSIX 并上传 artifact；打 `v*` tag 时由 `.github/workflows/release.yml` 重新打包并把 VSIX 附加到对应 GitHub Release（扩展版本与主版本同步）。
+
+## 3.1 图标与本地化
+
+- 市场图标：`extensions/vscode/media/icon.png`（128×128）
+- 活动栏：`media/activitybar.svg`（`currentColor`，跟随主题）
+- 贡献点：`package.nls.json`（默认英文）+ `package.nls.zh-cn.json`
+- 运行时：`l10n/bundle.l10n.zh-cn.json`（`vscode.l10n.t`）
+
+VS Code 显示语言为简体中文时命令 / 设置 / 树 / 通知为中文，否则回落英文。
 
 ## 4. 连接与鉴权
 

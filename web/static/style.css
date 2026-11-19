@@ -4126,9 +4126,89 @@ summary:focus-visible,
   }
 }
 
-/* 远程接入卡片 */
-.dash-remote {
-  margin-bottom: 12px;
+/* 远程接入 */
+.remote-layout {
+  display: grid;
+  gap: 14px;
+}
+
+.remote-scenario-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.remote-scenario {
+  padding: 12px 14px;
+  border: 1px solid var(--border, rgba(15, 23, 42, 0.12));
+  border-radius: 10px;
+  background: var(--panel-soft, rgba(15, 23, 42, 0.02));
+}
+
+.remote-scenario h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.remote-scenario p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted, #64748b);
+}
+
+.remote-snippet {
+  margin: 8px 0;
+  padding: 8px 10px;
+  font-size: 11px;
+  overflow-x: auto;
+}
+
+.remote-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.remote-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.4;
+  border: 1px solid var(--border, rgba(15, 23, 42, 0.12));
+  background: var(--panel, #fff);
+}
+
+.remote-chip.tone-ok {
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #047857;
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.remote-chip.tone-warn {
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.remote-chip.tone-bad {
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.remote-chip.tone-info {
+  border-color: rgba(20, 184, 166, 0.35);
+  color: #0f766e;
+  background: rgba(20, 184, 166, 0.08);
+}
+
+.remote-chip.tone-muted {
+  color: var(--muted, #64748b);
 }
 
 .dash-remote .panel-h {
@@ -4137,7 +4217,7 @@ summary:focus-visible,
 
 .remote-body {
   display: grid;
-  gap: 4px;
+  gap: 6px;
   margin-bottom: 10px;
 }
 
@@ -4146,6 +4226,57 @@ summary:focus-visible,
   font-size: 12px;
   line-height: 1.5;
   overflow-wrap: anywhere;
+}
+
+.remote-alert {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.06);
+  color: #b91c1c;
+}
+
+.remote-warn {
+  color: #b45309;
+}
+
+.remote-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin: 8px 0 4px;
+}
+
+.remote-plan {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border, rgba(15, 23, 42, 0.1));
+}
+
+.remote-plan-h {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.remote-plan-block,
+.remote-plan-notes {
+  margin: 0 0 8px;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.remote-plan-block {
+  color: #b91c1c;
+}
+
+.remote-urls {
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 /* ---------- AI 回复 Markdown 与代码复制 ---------- */

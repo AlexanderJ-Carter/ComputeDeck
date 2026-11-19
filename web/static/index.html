@@ -8,7 +8,7 @@
   <link rel="icon" href="/static/logo.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/vendor/xterm/xterm-6.1.0.css" />
   <link rel="stylesheet" href="/static/tokens.css?v=__UI_VERSION__.dash32" />
-  <link rel="stylesheet" href="/static/style.css?v=__UI_VERSION__.dash32" />
+  <link rel="stylesheet" href="/static/style.css?v=__UI_VERSION__.dash34" />
   <script src="/static/theme-boot.js?v=__UI_VERSION__"></script>
 </head>
 
@@ -1119,7 +1119,11 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
                 <div>
                   <p class="config-page-kicker">配置 · 5 / 6</p>
                   <h2 id="config-title-auth">鉴权与访问</h2>
-                  <p class="meta">建议先开启鉴权再对外开放；支持密码、OAuth / OIDC 与 API Token。</p>
+                  <p class="meta">浏览器用密码或 OIDC（企业 SSO）；脚本 / MCP / 插件用 API Token。公网或非回环绑定前必须开启鉴权。外层还可加 Cloudflare Access，不替代本页配置。</p>
+                </div>
+                <div class="btn-row">
+                  <a class="ghost tiny" href="/help/接入拓扑与鉴权/" target="_blank" rel="noopener">拓扑与鉴权</a>
+                  <a class="ghost tiny" href="/help/安全加固/" target="_blank" rel="noopener">安全加固</a>
                 </div>
               </header>
               <div class="panel" id="cfg-auth">
@@ -1171,7 +1175,8 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
                 </div>
                 <div id="secrets-cabinet" class="secrets-cabinet" aria-live="polite"></div>
                 <details class="fold" open>
-                  <summary>OAuth / OIDC / 免密登录</summary>
+                  <summary>OIDC / 企业 SSO</summary>
+                  <p class="meta">控制面 SSO 走 OIDC（授权码 + PKCE）。IdP 配好 Issuer / Client 后，用邮箱或 Groups 白名单收紧可登录人员。SAML 需经网关转 OIDC，不在控制面原生支持。</p>
                   <label class="field"><span>Issuer</span><input id="auth-oidc-issuer"
                       placeholder="https://login.example.com" /></label>
                   <label class="field"><span>Client ID</span><input id="auth-oidc-client-id" /></label>
@@ -1213,26 +1218,58 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
                 <div>
                   <p class="config-page-kicker">配置 · 6 / 6</p>
                   <h2 id="config-title-remote">远程接入</h2>
-                  <p class="meta">用 Tailscale / Cloudflare 把控制面带到集群外；端口与模式在这里统一配置。</p>
+                  <p class="meta">把回环上的控制面接到人面前：本机 / SSH 隧道 / IDE 优先；集群外再用 Tailscale 或 Cloudflare。公网必须先开鉴权。</p>
+                </div>
+                <div class="btn-row">
+                  <a class="ghost tiny" href="/help/远程接入/" target="_blank" rel="noopener">说明文档</a>
+                  <a class="ghost tiny" href="/help/接入拓扑与鉴权/" target="_blank" rel="noopener">拓扑与鉴权</a>
                 </div>
               </header>
-              <div class="panel" id="cfg-remote">
+              <div class="remote-layout" id="cfg-remote">
+                <section class="panel remote-scenarios" aria-labelledby="remote-scenarios-title">
+                  <header class="panel-h">
+                    <h2 id="remote-scenarios-title">怎么连上来</h2>
+                    <span class="meta">由近到远</span>
+                  </header>
+                  <div class="remote-scenario-grid">
+                    <article class="remote-scenario">
+                      <h3>本机主控</h3>
+                      <p>已在 control 上（含 CodeLab）时直接打开 <code>http://127.0.0.1:8787</code>。VS Code 插件会自动读本机 Token。</p>
+                    </article>
+                    <article class="remote-scenario">
+                      <h3>SSH 端口转发</h3>
+                      <p>笔记本访问主控时最稳妥：</p>
+                      <pre class="snippet remote-snippet" id="remote-ssh-snippet">ssh -N -L 8787:127.0.0.1:8787 &lt;control&gt;</pre>
+                      <p class="meta">然后浏览器打开本机 8787；插件把 <code>apiBase</code> 指到隧道地址。</p>
+                    </article>
+                    <article class="remote-scenario">
+                      <h3>IDE Remote SSH</h3>
+                      <p>工作区在主控仓库时，插件默认 <code>127.0.0.1:8787</code> + 自动 Token，无需再做端口转发。</p>
+                    </article>
+                    <article class="remote-scenario">
+                      <h3>集群外团队</h3>
+                      <p>用下方 Tailscale <strong>serve</strong>（仅 tailnet）或 Cloudflare Tunnel + Access。Funnel / Quick Tunnel 只做短时演示。</p>
+                    </article>
+                  </div>
+                </section>
+
                 <section class="panel dash-remote" aria-labelledby="dash-remote-title">
                   <header class="panel-h">
-                    <h2 id="dash-remote-title">远程接入</h2>
+                    <h2 id="dash-remote-title">Tailscale / Cloudflare</h2>
                     <span class="meta" id="remote-meta">检测中…</span>
                   </header>
+                  <div id="remote-status" class="remote-status" aria-live="polite"></div>
                   <div id="remote-body" class="remote-body">
-                    <p class="meta">Tailscale / Cloudflare 把控制面带到集群外。</p>
+                    <p class="meta">正在检测本机 tailscale / cloudflared 与鉴权状态…</p>
                   </div>
-                  <div class="compact-fields" style="margin-top:8px">
+                  <div class="remote-controls">
                     <label class="field"><span>接入模式</span>
                       <select id="remote-mode" data-keep-enabled="1">
                         <option value="auto">自动推荐</option>
-                        <option value="tailscale-serve">Tailscale serve（仅 tailnet）</option>
-                        <option value="tailscale-funnel">Tailscale funnel（公网）</option>
-                        <option value="cloudflared-quick">Cloudflare 快速隧道（公网）</option>
-                        <option value="cloudflared-tunnel">Cloudflare Tunnel（命名隧道）</option>
+                        <option value="tailscale-serve">Tailscale serve（仅 tailnet · 推荐）</option>
+                        <option value="tailscale-funnel">Tailscale funnel（公网 · 临时）</option>
+                        <option value="cloudflared-quick">Cloudflare 快速隧道（公网 · 临时）</option>
+                        <option value="cloudflared-tunnel">Cloudflare Tunnel（命名隧道 · 长期）</option>
                       </select>
                     </label>
                     <label class="field"><span>暴露端口</span>
@@ -1240,16 +1277,14 @@ gpu-control toolkits install --id vllm --node &lt;name&gt;</pre>
                         data-keep-enabled="1" />
                     </label>
                   </div>
-                  <p class="meta">端口默认取 control.ui_port；公网模式需要控制面已开启鉴权。</p>
+                  <p class="meta">端口默认取 <code>control.ui_port</code>。公网模式在鉴权关闭时会被计划阻塞。</p>
                   <div class="btn-row">
                     <button type="button" id="btn-remote-plan" class="ghost tiny" data-keep-enabled="1">生成计划</button>
                     <button type="button" id="btn-remote-up" class="primary tiny" data-keep-enabled="1">按推荐启动</button>
                     <button type="button" id="btn-remote-down" class="ghost tiny" data-keep-enabled="1">关闭</button>
                   </div>
+                  <div id="remote-plan" class="remote-plan" hidden></div>
                 </section>
-
-
-
               </div>
             </section>
 
@@ -1625,7 +1660,7 @@ gpu-control ui --background</pre>
   </div>
   <script src="/static/vendor/xterm/xterm-6.1.0.min.js"></script>
   <script src="/static/xterm-fit.js?v=__UI_VERSION__"></script>
-  <script src="/static/app.js?v=__UI_VERSION__.dash32"></script>
+  <script src="/static/app.js?v=__UI_VERSION__.dash34"></script>
 </body>
 
 </html>

@@ -1,10 +1,15 @@
 {
   "name": "computedeck-vscode",
-  "displayName": "ComputeDeck",
-  "description": "ComputeDeck GPU control plane in VS Code: cluster tree, status bar, node/job actions, terminal, diagnostics and MCP.",
-  "version": "1.2.7",
+  "displayName": "%computedeck.displayName%",
+  "description": "%computedeck.description%",
+  "version": "1.2.12",
   "publisher": "computedeck",
   "license": "AGPL-3.0-only",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#0f766e",
+    "theme": "dark"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/AlexanderJ-Carter/ComputeDeck"
@@ -25,6 +30,7 @@
     "computedeck"
   ],
   "main": "./extension.js",
+  "l10n": "./l10n",
   "activationEvents": [
     "onStartupFinished",
     "onView:computedeck.cluster"
@@ -33,116 +39,155 @@
     "commands": [
       {
         "command": "computedeck.refresh",
-        "title": "ComputeDeck: 刷新集群状态",
+        "title": "%computedeck.command.refresh%",
+        "category": "%computedeck.category%",
         "icon": "$(refresh)"
       },
       {
         "command": "computedeck.openDashboard",
-        "title": "ComputeDeck: 打开 Web 控制面",
+        "title": "%computedeck.command.openDashboard%",
+        "category": "%computedeck.category%",
         "icon": "$(globe)"
       },
       {
+        "command": "computedeck.openNotices",
+        "title": "%computedeck.command.openNotices%",
+        "category": "%computedeck.category%",
+        "icon": "$(bell)"
+      },
+      {
+        "command": "computedeck.openAssistant",
+        "title": "%computedeck.command.openAssistant%",
+        "category": "%computedeck.category%",
+        "icon": "$(sparkle)"
+      },
+      {
         "command": "computedeck.login",
-        "title": "ComputeDeck: 密码登录"
+        "title": "%computedeck.command.login%",
+        "category": "%computedeck.category%"
       },
       {
         "command": "computedeck.setToken",
-        "title": "ComputeDeck: 设置 API Token"
+        "title": "%computedeck.command.setToken%",
+        "category": "%computedeck.category%"
+      },
+      {
+        "command": "computedeck.useLocalCredentials",
+        "title": "%computedeck.command.useLocalCredentials%",
+        "category": "%computedeck.category%"
       },
       {
         "command": "computedeck.logout",
-        "title": "ComputeDeck: 退出登录"
+        "title": "%computedeck.command.logout%",
+        "category": "%computedeck.category%"
       },
       {
         "command": "computedeck.runDoctor",
-        "title": "ComputeDeck: 运行自检"
+        "title": "%computedeck.command.runDoctor%",
+        "category": "%computedeck.category%"
       },
       {
         "command": "computedeck.liveness",
-        "title": "ComputeDeck: 节点探活"
+        "title": "%computedeck.command.liveness%",
+        "category": "%computedeck.category%"
       },
       {
         "command": "computedeck.testSSH",
-        "title": "ComputeDeck: 测试 SSH"
+        "title": "%computedeck.command.testSSH%",
+        "category": "%computedeck.category%"
       },
       {
         "command": "computedeck.execPreset",
-        "title": "ComputeDeck: 运行只读诊断"
+        "title": "%computedeck.command.execPreset%",
+        "category": "%computedeck.category%"
       },
       {
         "command": "computedeck.deployJob",
-        "title": "ComputeDeck: 部署 Job"
+        "title": "%computedeck.command.deployJob%",
+        "category": "%computedeck.category%"
       },
       {
         "command": "computedeck.freeNode",
-        "title": "ComputeDeck: 腾空节点"
+        "title": "%computedeck.command.freeNode%",
+        "category": "%computedeck.category%"
       },
       {
         "command": "computedeck.nodeMenu",
-        "title": "节点操作"
+        "title": "%computedeck.command.nodeMenu%",
+        "category": "%computedeck.category%"
       },
       {
         "command": "computedeck.jobMenu",
-        "title": "Job 操作"
+        "title": "%computedeck.command.jobMenu%",
+        "category": "%computedeck.category%"
       },
       {
         "command": "computedeck.nodeTerminal",
-        "title": "打开节点终端",
+        "title": "%computedeck.command.nodeTerminal%",
+        "category": "%computedeck.category%",
         "icon": "$(terminal)"
       },
       {
         "command": "computedeck.nodePreset",
-        "title": "运行只读诊断",
+        "title": "%computedeck.command.nodePreset%",
+        "category": "%computedeck.category%",
         "icon": "$(pulse)"
       },
       {
         "command": "computedeck.nodeFree",
-        "title": "腾空节点",
+        "title": "%computedeck.command.nodeFree%",
+        "category": "%computedeck.category%",
         "icon": "$(debug-stop)"
       },
       {
         "command": "computedeck.nodeCordon",
-        "title": "隔离 / 恢复节点",
+        "title": "%computedeck.command.nodeCordon%",
+        "category": "%computedeck.category%",
         "icon": "$(lock)"
       },
       {
         "command": "computedeck.jobStart",
-        "title": "启动 Job",
+        "title": "%computedeck.command.jobStart%",
+        "category": "%computedeck.category%",
         "icon": "$(play)"
       },
       {
         "command": "computedeck.jobStop",
-        "title": "停止 Job",
+        "title": "%computedeck.command.jobStop%",
+        "category": "%computedeck.category%",
         "icon": "$(stop)"
       },
       {
         "command": "computedeck.jobRestart",
-        "title": "重启 Job",
+        "title": "%computedeck.command.jobRestart%",
+        "category": "%computedeck.category%",
         "icon": "$(debug-restart)"
       },
       {
         "command": "computedeck.installMcp",
-        "title": "ComputeDeck: 注册 MCP Server"
+        "title": "%computedeck.command.installMcp%",
+        "category": "%computedeck.category%"
       },
       {
         "command": "computedeck.openWalkthrough",
-        "title": "ComputeDeck: 打开上手引导",
+        "title": "%computedeck.command.openWalkthrough%",
+        "category": "%computedeck.category%",
         "icon": "$(book)"
       }
     ],
     "walkthroughs": [
       {
         "id": "computedeck.getStarted",
-        "title": "开始使用 ComputeDeck",
-        "description": "连接控制面，读懂集群树，然后在 VS Code 里开终端、跑诊断、部署 Job。",
+        "title": "%computedeck.walkthrough.title%",
+        "description": "%computedeck.walkthrough.description%",
         "steps": [
           {
             "id": "connect",
-            "title": "连接控制面",
-            "description": "填写控制面地址并登录；Remote SSH 场景通常就是 127.0.0.1。\n[密码登录](command:computedeck.login)\n[设置 API Token](command:computedeck.setToken)",
+            "title": "%computedeck.walkthrough.connect.title%",
+            "description": "%computedeck.walkthrough.connect.description%",
             "media": {
               "markdown": "media/walkthrough/01-connect.md",
-              "altText": "连接 ComputeDeck 控制面"
+              "altText": "%computedeck.walkthrough.connect.alt%"
             },
             "completionEvents": [
               "onCommand:computedeck.login",
@@ -152,11 +197,11 @@
           },
           {
             "id": "cluster",
-            "title": "读懂集群树",
-            "description": "总览、节点、Job、队列租约、入口五个分区；状态栏常驻节点与空闲 GPU。",
+            "title": "%computedeck.walkthrough.cluster.title%",
+            "description": "%computedeck.walkthrough.cluster.description%",
             "media": {
               "markdown": "media/walkthrough/02-cluster.md",
-              "altText": "ComputeDeck 集群树"
+              "altText": "%computedeck.walkthrough.cluster.alt%"
             },
             "completionEvents": [
               "onCommand:computedeck.refresh"
@@ -164,11 +209,11 @@
           },
           {
             "id": "nodes",
-            "title": "节点终端与诊断",
-            "description": "右键或行内按钮打开 SSH 终端、跑只读诊断、隔离或腾空节点。\n[节点操作](command:computedeck.nodeMenu)",
+            "title": "%computedeck.walkthrough.nodes.title%",
+            "description": "%computedeck.walkthrough.nodes.description%",
             "media": {
               "markdown": "media/walkthrough/03-nodes.md",
-              "altText": "节点操作"
+              "altText": "%computedeck.walkthrough.nodes.alt%"
             },
             "completionEvents": [
               "onCommand:computedeck.nodeMenu",
@@ -178,11 +223,11 @@
           },
           {
             "id": "jobs",
-            "title": "部署与启停 Job",
-            "description": "按 GPU 数自动选节点，或指定节点部署；Job 行内可直接启动、重启、停止。\n[部署 Job](command:computedeck.deployJob)",
+            "title": "%computedeck.walkthrough.jobs.title%",
+            "description": "%computedeck.walkthrough.jobs.description%",
             "media": {
               "markdown": "media/walkthrough/04-jobs.md",
-              "altText": "Job 操作"
+              "altText": "%computedeck.walkthrough.jobs.alt%"
             },
             "completionEvents": [
               "onCommand:computedeck.deployJob",
@@ -193,11 +238,11 @@
           },
           {
             "id": "mcp",
-            "title": "接入 Copilot 与 Web 看板",
-            "description": "注册 MCP Server 后，Copilot / Claude 等 Agent 可直接调用 gc_* 工具；完整看板在浏览器。\n[注册 MCP Server](command:computedeck.installMcp)\n[打开 Web 控制面](command:computedeck.openDashboard)",
+            "title": "%computedeck.walkthrough.mcp.title%",
+            "description": "%computedeck.walkthrough.mcp.description%",
             "media": {
               "markdown": "media/walkthrough/05-mcp.md",
-              "altText": "MCP 与 Web 看板"
+              "altText": "%computedeck.walkthrough.mcp.alt%"
             },
             "completionEvents": [
               "onCommand:computedeck.installMcp",
@@ -211,8 +256,8 @@
       "activitybar": [
         {
           "id": "computedeck",
-          "title": "ComputeDeck",
-          "icon": "media/logo.svg"
+          "title": "%computedeck.view.container%",
+          "icon": "media/activitybar.svg"
         }
       ]
     },
@@ -220,8 +265,8 @@
       "computedeck": [
         {
           "id": "computedeck.cluster",
-          "name": "集群",
-          "icon": "media/logo.svg"
+          "name": "%computedeck.view.cluster%",
+          "icon": "media/activitybar.svg"
         }
       ]
     },
@@ -241,6 +286,16 @@
           "command": "computedeck.openWalkthrough",
           "when": "view == computedeck.cluster",
           "group": "navigation@3"
+        },
+        {
+          "command": "computedeck.openAssistant",
+          "when": "view == computedeck.cluster",
+          "group": "navigation@4"
+        },
+        {
+          "command": "computedeck.openNotices",
+          "when": "view == computedeck.cluster",
+          "group": "navigation@5"
         }
       ],
       "view/item/context": [
@@ -287,40 +342,57 @@
       ]
     },
     "configuration": {
-      "title": "ComputeDeck",
+      "title": "%computedeck.config.title%",
       "properties": {
         "computedeck.apiBase": {
           "type": "string",
           "default": "http://127.0.0.1:8787",
-          "description": "ComputeDeck 控制面地址。VS Code Remote SSH 时可用 127.0.0.1；本机访问远端时填 SSH 隧道地址。"
+          "description": "%computedeck.config.apiBase%"
         },
         "computedeck.pollIntervalSec": {
           "type": "number",
           "default": 30,
           "minimum": 5,
-          "description": "状态栏 / 集群树刷新间隔（秒）。"
+          "description": "%computedeck.config.pollIntervalSec%"
         },
         "computedeck.statusBar": {
           "type": "boolean",
           "default": true,
-          "description": "在状态栏显示集群在线节点与 GPU 空闲数。"
+          "description": "%computedeck.config.statusBar%"
         },
         "computedeck.mcpPath": {
           "type": "string",
           "default": "${workspaceFolder}/bin/gpu-control-mcp",
-          "description": "gpu-control-mcp 可执行文件路径；用于向 VS Code / Copilot 注册 MCP Server。"
+          "description": "%computedeck.config.mcpPath%"
         },
         "computedeck.sshUser": {
           "type": "string",
           "default": "",
-          "description": "节点终端默认 SSH 用户；留空则使用节点 ansible_user。"
+          "description": "%computedeck.config.sshUser%"
+        },
+        "computedeck.autoLocalAuth": {
+          "type": "boolean",
+          "default": true,
+          "description": "%computedeck.config.autoLocalAuth%"
+        },
+        "computedeck.controlRoot": {
+          "type": "string",
+          "default": "",
+          "description": "%computedeck.config.controlRoot%"
         }
       }
     },
     "mcpServerDefinitionProviders": [
       {
         "id": "computedeck.mcp",
-        "label": "ComputeDeck"
+        "label": "%computedeck.mcp.label%"
+      }
+    ],
+    "viewsWelcome": [
+      {
+        "view": "computedeck.cluster",
+        "contents": "%computedeck.welcome.disconnected%",
+        "when": "computedeck.disconnected"
       }
     ]
   },

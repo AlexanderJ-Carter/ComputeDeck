@@ -1,21 +1,23 @@
-## 让 Agent 也能用
+## Copilot、小助手与 Web 看板
 
-插件注册 `computedeck.mcp` provider，启动工作区的：
+插件侧栏顶部有 **AI 与 MCP** 分区：
+
+1. **Web 小助手**：打开控制面并自动展开助手面板（`#/assistant`）。对话、确认卡、模型配置都在浏览器里完成。
+2. **监管公告**：未读告警/提示；也可打开 `#/notices`。
+3. **MCP Server**：注册后，VS Code / Copilot 可调用 `gc_overview`、`gc_deploy`、`gc_exec_preset` 等工具。
+
+MCP 启动：
 
 ```text
 bin/gpu-control-mcp
 ```
 
-并注入 `GPU_CONTROL_API_BASE` 与 SecretStorage 里的 `GPU_CONTROL_API_TOKEN`。在支持 MCP 的 Copilot Chat / Claude / Codex 中即可调用 `gc_overview`、`gc_liveness`、`gc_deploy`、`gc_exec_preset` 等工具。
+并注入 `GPU_CONTROL_API_BASE` 与本机/SecretStorage 中的 Token。在 control 仓库打开时 Token 会自动读取。
 
-写操作仍按风险分级：只读自动执行，写操作确认，破坏性操作二次确认。
+[打开 Web 小助手](command:computedeck.openAssistant)
+
+[打开监管公告](command:computedeck.openNotices)
 
 [注册 MCP Server](command:computedeck.installMcp)
 
-## 完整看板在浏览器
-
-趋势曲线、AI 小助手、完整配置、终端矩阵在 Web `:8787`：
-
 [打开 Web 控制面](command:computedeck.openDashboard)
-
-更多说明见文档站「VS Code 插件」章节，或仓库 `docs/vscode插件.md`。

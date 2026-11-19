@@ -44,6 +44,19 @@ class ComputeDeckClient {
   }
 
   async resolveToken() {
+    // On the control host, prefer the live secrets file so a stale SecretStorage
+    // value cannot block "open workspace and it just works".
+    const fromLocal = readLocalApiToken();
+    if (fromLocal) {
+      const stored = await this.context.secrets.get(TOKEN_KEY);
+      if (stored !== fromLocal) {
+        await this.context.secrets.store(TOKEN_KEY, fromLocal);
+        if (output) {
+          output.appendLine(t('已从本机控制面读取 API Token：{0}', localTokenPath() || '(local)'));
+        }
+      }
+      return fromLocal;
+    }
     const stored = await this.context.secrets.get(TOKEN_KEY);
     if (stored) return stored;
     const fromEnv = String(process.env.GPU_CONTROL_API_TOKEN || '').trim();
@@ -65,7 +78,7 @@ class ComputeDeckClient {
         signal: controller.signal,
       });
     } catch (err) {
-      throw new Error(`无法连接 ${this.base()}：${err && err.message ? err.message : err}`);
+      throw new Error(t('无法连接 {0}：{1}', this.base(), err && err.message ? err.message : err));
     } finally {
       clearTimeout(timer);
     }
@@ -77,7 +90,7 @@ class ComputeDeckClient {
       data = { raw: text.slice(0, 2000) };
     }
     if (res.status === 401) {
-      throw new ApiError('需要登录 ComputeDeck（命令面板：ComputeDeck: 密码登录 / 设置 API Token）', 401, data);
+      throw new ApiError(t('需要登录 ComputeDeck（命令面板：密码登录 / 设置 API Token）'), 401, data);
     }
     if (!res.ok) {
       const message = data.error || data.detail || `HTTP ${res.status}`;
@@ -97,15 +110,15 @@ class ComputeDeckClient {
       let detail = text;
       try {
         detail = JSON.parse(text).error || detail;
-      } catch (_) {}
-      throw new Error(`登录失败：${detail || res.status}`);
+      } catch (_) { }
+      throw new Error(t('登录失败：{0}', detail || res.status));
     }
     const setCookies =
       typeof res.headers.getSetCookie === 'function'
         ? res.headers.getSetCookie()
         : [res.headers.get('set-cookie')].filter(Boolean);
     const cookie = setCookies.map((x) => String(x).split(';')[0]).join('; ');
-    if (!cookie) throw new Error('登录成功但没有拿到 Session Cookie');
+    if (!cookie) throw new Error(t('登录成功但没有拿到 Session Cookie'));
     await this.context.secrets.store(COOKIE_KEY, cookie);
     return cookie;
   }
@@ -177,20 +190,113 @@ class ComputeDeckClient {
   configNodes() {
     return this.request('/api/config/nodes', { timeoutMs: 15000 });
   }
+
+  assistantStatus() {
+    return this.request('/api/assistant/status', { timeoutMs: 15000 });
+  }
+
+  notices() {
+    return this.request('/api/notices', { timeoutMs: 15000 });
+  }
 }
 
 function config() {
   return vscode.workspace.getConfiguration(SECTION);
 }
 
+function t(message, ...args) {
+  return vscode.l10n.t(message, ...args);
+}
+
+function looksLikeControlRoot(dir) {
+  if (!dir) return false;
+  return (
+    fs.existsSync(path.join(dir, 'bin', 'gpu-control')) ||
+    fs.existsSync(path.join(dir, 'bin', 'gpu-control-mcp'))
+  );
+}
+
+function findControlRoot() {
+  const configured = String(config().get('controlRoot', '') || '').trim();
+  if (configured) {
+    const abs = path.isAbsolute(configured)
+      ? configured
+      : path.join(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '', configured);
+    if (looksLikeControlRoot(abs)) return abs;
+  }
+  for (const folder of vscode.workspace.workspaceFolders || []) {
+    if (looksLikeControlRoot(folder.uri.fsPath)) return folder.uri.fsPath;
+  }
+  const home = String(process.env.HOME || process.env.USERPROFILE || '').trim();
+  if (home) {
+    const guess = path.join(home, 'gpu-control');
+    if (looksLikeControlRoot(guess)) return guess;
+  }
+  return '';
+}
+
+function localTokenPath() {
+  const root = findControlRoot();
+  return root ? path.join(root, 'config', 'local', 'secrets', 'ui_api_token') : '';
+}
+
+function readLocalApiToken() {
+  if (!config().get('autoLocalAuth', true)) return '';
+  const tokenPath = localTokenPath();
+  if (!tokenPath || !fs.existsSync(tokenPath)) return '';
+  const raw = fs.readFileSync(tokenPath, 'utf8').trim();
+  if (!raw) return '';
+  const line = raw.split(/\r?\n/).find((x) => x.trim() && !x.trim().startsWith('#')) || '';
+  const matched = line.match(/^(?:token=)?(.+)$/i);
+  return String(matched ? matched[1] : line).trim();
+}
+
 function stateLabel(node) {
-  if (!node) return '未知';
-  if (node.liveness_state === 'offline' || node.state === 'offline') return '离线';
-  if (node.liveness_state === 'degraded' || node.state === 'degraded') return '探活异常';
-  if (node.snapshot_stale) return '快照过期';
-  if (node.cordoned) return '已隔离';
-  if (node.used) return '占用中';
-  return '空闲';
+  if (!node) return t('未知');
+  if (node.liveness_state === 'offline' || node.state === 'offline') return t('离线');
+  if (node.liveness_state === 'degraded' || node.state === 'degraded') return t('探活异常');
+  if (node.snapshot_stale) return t('快照过期');
+  if (node.cordoned) return t('已隔离');
+  if (node.used) return t('占用中');
+  return t('空闲');
+}
+
+function isNodeOnline(node) {
+  if (!node) return false;
+  if (node.liveness_state === 'offline' || node.state === 'offline') return false;
+  if (node.liveness_state === 'degraded' || node.state === 'degraded') return false;
+  return true;
+}
+
+function nodeIcon(node) {
+  if (!isNodeOnline(node)) {
+    return new vscode.ThemeIcon('error', new vscode.ThemeColor('errorForeground'));
+  }
+  if (node.cordoned) {
+    return new vscode.ThemeIcon('lock', new vscode.ThemeColor('charts.orange'));
+  }
+  if (node.snapshot_stale) {
+    return new vscode.ThemeIcon('warning', new vscode.ThemeColor('editorWarning.foreground'));
+  }
+  if (node.used) {
+    return new vscode.ThemeIcon('vm-active', new vscode.ThemeColor('charts.blue'));
+  }
+  return new vscode.ThemeIcon('server', new vscode.ThemeColor('charts.green'));
+}
+
+function severityIcon(severity) {
+  const level = String(severity || '').toLowerCase();
+  if (level === 'error' || level === 'critical') {
+    return new vscode.ThemeIcon('error', new vscode.ThemeColor('errorForeground'));
+  }
+  if (level === 'warn' || level === 'warning') {
+    return new vscode.ThemeIcon('warning', new vscode.ThemeColor('editorWarning.foreground'));
+  }
+  return new vscode.ThemeIcon('info');
+}
+
+function setDisconnectedContext(disconnected) {
+  vscode.commands.executeCommand('setContext', 'computedeck.disconnected', !!disconnected);
 }
 
 function makeItem(label, collapsibleState, extra = {}) {
@@ -210,18 +316,22 @@ class ClusterProvider {
 
   async refresh(showErrors = false) {
     try {
-      const [overview, live, jobs, gateway] = await Promise.all([
+      const [overview, live, jobs, gateway, assistant, notices] = await Promise.all([
         this.client.overview(true),
         this.client.liveness().catch(() => null),
         this.client.jobs().catch(() => []),
         this.client.gatewayStatus().catch(() => null),
+        this.client.assistantStatus().catch(() => null),
+        this.client.notices().catch(() => null),
       ]);
-      this.data = { overview, live, jobs, gateway };
+      this.data = { overview, live, jobs, gateway, assistant, notices };
       this.lastError = null;
+      setDisconnectedContext(false);
     } catch (err) {
       this.lastError = err;
+      setDisconnectedContext(true);
       if (showErrors) {
-        vscode.window.showErrorMessage(`ComputeDeck: ${err.message || err}`);
+        vscode.window.showErrorMessage(t('ComputeDeck: {0}', err.message || err));
       }
     }
     this.emitter.fire();
@@ -241,25 +351,45 @@ class ClusterProvider {
 
   sections() {
     if (this.lastError) {
-      const row = makeItem('$(error) 控制面未连接', vscode.TreeItemCollapsibleState.None, {
-        description: this.client.base(),
-        tooltip: String(this.lastError.message || this.lastError),
-        command: { command: 'computedeck.login', title: '登录' },
-      });
-      const guide = makeItem('打开上手引导', vscode.TreeItemCollapsibleState.None, {
-        description: '5 步了解插件',
-        iconPath: new vscode.ThemeIcon('book'),
-        command: { command: 'computedeck.openWalkthrough', title: '打开上手引导' },
-      });
+      const errText = String(this.lastError.message || this.lastError);
+      const localToken = localTokenPath();
+      const children = [
+        makeItem(t('控制面未连接'), vscode.TreeItemCollapsibleState.None, {
+          description: this.client.base(),
+          tooltip: errText,
+          iconPath: new vscode.ThemeIcon('error', new vscode.ThemeColor('errorForeground')),
+          command: { command: 'computedeck.login', title: t('登录') },
+        }),
+      ];
+      if (localToken && fs.existsSync(localToken)) {
+        children.push(
+          makeItem(t('使用本机 Token'), vscode.TreeItemCollapsibleState.None, {
+            description: t('读取 config/local/secrets/ui_api_token'),
+            iconPath: new vscode.ThemeIcon('key'),
+            command: { command: 'computedeck.useLocalCredentials', title: t('使用本机 Token') },
+          })
+        );
+      }
+      children.push(
+        makeItem(t('打开上手引导'), vscode.TreeItemCollapsibleState.None, {
+          description: t('5 步了解插件'),
+          iconPath: new vscode.ThemeIcon('book'),
+          command: { command: 'computedeck.openWalkthrough', title: t('打开上手引导') },
+        })
+      );
       return [
-        makeItem('连接', vscode.TreeItemCollapsibleState.Expanded, {
+        makeItem(t('连接'), vscode.TreeItemCollapsibleState.Expanded, {
           iconPath: new vscode.ThemeIcon('plug'),
-          children: [row, guide],
+          children,
         }),
       ];
     }
     if (!this.data) {
-      return [makeItem('$(sync~spin) 加载中…', vscode.TreeItemCollapsibleState.None)];
+      return [
+        makeItem(t('加载中…'), vscode.TreeItemCollapsibleState.None, {
+          iconPath: new vscode.ThemeIcon('sync~spin'),
+        }),
+      ];
     }
 
     const { overview, live, jobs, gateway } = this.data;
@@ -270,22 +400,27 @@ class ClusterProvider {
     const layering = (gateway && gateway.layering) || {};
     const sections = [];
 
+    const qualityScore = overview.quality ? Number(overview.quality.score) : NaN;
     const summaryRows = [
-      ['健康评分', overview.quality ? `${overview.quality.score ?? '-'} · ${overview.quality.grade || ''}` : '-'],
-      ['节点', `${summary.nodes_online ?? '-'} 在线 / ${summary.nodes_offline ?? 0} 离线`],
-      ['GPU', `${summary.gpus_free ?? 0} 空闲 / ${summary.gpus_used ?? 0} 占用 / ${summary.gpus_total ?? 0} 计入`],
-      ['排队', String(summary.queue_pending ?? 0)],
-      ['租约', String(summary.leases ?? leases.length)],
-      ['入口', layering.summary || (gateway && gateway.preferred) || '-'],
-    ].map(([label, value]) =>
+      [
+        t('健康评分'),
+        overview.quality ? `${overview.quality.score ?? '-'} · ${overview.quality.grade || ''}` : '-',
+        Number.isFinite(qualityScore) && qualityScore < 70 ? 'warning' : 'heart',
+      ],
+      [t('节点'), t('{0} 在线 / {1} 离线', summary.nodes_online ?? '-', summary.nodes_offline ?? 0), summary.nodes_offline ? 'warning' : 'server'],
+      [t('GPU'), t('{0} 空闲 / {1} 占用 / {2} 计入', summary.gpus_free ?? 0, summary.gpus_used ?? 0, summary.gpus_total ?? 0), 'circuit-board'],
+      [t('排队'), String(summary.queue_pending ?? 0), 'list-ordered'],
+      [t('租约'), String(summary.leases ?? leases.length), 'lock'],
+      [t('入口'), layering.summary || (gateway && gateway.preferred) || '-', 'globe'],
+    ].map(([label, value, icon]) =>
       makeItem(`${label}`, vscode.TreeItemCollapsibleState.None, {
         description: String(value),
-        iconPath: new vscode.ThemeIcon('info'),
+        iconPath: new vscode.ThemeIcon(icon),
       })
     );
     sections.push(
-      makeItem('集群总览', vscode.TreeItemCollapsibleState.Expanded, {
-        description: `${summary.nodes ?? nodes.length} 节点 · ${summary.gpus_free ?? 0} 空闲 GPU`,
+      makeItem(t('集群总览'), vscode.TreeItemCollapsibleState.Expanded, {
+        description: t('{0} 节点 · {1} 空闲 GPU', summary.nodes ?? nodes.length, summary.gpus_free ?? 0),
         iconPath: new vscode.ThemeIcon('dashboard'),
         children: summaryRows,
       })
@@ -293,49 +428,54 @@ class ClusterProvider {
 
     const nodeRows = nodes.map((node) => {
       const state = stateLabel(node);
-      const online = !['离线', '探活异常'].includes(state);
       const tooltip = new vscode.MarkdownString();
       tooltip.appendMarkdown(`**${node.name}**  \n`);
-      tooltip.appendMarkdown(`主机：${node.host || '-'}  \n`);
-      tooltip.appendMarkdown(`状态：${state}  \n`);
-      tooltip.appendMarkdown(`GPU：${node.counted ? `${node.free} 空闲 / ${node.used} 占用` : '不计入（离线或快照过期）'} / 共 ${node.total ?? '-'}  \n`);
-      if (node.last_seen) tooltip.appendMarkdown(`最后成功探活：${node.last_seen}  \n`);
-      if (node.liveness_error) tooltip.appendMarkdown(`错误：${node.liveness_error}`);
+      tooltip.appendMarkdown(`${t('主机：{0}', node.host || '-')}  \n`);
+      tooltip.appendMarkdown(`${t('状态：{0}', state)}  \n`);
+      if (node.counted) {
+        tooltip.appendMarkdown(`${t('GPU：{0} 空闲 / {1} 占用', node.free, node.used)}${t(' / 共 {0}', node.total ?? '-')}  \n`);
+      } else {
+        tooltip.appendMarkdown(`${t('GPU：不计入（离线或快照过期） / 共 {0}', node.total ?? '-')}  \n`);
+      }
+      if (node.last_seen) tooltip.appendMarkdown(`${t('最后成功探活：{0}', node.last_seen)}  \n`);
+      if (node.liveness_error) tooltip.appendMarkdown(t('错误：{0}', node.liveness_error));
       return makeItem(node.name, vscode.TreeItemCollapsibleState.None, {
         description: `${state} · ${node.counted ? `${node.free}/${node.total}` : '—'}`,
-        iconPath: new vscode.ThemeIcon(online ? 'server' : 'error', online ? undefined : new vscode.ThemeColor('errorForeground')),
+        iconPath: nodeIcon(node),
         contextValue: `node-${node.state || 'unknown'}`,
         tooltip,
-        command: { command: 'computedeck.nodeMenu', title: '节点操作', arguments: [node] },
+        command: { command: 'computedeck.nodeMenu', title: t('节点操作'), arguments: [node] },
       });
     });
     sections.push(
-      makeItem('节点', vscode.TreeItemCollapsibleState.Expanded, {
-        description: `${nodes.length} 台 · ${summary.nodes_offline ?? 0} 离线`,
+      makeItem(t('节点'), vscode.TreeItemCollapsibleState.Expanded, {
+        description: t('{0} 台 · {1} 离线', nodes.length, summary.nodes_offline ?? 0),
         iconPath: new vscode.ThemeIcon('server'),
-        children: nodeRows.length ? nodeRows : [makeItem('暂无节点', vscode.TreeItemCollapsibleState.None)],
+        children: nodeRows.length ? nodeRows : [makeItem(t('暂无节点'), vscode.TreeItemCollapsibleState.None)],
       })
     );
 
     const jobRows = (jobs || []).map((job) =>
       makeItem(job.name || 'job', vscode.TreeItemCollapsibleState.None, {
-        description: `${job.gpus_per_node ?? '?'} GPU${job.default ? ' · 默认' : ''}`,
+        description: job.default
+          ? t('{0} GPU · 默认', job.gpus_per_node ?? '?')
+          : t('{0} GPU', job.gpus_per_node ?? '?'),
         iconPath: new vscode.ThemeIcon('rocket'),
         contextValue: 'job',
         tooltip: job.description || '',
-        command: { command: 'computedeck.jobMenu', title: 'Job 操作', arguments: [job] },
+        command: { command: 'computedeck.jobMenu', title: t('Job 操作'), arguments: [job] },
       })
     );
     sections.push(
-      makeItem('Job', vscode.TreeItemCollapsibleState.Collapsed, {
-        description: `${jobRows.length} 个`,
+      makeItem(t('Job'), vscode.TreeItemCollapsibleState.Collapsed, {
+        description: t('{0} 个', jobRows.length),
         iconPath: new vscode.ThemeIcon('rocket'),
-        children: jobRows.length ? jobRows : [makeItem('暂无 Job', vscode.TreeItemCollapsibleState.None)],
+        children: jobRows.length ? jobRows : [makeItem(t('暂无 Job'), vscode.TreeItemCollapsibleState.None)],
       })
     );
 
     const queueRows = [
-      makeItem('队列 pending', vscode.TreeItemCollapsibleState.None, {
+      makeItem(t('队列 pending'), vscode.TreeItemCollapsibleState.None, {
         description: String(queue.filter((x) => (x.status || '') === 'pending').length),
         iconPath: new vscode.ThemeIcon('list-ordered'),
       }),
@@ -348,8 +488,8 @@ class ClusterProvider {
       ),
     ];
     sections.push(
-      makeItem('队列与租约', vscode.TreeItemCollapsibleState.Collapsed, {
-        description: `${summary.queue_pending ?? 0} pending · ${leases.length} 租约`,
+      makeItem(t('队列与租约'), vscode.TreeItemCollapsibleState.Collapsed, {
+        description: t('{0} pending · {1} 租约', summary.queue_pending ?? 0, leases.length),
         iconPath: new vscode.ThemeIcon('list-ordered'),
         children: queueRows,
       })
@@ -362,52 +502,128 @@ class ClusterProvider {
     const edgeFront = Boolean(gateway?.layering?.edge_front);
     gatewayRows.push(
       makeItem(`Edge :${gateway?.ingress?.port || 18080}`, vscode.TreeItemCollapsibleState.None, {
-        description: edge.running ? (edgeFront ? '前置反代 → LiteLLM' : '节点 LB') : '未运行',
+        description: edge.running
+          ? edgeFront
+            ? t('前置反代 → LiteLLM')
+            : t('节点 LB')
+          : t('未运行'),
         iconPath: new vscode.ThemeIcon(edge.running ? 'globe' : 'circle-slash'),
         tooltip: gateway?.layering?.edge_url || '',
       }),
       makeItem(`LiteLLM :${ll.port || 4000}`, vscode.TreeItemCollapsibleState.None, {
         description:
           ll.upstream === 'edge'
-            ? '经 Edge 治理'
+            ? t('经 Edge 治理')
             : ll.running
-              ? '唯一节点 LB'
-              : '未运行',
+              ? t('唯一节点 LB')
+              : t('未运行'),
         iconPath: new vscode.ThemeIcon(ll.running ? 'symbol-method' : 'circle-slash'),
         tooltip: gateway?.layering?.summary || '',
       }),
       makeItem('nginx', vscode.TreeItemCollapsibleState.None, {
-        description: nginx.installed ? '已安装 · Web/TLS 前置' : '未安装',
+        description: nginx.installed ? t('已安装 · Web/TLS 前置') : t('未安装'),
         iconPath: new vscode.ThemeIcon('browser'),
       })
     );
     if (gateway?.layering?.duplicate_node_lb) {
       gatewayRows.unshift(
-        makeItem('$(warning) 检测到重复节点 LB', vscode.TreeItemCollapsibleState.None, {
-          description: '让 Edge 做前置反代',
+        makeItem(t('检测到重复节点 LB'), vscode.TreeItemCollapsibleState.None, {
+          description: t('让 Edge 做前置反代'),
           iconPath: new vscode.ThemeIcon('warning', new vscode.ThemeColor('warningForeground')),
           tooltip: gateway.layering.recommendation || '',
         })
       );
     }
     sections.push(
-      makeItem('入口', vscode.TreeItemCollapsibleState.Collapsed, {
+      makeItem(t('入口'), vscode.TreeItemCollapsibleState.Collapsed, {
         description: layering.summary || '',
         iconPath: new vscode.ThemeIcon('globe'),
         children: gatewayRows,
       })
     );
 
+    const assistant = this.data.assistant || {};
+    const notices = this.data.notices || {};
+    const unread = Number(notices.unread || 0);
+    const mcpPath = resolveMcpPath();
+    const mcpReady = Boolean(mcpPath && fs.existsSync(mcpPath));
+    const tokenReady = Boolean(readLocalApiToken() || process.env.GPU_CONTROL_API_TOKEN);
+
+    const noticeItems = (notices.items || [])
+      .filter((n) => !n.dismissed)
+      .slice(0, 8)
+      .map((n) =>
+        makeItem(n.title || n.id || t('公告'), vscode.TreeItemCollapsibleState.None, {
+          description: n.severity || n.source || '',
+          tooltip: [n.detail, n.fix].filter(Boolean).join('\n\n'),
+          iconPath: severityIcon(n.severity),
+          command: { command: 'computedeck.openNotices', title: t('打开监管公告') },
+        })
+      );
+
+    const aiChildren = [
+      makeItem(t('Web 小助手'), vscode.TreeItemCollapsibleState.None, {
+        description: assistant.ready
+          ? t('就绪 · {0}', assistant.model || assistant.mode || 'llm')
+          : assistant.enabled
+            ? t('已启用，尚未就绪')
+            : t('未启用'),
+        iconPath: new vscode.ThemeIcon(
+          assistant.ready ? 'sparkle' : 'circle-slash',
+          assistant.ready ? new vscode.ThemeColor('charts.green') : undefined
+        ),
+        tooltip: [
+          assistant.base_url ? `Base URL: ${assistant.base_url}` : '',
+          assistant.network_note || '',
+        ]
+          .filter(Boolean)
+          .join('\n'),
+        command: { command: 'computedeck.openAssistant', title: t('打开 Web 小助手') },
+      }),
+      makeItem(t('监管公告'), vscode.TreeItemCollapsibleState.None, {
+        description: unread > 0 ? t('{0} 条未读', unread) : t('无未读'),
+        iconPath: new vscode.ThemeIcon(
+          unread > 0 ? 'bell-dot' : 'bell',
+          unread > 0 ? new vscode.ThemeColor('editorWarning.foreground') : undefined
+        ),
+        command: { command: 'computedeck.openNotices', title: t('打开监管公告') },
+      }),
+      ...noticeItems,
+      makeItem(t('MCP Server'), vscode.TreeItemCollapsibleState.None, {
+        description: mcpReady ? t('可执行文件就绪') : t('未找到 gpu-control-mcp'),
+        iconPath: new vscode.ThemeIcon(mcpReady ? 'extensions' : 'warning'),
+        tooltip: mcpPath || '',
+        command: { command: 'computedeck.installMcp', title: t('注册 MCP Server') },
+      }),
+      makeItem(t('MCP 鉴权'), vscode.TreeItemCollapsibleState.None, {
+        description: tokenReady ? t('Token 就绪') : t('需要 API Token'),
+        iconPath: new vscode.ThemeIcon(tokenReady ? 'key' : 'warning'),
+        command: {
+          command: tokenReady ? 'computedeck.useLocalCredentials' : 'computedeck.setToken',
+          title: t('MCP 鉴权'),
+        },
+      }),
+      makeItem(t('打开 Web 控制面'), vscode.TreeItemCollapsibleState.None, {
+        iconPath: new vscode.ThemeIcon('globe'),
+        command: { command: 'computedeck.openDashboard', title: t('打开 Web 控制面') },
+      }),
+    ];
+    sections.unshift(
+      makeItem(t('AI 与 MCP'), vscode.TreeItemCollapsibleState.Expanded, {
+        description: unread > 0 ? t('{0} 未读公告', unread) : assistant.ready ? t('助手就绪') : t('助手 / Agent'),
+        iconPath: new vscode.ThemeIcon('sparkle'),
+        children: aiChildren,
+      })
+    );
+
     const toolRows = [
-      ['运行自检', 'computedeck.runDoctor', 'search'],
-      ['节点探活', 'computedeck.liveness', 'pulse'],
-      ['测试 SSH', 'computedeck.testSSH', 'plug'],
-      ['运行只读诊断', 'computedeck.execPreset', 'beaker'],
-      ['部署 Job', 'computedeck.deployJob', 'rocket'],
-      ['腾空节点', 'computedeck.freeNode', 'debug-stop'],
-      ['注册 MCP Server', 'computedeck.installMcp', 'extensions'],
-      ['打开 Web 控制面', 'computedeck.openDashboard', 'globe'],
-      ['上手引导', 'computedeck.openWalkthrough', 'book'],
+      [t('运行自检'), 'computedeck.runDoctor', 'search'],
+      [t('节点探活'), 'computedeck.liveness', 'pulse'],
+      [t('测试 SSH'), 'computedeck.testSSH', 'plug'],
+      [t('运行只读诊断'), 'computedeck.execPreset', 'beaker'],
+      [t('部署 Job'), 'computedeck.deployJob', 'rocket'],
+      [t('腾空节点'), 'computedeck.freeNode', 'debug-stop'],
+      [t('上手引导'), 'computedeck.openWalkthrough', 'book'],
     ].map(([label, command, icon]) =>
       makeItem(label, vscode.TreeItemCollapsibleState.None, {
         iconPath: new vscode.ThemeIcon(icon),
@@ -415,8 +631,8 @@ class ClusterProvider {
       })
     );
     sections.push(
-      makeItem('操作', vscode.TreeItemCollapsibleState.Collapsed, {
-        description: '诊断 / 部署 / 入口 / MCP',
+      makeItem(t('操作'), vscode.TreeItemCollapsibleState.Collapsed, {
+        description: t('诊断 / 部署'),
         iconPath: new vscode.ThemeIcon('tools'),
         children: toolRows,
       })
@@ -432,8 +648,8 @@ function updateStatusBar(data, error) {
   }
   statusBar.show();
   if (error || !data) {
-    statusBar.text = '$(error) ComputeDeck 未连接';
-    statusBar.tooltip = String((error && error.message) || '点击登录或刷新');
+    statusBar.text = t('$(error) ComputeDeck 未连接');
+    statusBar.tooltip = String((error && error.message) || t('点击登录或刷新'));
     statusBar.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
     statusBar.command = 'computedeck.login';
     return;
@@ -444,12 +660,28 @@ function updateStatusBar(data, error) {
   const offline = summary.nodes_offline ?? 0;
   const free = summary.gpus_free ?? 0;
   const gpuTotal = summary.gpus_total ?? 0;
-  statusBar.text = `${offline > 0 ? '$(warning)' : '$(pulse)'} CD ${online}/${total} 节点 · ${free}/${gpuTotal} 空闲`;
+  const unread = Number(data.notices?.unread || 0);
+  const assistantReady = Boolean(data.assistant?.ready);
+  const warn = offline > 0 || unread > 0;
+  statusBar.text = `${warn ? '$(warning)' : '$(pulse)'} ${t('CD {0}/{1} 节点 · {2}/{3} 空闲', online, total, free, gpuTotal)}${unread > 0 ? t(' · {0} 公告', unread) : ''
+    }`;
   statusBar.tooltip = new vscode.MarkdownString(
-    `**ComputeDeck**\n\n在线 ${online} / ${total}，离线 ${offline}，GPU 空闲 ${free}/${gpuTotal}\n\n点击打开 Web 控制面`
+    [
+      t('**ComputeDeck**'),
+      '',
+      t('在线 {0} / {1}，离线 {2}，GPU 空闲 {3}/{4}', online, total, offline, free, gpuTotal),
+      unread > 0 ? t('未读监管公告：{0}', unread) : t('监管公告：无未读'),
+      assistantReady
+        ? t('Web 小助手：就绪（{0}）', data.assistant?.model || data.assistant?.mode || 'llm')
+        : t('Web 小助手：未就绪'),
+      '',
+      t('点击打开 Web 控制面；侧栏可进小助手 / 公告 / MCP'),
+    ].join('\n')
   );
-  statusBar.backgroundColor = undefined;
-  statusBar.command = 'computedeck.openDashboard';
+  statusBar.backgroundColor = warn
+    ? new vscode.ThemeColor('statusBarItem.warningBackground')
+    : undefined;
+  statusBar.command = unread > 0 ? 'computedeck.openNotices' : 'computedeck.openDashboard';
 }
 
 function showResult(title, payload) {
@@ -466,7 +698,7 @@ function nodeFromArg(arg) {
   if (!arg) return null;
   const nodes = provider?.data?.overview?.nodes || [];
   if (typeof arg === 'string') return nodes.find((n) => n.name === arg) || null;
-  // 视图内联按钮传入的是 TreeItem，而不是原始节点对象。
+  // Inline view buttons pass a TreeItem, not the raw node object.
   if (arg.contextValue && String(arg.contextValue).startsWith('node')) {
     const label = typeof arg.label === 'string' ? arg.label : arg.label?.label;
     return nodes.find((n) => n.name === label) || null;
@@ -491,7 +723,7 @@ async function pickNode() {
   const data = provider?.data || (await provider.refresh(false));
   const nodes = data?.overview?.nodes || [];
   if (!nodes.length) {
-    vscode.window.showWarningMessage('ComputeDeck: 没有节点');
+    vscode.window.showWarningMessage(t('ComputeDeck: 没有节点'));
     return null;
   }
   const picked = await vscode.window.showQuickPick(
@@ -500,7 +732,7 @@ async function pickNode() {
       description: `${stateLabel(n)} · ${n.counted ? `${n.free}/${n.total}` : '—'}`,
       node: n,
     })),
-    { placeHolder: '选择节点' }
+    { placeHolder: t('选择节点') }
   );
   return picked ? picked.node : null;
 }
@@ -508,12 +740,12 @@ async function pickNode() {
 async function pickJob() {
   const jobs = provider?.data?.jobs || (await client.jobs());
   if (!jobs.length) {
-    vscode.window.showWarningMessage('ComputeDeck: 没有已安装 Job');
+    vscode.window.showWarningMessage(t('ComputeDeck: 没有已安装 Job'));
     return null;
   }
   const picked = await vscode.window.showQuickPick(
-    jobs.map((j) => ({ label: j.name, description: `${j.gpus_per_node ?? '?'} GPU`, job: j })),
-    { placeHolder: '选择 Job' }
+    jobs.map((j) => ({ label: j.name, description: t('{0} GPU', j.gpus_per_node ?? '?'), job: j })),
+    { placeHolder: t('选择 Job') }
   );
   return picked ? picked.job : null;
 }
@@ -535,7 +767,7 @@ async function openNodeTerminal(nodeArg) {
     user = user || meta.ansible_user || defaults.ansible_user || 'root';
     key = String(meta.ansible_ssh_private_key_file || defaults.ansible_ssh_private_key_file || '');
   } catch (err) {
-    output.appendLine(`读取节点 SSH 配置失败：${err.message || err}`);
+    output.appendLine(t('读取节点 SSH 配置失败：{0}', err.message || err));
   }
   const args = [];
   if (key && fs.existsSync(key)) args.push('-i', key);
@@ -553,23 +785,23 @@ async function nodeMenu(nodeArg) {
   if (!node) return;
   const offline = node.liveness_state === 'offline' || node.state === 'offline';
   const choices = [
-    { label: '打开终端', action: 'terminal', icon: 'terminal' },
-    { label: '运行 nvidia-smi', action: 'nvidia-smi', icon: 'pulse' },
-    { label: '查看 GPU 进程', action: 'gpu-procs', icon: 'list-unordered' },
-    { label: node.cordoned ? '取消隔离' : '隔离节点', action: 'cordon', icon: 'lock' },
-    { label: '腾空节点', action: 'free', icon: 'debug-stop' },
-    { label: '打开 Web 节点详情', action: 'dashboard', icon: 'globe' },
+    { label: t('打开终端'), action: 'terminal', icon: 'terminal' },
+    { label: t('运行 nvidia-smi'), action: 'nvidia-smi', icon: 'pulse' },
+    { label: t('查看 GPU 进程'), action: 'gpu-procs', icon: 'list-unordered' },
+    { label: node.cordoned ? t('取消隔离') : t('隔离节点'), action: 'cordon', icon: 'lock' },
+    { label: t('腾空节点'), action: 'free', icon: 'debug-stop' },
+    { label: t('打开 Web 节点详情'), action: 'dashboard', icon: 'globe' },
   ].map((x) => ({
     label: `${offline && ['terminal', 'nvidia-smi', 'gpu-procs', 'free'].includes(x.action) ? '$(warning) ' : ''}${x.label}`,
     action: x.action,
-    description: offline && ['terminal', 'nvidia-smi', 'gpu-procs', 'free'].includes(x.action) ? '节点离线' : '',
+    description: offline && ['terminal', 'nvidia-smi', 'gpu-procs', 'free'].includes(x.action) ? t('节点离线') : '',
   }));
   const picked = await vscode.window.showQuickPick(choices, { placeHolder: `${node.name} · ${stateLabel(node)}` });
   if (!picked) return;
   switch (picked.action) {
     case 'terminal':
       if (offline) {
-        vscode.window.showWarningMessage('节点离线，SSH 终端可能无法连接');
+        vscode.window.showWarningMessage(t('节点离线，SSH 终端可能无法连接'));
       }
       return openNodeTerminal(node);
     case 'nvidia-smi':
@@ -590,17 +822,17 @@ async function jobMenu(jobArg) {
   if (!job) return;
   const picked = await vscode.window.showQuickPick(
     [
-      { label: '启动', action: 'start' },
-      { label: '停止', action: 'stop' },
-      { label: '重启', action: 'restart' },
-      { label: '状态', action: 'status' },
-      { label: '等待就绪', action: 'wait' },
+      { label: t('启动'), action: 'start' },
+      { label: t('停止'), action: 'stop' },
+      { label: t('重启'), action: 'restart' },
+      { label: t('状态'), action: 'status' },
+      { label: t('等待就绪'), action: 'wait' },
     ],
-    { placeHolder: `${job.name} 操作` }
+    { placeHolder: t('{0} 操作', job.name) }
   );
   if (!picked) return;
   const result = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: `ComputeDeck: ${picked.label} ${job.name}` },
+    { location: vscode.ProgressLocation.Notification, title: t('ComputeDeck: {0} {1}', picked.label, job.name) },
     () => client.jobAction(job.name, picked.action)
   );
   showResult(`${job.name} ${picked.label}`, result);
@@ -612,39 +844,40 @@ async function runPreset(nodeArg, presetArg) {
   if (!node) return;
   const presets = provider?.data?.overview?.exec_presets || [
     { id: 'nvidia-smi', label: 'nvidia-smi' },
-    { id: 'gpu-util', label: 'GPU 利用率' },
-    { id: 'gpu-list', label: '列出 GPU' },
-    { id: 'gpu-procs', label: 'GPU 进程' },
-    { id: 'uptime', label: '负载/内存' },
-    { id: 'disk', label: '磁盘' },
+    { id: 'gpu-util', label: t('GPU 利用率') },
+    { id: 'gpu-list', label: t('列出 GPU') },
+    { id: 'gpu-procs', label: t('GPU 进程') },
+    { id: 'uptime', label: t('负载/内存') },
+    { id: 'disk', label: t('磁盘') },
   ];
   let preset = presetArg;
   if (!preset) {
     const picked = await vscode.window.showQuickPick(
       presets.map((p) => ({ label: p.label || p.id, id: p.id })),
-      { placeHolder: `在 ${node.name} 运行只读诊断` }
+      { placeHolder: t('在 {0} 运行只读诊断', node.name) }
     );
     if (!picked) return;
     preset = picked.id;
   }
   const result = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: `ComputeDeck: ${preset} @ ${node.name}` },
+    { location: vscode.ProgressLocation.Notification, title: t('ComputeDeck: {0} @ {1}', preset, node.name) },
     () => client.execPreset(node.name, preset)
   );
   showResult(`${preset} @ ${node.name}`, result);
-  if (!result.ok) vscode.window.showWarningMessage(`诊断失败：${result.error || '见输出'}`);
+  if (!result.ok) vscode.window.showWarningMessage(t('诊断失败：{0}', result.error || t('见输出')));
 }
 
 async function toggleCordon(nodeArg) {
   const node = nodeFromArg(nodeArg) || (await pickNode());
   if (!node) return;
   const action = node.cordoned ? 'uncordon' : 'cordon';
+  const confirm = t('确认');
   const ok = await vscode.window.showWarningMessage(
-    `${node.cordoned ? '取消隔离' : '隔离'}节点 ${node.name}？`,
+    node.cordoned ? t('取消隔离节点 {0}？', node.name) : t('隔离节点 {0}？', node.name),
     { modal: true },
-    '确认'
+    confirm
   );
-  if (ok !== '确认') return;
+  if (ok !== confirm) return;
   const result = await client.request(`/api/node/${action}`, {
     method: 'POST',
     body: { name: node.name },
@@ -656,17 +889,18 @@ async function toggleCordon(nodeArg) {
 async function freeNode(nodeArg) {
   const node = nodeFromArg(nodeArg) || (await pickNode());
   if (!node) return;
+  const freeLabel = t('腾空');
   const ok = await vscode.window.showWarningMessage(
-    `腾空 ${node.name}？会停止 Job、结束 GPU 进程并释放租约。`,
+    t('腾空 {0}？会停止 Job、结束 GPU 进程并释放租约。', node.name),
     { modal: true },
-    '腾空'
+    freeLabel
   );
-  if (ok !== '腾空') return;
+  if (ok !== freeLabel) return;
   const result = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: `ComputeDeck: 腾空 ${node.name}` },
+    { location: vscode.ProgressLocation.Notification, title: t('ComputeDeck: 腾空 {0}', node.name) },
     () => client.freeNode(node.name, false)
   );
-  showResult(`腾空 ${node.name}`, result);
+  showResult(t('腾空 {0}', node.name), result);
   await provider.refresh(true);
 }
 
@@ -675,18 +909,18 @@ async function deployJob() {
   if (!job) return;
   const mode = await vscode.window.showQuickPick(
     [
-      { label: '按 GPU 数自动选节点', mode: 'gpus' },
-      { label: '指定节点', mode: 'node' },
+      { label: t('按 GPU 数自动选节点'), mode: 'gpus' },
+      { label: t('指定节点'), mode: 'node' },
     ],
-    { placeHolder: '部署方式' }
+    { placeHolder: t('部署方式') }
   );
   if (!mode) return;
   const body = { job: job.name };
   if (mode.mode === 'gpus') {
     const raw = await vscode.window.showInputBox({
-      prompt: '部署 GPU 数',
+      prompt: t('部署 GPU 数'),
       value: String(job.gpus_per_node || 4),
-      validateInput: (v) => (/^\d+$/.test(v) && Number(v) > 0 ? null : '请输入正整数'),
+      validateInput: (v) => (/^\d+$/.test(v) && Number(v) > 0 ? null : t('请输入正整数')),
     });
     if (raw === undefined) return;
     body.gpus = Number(raw);
@@ -695,31 +929,39 @@ async function deployJob() {
     if (!node) return;
     body.nodes = node.name;
   }
+  const deployLabel = t('部署');
   const ok = await vscode.window.showWarningMessage(
-    `部署 ${job.name}？`,
+    t('部署 {0}？', job.name),
     { modal: true },
-    '部署'
+    deployLabel
   );
-  if (ok !== '部署') return;
+  if (ok !== deployLabel) return;
   const result = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: `ComputeDeck: 部署 ${job.name}` },
+    { location: vscode.ProgressLocation.Notification, title: t('ComputeDeck: 部署 {0}', job.name) },
     () => client.deploy(job.name, body)
   );
-  showResult(`部署 ${job.name}`, result);
+  showResult(t('部署 {0}', job.name), result);
   await provider.refresh(true);
 }
 
 function resolveMcpPath() {
   let raw = String(config().get('mcpPath', '${workspaceFolder}/bin/gpu-control-mcp') || '');
   const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
-  raw = raw.replace(/\$\{workspaceFolder\}/g, folder);
-  if (!path.isAbsolute(raw) && folder) raw = path.join(folder, raw);
+  const controlRoot = findControlRoot();
+  raw = raw.replace(/\$\{workspaceFolder\}/g, folder || controlRoot);
+  if (!path.isAbsolute(raw) && (folder || controlRoot)) {
+    raw = path.join(folder || controlRoot, raw);
+  }
+  if ((!raw || !fs.existsSync(raw)) && controlRoot) {
+    const fallback = path.join(controlRoot, 'bin', 'gpu-control-mcp');
+    if (fs.existsSync(fallback)) return fallback;
+  }
   return raw;
 }
 
 function registerMcp(context) {
   if (!vscode.lm || typeof vscode.lm.registerMcpServerDefinitionProvider !== 'function') {
-    output.appendLine('当前 VS Code 不支持 MCP Server provider（需要 1.101+）。');
+    output.appendLine(t('当前 VS Code 不支持 MCP Server provider（需要 1.101+）。'));
     return;
   }
   mcpEmitter = new vscode.EventEmitter();
@@ -749,12 +991,14 @@ function registerCommands(context) {
           const message = err && err.message ? err.message : String(err);
           output.appendLine(`ERROR ${name}: ${message}`);
           if (err && err.status === 401) {
-            const choice = await vscode.window.showWarningMessage(message, '密码登录', '设置 Token');
-            if (choice === '密码登录') return vscode.commands.executeCommand('computedeck.login');
-            if (choice === '设置 Token') return vscode.commands.executeCommand('computedeck.setToken');
+            const login = t('密码登录');
+            const setToken = t('设置 Token');
+            const choice = await vscode.window.showWarningMessage(message, login, setToken);
+            if (choice === login) return vscode.commands.executeCommand('computedeck.login');
+            if (choice === setToken) return vscode.commands.executeCommand('computedeck.setToken');
             return;
           }
-          vscode.window.showErrorMessage(`ComputeDeck: ${message}`);
+          vscode.window.showErrorMessage(t('ComputeDeck: {0}', message));
         }
       })
     );
@@ -765,61 +1009,89 @@ function registerCommands(context) {
   cmd('computedeck.openDashboard', async () => {
     await vscode.env.openExternal(vscode.Uri.parse(client.base()));
   });
+  cmd('computedeck.openAssistant', async () => {
+    await vscode.env.openExternal(vscode.Uri.parse(`${client.base()}/#/assistant`));
+  });
+  cmd('computedeck.openNotices', async () => {
+    await vscode.env.openExternal(vscode.Uri.parse(`${client.base()}/#/notices`));
+  });
   cmd('computedeck.openWalkthrough', async () => {
-    await vscode.commands.executeCommand(
-      'workbench.action.openWalkthrough',
-      'computedeck.computedeck-vscode#computedeck.getStarted',
-      false
-    );
+    const walkthroughId = `${context.extension.id}#computedeck.getStarted`;
+    try {
+      await vscode.commands.executeCommand('workbench.action.openWalkthrough', walkthroughId, false);
+      return;
+    } catch (_) {
+      // CodeLab / 部分 VS Code 发行版没有 Walkthrough 命令，回落到 markdown 预览。
+    }
+    const guide = vscode.Uri.joinPath(context.extensionUri, 'media', 'walkthrough', '01-connect.md');
+    await vscode.commands.executeCommand('markdown.showPreview', guide);
   });
   cmd('computedeck.login', async () => {
     const password = await vscode.window.showInputBox({
-      prompt: 'ComputeDeck 控制面密码',
+      prompt: t('ComputeDeck 控制面密码'),
       password: true,
       ignoreFocusOut: true,
     });
     if (!password) return;
     await client.login(password);
-    vscode.window.showInformationMessage('ComputeDeck 登录成功');
+    vscode.window.showInformationMessage(t('ComputeDeck 登录成功'));
     if (mcpEmitter) mcpEmitter.fire();
     await provider.refresh(true);
   });
   cmd('computedeck.setToken', async () => {
     const token = await vscode.window.showInputBox({
-      prompt: 'API Token（gpu-control auth issue-token 生成）',
+      prompt: t('API Token（gpu-control auth issue-token 生成）'),
       password: true,
       ignoreFocusOut: true,
     });
     if (!token) return;
     await context.secrets.store(TOKEN_KEY, token.trim());
     await context.secrets.delete(COOKIE_KEY);
-    vscode.window.showInformationMessage('ComputeDeck API Token 已保存');
+    vscode.window.showInformationMessage(t('ComputeDeck API Token 已保存'));
     if (mcpEmitter) mcpEmitter.fire();
+    await provider.refresh(true);
+  });
+  cmd('computedeck.useLocalCredentials', async () => {
+    const tokenPath = localTokenPath();
+    const token = readLocalApiToken();
+    if (!token) {
+      vscode.window.showWarningMessage(
+        t(
+          '未找到本机 Token（{0}）。在控制面仓库执行 gpu-control auth issue-token。',
+          tokenPath || 'config/local/secrets/ui_api_token'
+        )
+      );
+      return;
+    }
+    await context.secrets.store(TOKEN_KEY, token);
+    await context.secrets.delete(COOKIE_KEY);
+    if (mcpEmitter) mcpEmitter.fire();
+    vscode.window.showInformationMessage(t('已加载本机 API Token'));
     await provider.refresh(true);
   });
   cmd('computedeck.logout', async () => {
     await context.secrets.delete(TOKEN_KEY);
     await context.secrets.delete(COOKIE_KEY);
-    vscode.window.showInformationMessage('ComputeDeck 凭据已清除');
+    vscode.window.showInformationMessage(t('ComputeDeck 凭据已清除'));
     if (mcpEmitter) mcpEmitter.fire();
     await provider.refresh(true);
   });
   cmd('computedeck.runDoctor', async () => {
     const result = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: 'ComputeDeck: 运行自检' },
+      { location: vscode.ProgressLocation.Notification, title: t('ComputeDeck: 运行自检') },
       () => client.doctor()
     );
     showResult('doctor', result);
-    vscode.window.showInformationMessage(result.ok ? '自检通过' : '自检发现问题，见输出');
+    vscode.window.showInformationMessage(result.ok ? t('自检通过') : t('自检发现问题，见输出'));
   });
   cmd('computedeck.liveness', async () => {
     const result = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: 'ComputeDeck: 节点探活' },
+      { location: vscode.ProgressLocation.Notification, title: t('ComputeDeck: 节点探活') },
       () => client.livenessCheck()
     );
     const s = result.summary || {};
     vscode.window.showInformationMessage(
-      `探活完成：在线 ${s.online ?? 0}，离线 ${s.offline ?? 0}，未知 ${s.unknown ?? 0}`
+      t('探活完成：在线 {0}，离线 {1}，未知 {2}', s.online ?? 0, s.offline ?? 0, s.unknown ?? 0)
     );
     showResult('liveness', result);
     await provider.refresh(true);
@@ -827,12 +1099,12 @@ function registerCommands(context) {
   cmd('computedeck.testSSH', async () => {
     const node = await pickNode();
     const result = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: 'ComputeDeck: 测试 SSH' },
+      { location: vscode.ProgressLocation.Notification, title: t('ComputeDeck: 测试 SSH') },
       () => client.testSSH(node?.name)
     );
     showResult('test-ssh', result);
     vscode.window.showInformationMessage(
-      `SSH：${result.ok_count ?? 0}/${result.total ?? 0} 通过`
+      t('SSH：{0}/{1} 通过', result.ok_count ?? 0, result.total ?? 0)
     );
   });
   cmd('computedeck.execPreset', async () => runPreset());
@@ -848,7 +1120,7 @@ function registerCommands(context) {
     const target = jobFromArg(job) || (await pickJob());
     if (!target) return;
     showResult(
-      `启动 ${target.name}`,
+      t('启动 {0}', target.name),
       await client.jobAction(target.name, 'start')
     );
     await provider.refresh(true);
@@ -857,7 +1129,7 @@ function registerCommands(context) {
     const target = jobFromArg(job) || (await pickJob());
     if (!target) return;
     showResult(
-      `停止 ${target.name}`,
+      t('停止 {0}', target.name),
       await client.jobAction(target.name, 'stop')
     );
     await provider.refresh(true);
@@ -866,7 +1138,7 @@ function registerCommands(context) {
     const target = jobFromArg(job) || (await pickJob());
     if (!target) return;
     showResult(
-      `重启 ${target.name}`,
+      t('重启 {0}', target.name),
       await client.jobAction(target.name, 'restart')
     );
     await provider.refresh(true);
@@ -875,18 +1147,18 @@ function registerCommands(context) {
     const mcpPath = resolveMcpPath();
     if (!mcpPath || !fs.existsSync(mcpPath)) {
       vscode.window.showWarningMessage(
-        `未找到 ${mcpPath || '(未配置)'}；请在设置 computedeck.mcpPath 指向 bin/gpu-control-mcp`
+        t('未找到 {0}；请在设置 computedeck.mcpPath 指向 bin/gpu-control-mcp', mcpPath || t('(未配置)'))
       );
       return;
     }
     const token = await client.resolveToken();
     if (!token) {
       vscode.window.showWarningMessage(
-        'MCP 走 HTTP 需要 API Token；请先执行「ComputeDeck: 设置 API Token」'
+        t('MCP 走 HTTP 需要 API Token；请先执行「ComputeDeck: 设置 API Token」')
       );
     }
     if (mcpEmitter) mcpEmitter.fire();
-    vscode.window.showInformationMessage('ComputeDeck MCP Server 已注册（VS Code / Copilot 可使用）');
+    vscode.window.showInformationMessage(t('ComputeDeck MCP Server 已注册（VS Code / Copilot 可使用）'));
   });
 }
 
@@ -894,7 +1166,7 @@ function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
   const seconds = Math.max(5, Number(config().get('pollIntervalSec', 30)) || 30);
   pollTimer = setInterval(() => {
-    provider.refresh(false).catch(() => {});
+    provider.refresh(false).catch(() => { });
   }, seconds * 1000);
 }
 
@@ -916,14 +1188,21 @@ function activate(context) {
       if (ev.affectsConfiguration(SECTION)) {
         if (mcpEmitter) mcpEmitter.fire();
         startPolling();
-        provider.refresh(false).catch(() => {});
+        provider.refresh(false).catch(() => { });
       }
     })
   );
 
   startPolling();
-  provider.refresh(false).catch(() => {});
-  output.appendLine(`ComputeDeck extension activated · API ${client.base()}`);
+  const controlRoot = findControlRoot();
+  output.appendLine(t('ComputeDeck 已激活 · API {0}', client.base()));
+  if (controlRoot) {
+    output.appendLine(t('检测到本机控制面目录：{0}', controlRoot));
+  }
+  if (config().get('autoLocalAuth', true) && localTokenPath() && fs.existsSync(localTokenPath())) {
+    output.appendLine(t('将自动使用本机 API Token（无需粘贴）'));
+  }
+  provider.refresh(false).catch(() => { });
 }
 
 function deactivate() {

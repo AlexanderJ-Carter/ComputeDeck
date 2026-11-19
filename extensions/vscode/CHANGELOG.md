@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.2.12
+
+- 侧栏新增「AI 与 MCP」：Web 小助手状态、监管公告、MCP 可执行文件/Token
+- 节点/总览状态配色与图标；状态栏显示未读公告；未连接时 `viewsWelcome`
+- 命令：打开 Web 小助手 / 监管公告（对接控制面 `#/assistant` · `#/notices`）
+- 版本策略：日常可记本文件小步版本；打产品 tag 前与仓库根 `VERSION` 对齐（见 docs/打包与发布.md）。分发仅 VSIX，不发 npm。
+
+## 1.2.11
+
+- 本机 `ui_api_token` 优先于 SecretStorage，避免旧 Token 卡住自动登录
+
+## 1.2.10
+
+- 在 control 本机打开 gpu-control 仓库时自动读 `config/local/secrets/ui_api_token`，无需粘贴密码/Token
+- 新增命令「使用本机 Token」；设置 `autoLocalAuth` / `controlRoot`
+
+## 1.2.9
+
+- 默认中文（`package.nls.json` + 运行时中文文案；英文见 `package.nls.en.json` / `l10n/bundle.l10n.en.json`）
+- 树节点图标改用 `ThemeIcon`，不再把 `$(error)` 当纯文本显示
+- Walkthrough：CodeLab 等无 `openWalkthrough` 时回落 markdown 预览
+
+## 1.2.8
+
+- 市场图标 `media/icon.png`；活动栏改用单色 `media/activitybar.svg`（跟随主题）
+- 贡献点与运行时 i18n：`package.nls*.json` + `l10n` bundle
+- README：安装 / 预览脚本 / 图标与本地化说明
+
 ## 1.0.0
 
 - 首个正式版：集群树、状态栏、节点/Job 内联操作、SSH 终端、只读诊断

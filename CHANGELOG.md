@@ -20,8 +20,15 @@
 - OIDC 支持 Groups 白名单与粘贴写入 Client Secret；配置页密钥就绪总览
 - 工具栈：节点选择、捆绑/单包安装、覆盖 KPI
 
+### Added
+
+- 文档 [接入拓扑与鉴权](docs/接入拓扑与鉴权.md)：主控/被控、访问路径、鉴权矩阵、OIDC SSO 方向、VSIX 非 npm 交付约定
+
 ### Changed
 
+- VS Code 插件 `1.2.12`：侧栏「AI 与 MCP」、公告/助手深链、`viewsWelcome`、状态配色；本机 Token 自动登录
+- Web：`#/assistant` / `#/notices` 深链；远程接入页场景卡 / 状态芯片 / 计划区；鉴权页 SSO 说明
+- 明确不发 npm/PyPI；扩展以 VSIX 为准，发版四文件版本对齐
 - 底部输出坞闲置隐藏；有结果才出现，去掉「执行输出」说教文案与活动记录折叠；启动不再预填自检
 - 入口总览增加 Edge / LiteLLM / nginx / TLS / 对外 KPI；关键页挂 `/help` 情境链接
 - 助手确认卡显示剩余有效期倒计时，高亮当前待决策卡；窄屏 KPI / 输出坞收紧

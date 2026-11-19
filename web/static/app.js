@@ -1194,51 +1194,96 @@ function remoteSelection() {
   return { mode, port: Number.isFinite(port) && port > 0 ? port : null };
 }
 
+function remoteChip(label, tone = "") {
+  return `<span class="remote-chip${tone ? ` tone-${tone}` : ""}">${escapeHtml(label)}</span>`;
+}
+
+function renderRemotePlanBox(data) {
+  const box = $("remote-plan");
+  if (!box) return;
+  const blocking = data.blocking || [];
+  const commands = data.commands || [];
+  const urls = data.urls || [];
+  const notes = data.notes || [];
+  box.hidden = false;
+  box.innerHTML = [
+    `<div class="remote-plan-h"><strong>${escapeHtml(data.ok ? "可执行计划" : "计划有阻塞")}</strong><span class="meta">${escapeHtml(data.mode || "")}</span></div>`,
+    blocking.length
+      ? `<ul class="remote-plan-block">${blocking.map((b) => `<li>${escapeHtml(b)}</li>`).join("")}</ul>`
+      : "",
+    commands.length
+      ? `<pre class="snippet remote-snippet">${escapeHtml(commands.map((c) => `$ ${c}`).join("\n"))}</pre>`
+      : "",
+    urls.length
+      ? `<p class="remote-urls">${urls.map((u) => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener">${escapeHtml(u)}</a>`).join("<br/>")}</p>`
+      : "",
+    notes.length ? `<ul class="remote-plan-notes">${notes.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ul>` : "",
+  ].join("");
+}
+
 function renderRemote(data) {
   const meta = $("remote-meta");
   const body = $("remote-body");
+  const status = $("remote-status");
   if (!body) return;
   const portInput = $("remote-port");
   if (portInput && !portInput.value && data.ui_port) portInput.value = String(data.ui_port);
+  const snippet = $("remote-ssh-snippet");
+  if (snippet && data.ui_port) {
+    snippet.textContent = `ssh -N -L ${data.ui_port}:127.0.0.1:${data.ui_port} <control>`;
+  }
   const tail = data.tailscale || {};
   const cf = data.cloudflared || {};
   if (meta) meta.textContent = data.summary || "已检测";
-  const rows = [];
-  rows.push(
-    tail.installed
-      ? `Tailscale：${tail.backend_state || "已安装"}${tail.dns_name ? ` · ${tail.dns_name}` : ""}`
-      : "Tailscale：未安装"
-  );
-  rows.push(cf.installed ? `Cloudflare：${cf.running ? "运行中" : "已安装"}` : "Cloudflare：未安装");
-  if (!data.auth_enabled) rows.push("⚠ 控制面鉴权未开启，公网接入会被阻止");
-  const rec = data.recommended || {};
-  if (rec.commands && rec.commands.length) {
-    rows.push(`推荐：${rec.mode}${rec.urls && rec.urls[0] ? ` → ${rec.urls[0]}` : ""}`);
+  if (status) {
+    const chips = [];
+    chips.push(
+      remoteChip(
+        tail.installed ? `Tailscale · ${tail.backend_state || "已安装"}` : "Tailscale · 未安装",
+        tail.installed && String(tail.backend_state || "").toLowerCase() === "running" ? "ok" : tail.installed ? "warn" : "muted"
+      )
+    );
+    if (tail.dns_name) chips.push(remoteChip(tail.dns_name, "info"));
+    chips.push(
+      remoteChip(
+        cf.installed ? (cf.running ? "Cloudflare · 运行中" : "Cloudflare · 已安装") : "Cloudflare · 未安装",
+        cf.running ? "ok" : cf.installed ? "warn" : "muted"
+      )
+    );
+    chips.push(
+      remoteChip(
+        data.auth_enabled ? "鉴权 · 已开启" : "鉴权 · 未开启",
+        data.auth_enabled ? "ok" : "bad"
+      )
+    );
+    if (data.ui_port) chips.push(remoteChip(`端口 · ${data.ui_port}`, "info"));
+    status.innerHTML = chips.join("");
   }
-  for (const warning of data.warnings || []) rows.push(`⚠ ${warning}`);
-  body.innerHTML = rows
-    .map((row) => `<p>${escapeHtml(row)}</p>`)
-    .join("");
+  const rows = [];
+  if (!data.auth_enabled) {
+    rows.push(`<p class="remote-alert">控制面鉴权未开启：公网 Funnel / Quick Tunnel 会被阻止。请先到「鉴权与访问」启用 password 或 OIDC。</p>`);
+  }
+  const rec = data.recommended || {};
+  if (rec.mode) {
+    rows.push(
+      `<p><strong>推荐</strong> ${escapeHtml(rec.mode)}${rec.urls && rec.urls[0] ? ` → <code>${escapeHtml(rec.urls[0])}</code>` : ""}</p>`
+    );
+  }
+  for (const warning of data.warnings || []) {
+    rows.push(`<p class="remote-warn">${escapeHtml(warning)}</p>`);
+  }
+  if (!rows.length) {
+    rows.push(`<p class="meta">本机工具已检测。选模式后点「生成计划」或「按推荐启动」；日常更推荐 SSH 隧道或 IDE Remote。</p>`);
+  }
+  body.innerHTML = rows.join("");
 }
 
 async function remotePlan() {
-  const body = $("remote-body");
   const { mode, port } = remoteSelection();
   const query = `plan=1&mode=${encodeURIComponent(mode)}${port ? `&port=${port}` : ""}`;
   try {
     const data = await api(`/api/remote?${query}`, { timeoutMs: 20000 });
-    if (body) {
-      const lines = [
-        `模式：${data.mode}`,
-        ...(data.commands || []).map((c) => `$ ${c}`),
-        ...(data.urls || []).map((u) => `URL：${u}`),
-        ...(data.notes || []),
-        ...(data.blocking || []).map((b) => `阻塞：${b}`),
-      ];
-      body.innerHTML = lines
-        .map((line) => `<p>${escapeHtml(line)}</p>`)
-        .join("");
-    }
+    renderRemotePlanBox(data);
     const meta = $("remote-meta");
     if (meta) meta.textContent = data.ok ? `计划：${data.mode}` : "计划有阻塞项";
   } catch (err) {
@@ -1264,19 +1309,7 @@ async function remoteUp() {
     });
     if (data.ok) toastOk(`远程接入已启动：${data.mode || ""}`);
     else toastBad(data.detail || data.error || "启动失败");
-    if (data.plan) {
-      const body = $("remote-body");
-      if (body) {
-        body.innerHTML = [
-          `模式：${data.plan.mode}`,
-          ...(data.plan.commands || []).map((c) => `$ ${c}`),
-          ...(data.plan.urls || []).map((u) => `URL：${u}`),
-          ...(data.plan.blocking || []).map((b) => `阻塞：${b}`),
-        ]
-          .map((line) => `<p>${escapeHtml(line)}</p>`)
-          .join("");
-      }
-    }
+    if (data.plan) renderRemotePlanBox(data.plan);
     await refreshRemoteStatus();
   } catch (err) {
     toastBad(`启动失败：${err.message || err}`);
@@ -5649,6 +5682,7 @@ async function boot() {
     if (ev.target === shortcutsDialog) shortcutsDialog.close();
   });
   window.addEventListener("hashchange", () => {
+    if (consumeAssistantDeepLink()) return;
     const route = currentRoute();
     setView(route.view, { updateHash: false });
     if (route.view === "config" && route.tab) setConfigTab(route.tab);
@@ -6324,6 +6358,8 @@ async function boot() {
   $("btn-trend-ai")?.addEventListener("click", askAssistantAboutTrends);
   $("btn-log-ai")?.addEventListener("click", askAssistantAboutLogs);
   bindNotices();
+  // Extension / bookmark deep links: #/assistant · #/notices
+  consumeAssistantDeepLink();
   restoreAiAnalyze();
 
   if (state.auth && state.auth.enabled && !state.auth.authenticated) {
@@ -8344,6 +8380,23 @@ async function sendAssistant(text) {
     if (stopBtn) stopBtn.hidden = true;
     if (sendBtn) sendBtn.disabled = false;
   }
+}
+
+function consumeAssistantDeepLink() {
+  const raw = (location.hash || "").replace(/^#\/?/, "").toLowerCase();
+  const head = raw.split("/")[0] || "";
+  if (head !== "assistant" && head !== "notices") return false;
+  if (head === "assistant") {
+    setAssistantOpen(true).then(() => {
+      if (!assistantState.status) loadAssistantStatus();
+    });
+  } else {
+    setNoticesPopOpen(true);
+    syncNotices().catch(() => { });
+  }
+  // Keep the main shell on a real view so refresh/back stay sane.
+  if (location.hash !== "#/actions") history.replaceState(null, "", "#/actions");
+  return true;
 }
 
 function bindAssistant() {
