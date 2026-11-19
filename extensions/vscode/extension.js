@@ -1132,192 +1132,367 @@ function buildWorkbenchHtml(webview) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ComputeDeck 工作台</title>
   <style>
-    :root { color-scheme: light dark; --gap: 12px; --radius: 8px; }
-    body {
-      margin: 0; padding: 18px 20px 28px;
-      font: 13px/1.45 var(--vscode-font-family);
-      color: var(--vscode-foreground);
-      background: var(--vscode-editor-background);
+    :root {
+      color-scheme: light dark;
+      --cd-gap: 16px;
+      --cd-radius: 10px;
+      --cd-line: var(--vscode-widget-border, rgba(127,127,127,.28));
+      --cd-soft: color-mix(in srgb, var(--vscode-editor-background) 92%, var(--vscode-foreground) 5%);
+      --cd-accent: #0f766e;
+      --cd-accent-fg: #f0fdfa;
     }
-    h1 { margin: 0 0 2px; font-size: 17px; font-weight: 650; }
-    .sub { margin: 0 0 14px; opacity: .72; }
-    .row, .actions, .pages { display: flex; flex-wrap: wrap; gap: 8px; }
-    .row, .pages { margin-bottom: 14px; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 22px 24px 32px;
+      font: 13px/1.5 var(--vscode-font-family);
+      color: var(--vscode-foreground);
+      background:
+        radial-gradient(1200px 420px at 0% -10%, color-mix(in srgb, var(--cd-accent) 14%, transparent), transparent 60%),
+        var(--vscode-editor-background);
+    }
+    .shell { max-width: 1080px; margin: 0 auto; display: grid; gap: 18px; }
+    .hero {
+      display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between;
+      gap: 14px; padding-bottom: 4px;
+    }
+    .hero-copy h1 {
+      margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -.02em;
+    }
+    .hero-copy .meta {
+      margin: 6px 0 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      color: color-mix(in srgb, var(--vscode-foreground) 68%, transparent);
+      font-size: 12px;
+    }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      border: 1px solid var(--cd-line); border-radius: 999px;
+      padding: 2px 9px; background: var(--cd-soft); font-size: 12px;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #94a3b8; }
+    .dot.on { background: #16a34a; }
+    .dot.off { background: #dc2626; }
+    .dot.warn { background: #d97706; }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 8px; }
     button {
-      appearance: none;
-      border: 1px solid var(--vscode-button-border, transparent);
+      appearance: none; font: inherit; cursor: pointer;
+      border-radius: 8px; border: 1px solid var(--cd-line);
       background: var(--vscode-button-secondaryBackground);
       color: var(--vscode-button-secondaryForeground);
-      border-radius: 6px; padding: 5px 11px; font: inherit; cursor: pointer;
+      padding: 7px 12px;
     }
+    button:hover { filter: brightness(1.04); }
     button.primary {
-      background: var(--vscode-button-background);
-      color: var(--vscode-button-foreground);
+      border-color: transparent;
+      background: var(--vscode-button-background, var(--cd-accent));
+      color: var(--vscode-button-foreground, var(--cd-accent-fg));
+      font-weight: 600;
     }
-    button.page { padding: 4px 10px; }
-    button:hover { filter: brightness(1.06); }
-    .grid {
+    button.ghost {
+      background: transparent;
+    }
+    button.danger {
+      border-color: color-mix(in srgb, #dc2626 35%, var(--cd-line));
+      color: #b91c1c;
+      background: color-mix(in srgb, #dc2626 8%, transparent);
+    }
+    .section { display: grid; gap: 10px; }
+    .section-h {
+      display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+    }
+    .section-h h2 {
+      margin: 0; font-size: 12px; font-weight: 700; letter-spacing: .04em;
+      text-transform: uppercase; opacity: .72;
+    }
+    .section-h .more { font-size: 12px; opacity: .7; }
+    .kpis {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
-      gap: var(--gap); margin-bottom: 14px;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
     }
-    .card, .panel {
-      border: 1px solid var(--vscode-widget-border, rgba(127,127,127,.35));
-      border-radius: var(--radius); padding: 11px 12px;
-      background: color-mix(in srgb, var(--vscode-editor-background) 90%, var(--vscode-foreground) 3%);
+    @media (max-width: 720px) {
+      .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
-    .card .label { opacity: .68; font-size: 12px; }
-    .card .value { margin-top: 2px; font-size: 20px; font-weight: 650; }
-    .panel h2 { margin: 0 0 8px; font-size: 13px; font-weight: 650; }
-    .panel p { margin: 0 0 6px; }
-    .muted { opacity: .7; }
-    .warn { color: var(--vscode-editorWarning-foreground); }
-    .ok { color: var(--vscode-testing-iconPassed, #3fb950); }
-    .two {
+    .kpi {
+      border: 1px solid var(--cd-line); border-radius: var(--cd-radius);
+      padding: 14px 14px 12px; background: var(--cd-soft);
+      min-height: 84px;
+    }
+    .kpi .label { font-size: 12px; opacity: .68; }
+    .kpi .value {
+      margin-top: 6px; font-size: 26px; font-weight: 700; letter-spacing: -.03em;
+      font-variant-numeric: tabular-nums;
+    }
+    .kpi .hint { margin-top: 4px; font-size: 11px; opacity: .58; }
+    .kpi.alert .value { color: var(--vscode-editorWarning-foreground, #d97706); }
+    .kpi.bad .value { color: var(--vscode-errorForeground, #dc2626); }
+    .pages {
+      display: flex; flex-wrap: wrap; gap: 6px;
+      padding: 8px; border: 1px solid var(--cd-line); border-radius: 12px;
+      background: color-mix(in srgb, var(--cd-soft) 80%, transparent);
+    }
+    .pages button {
+      border: 0; background: transparent; padding: 6px 11px; border-radius: 8px;
+      color: inherit; opacity: .86;
+    }
+    .pages button:hover {
+      background: color-mix(in srgb, var(--vscode-list-hoverBackground) 90%, transparent);
+      opacity: 1;
+    }
+    .grid-2 {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: var(--gap);
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr);
+      gap: var(--cd-gap);
     }
-    .list { margin: 0; padding: 0; list-style: none; }
-    .list li {
-      padding: 8px 0;
-      border-top: 1px solid var(--vscode-widget-border, rgba(127,127,127,.25));
+    @media (max-width: 860px) {
+      .grid-2 { grid-template-columns: 1fr; }
     }
-    .list li:first-child { border-top: 0; padding-top: 0; }
-    .hint { margin: 10px 0 0; font-size: 12px; opacity: .65; }
+    .panel {
+      border: 1px solid var(--cd-line); border-radius: 12px;
+      background: var(--cd-soft); padding: 14px 16px 16px;
+      display: grid; gap: 12px; align-content: start;
+    }
+    .panel h3 { margin: 0; font-size: 14px; font-weight: 700; }
+    .status-rows { display: grid; gap: 8px; }
+    .status-row {
+      display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px;
+      align-items: start; padding: 8px 0;
+      border-top: 1px solid color-mix(in srgb, var(--cd-line) 80%, transparent);
+    }
+    .status-row:first-child { border-top: 0; padding-top: 0; }
+    .status-row .k { font-size: 12px; opacity: .62; padding-top: 2px; }
+    .status-row .v { min-width: 0; }
+    .status-row .title { font-weight: 600; }
+    .status-row .desc {
+      margin-top: 2px; font-size: 12px; opacity: .66;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .ops-group { display: grid; gap: 8px; }
+    .ops-group .label {
+      font-size: 11px; letter-spacing: .03em; text-transform: uppercase; opacity: .55;
+    }
+    .notices {
+      border: 1px solid var(--cd-line); border-radius: 12px; background: var(--cd-soft);
+      overflow: hidden;
+    }
+    .notices-h {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 12px 14px; border-bottom: 1px solid var(--cd-line);
+    }
+    .notices-h h3 { margin: 0; font-size: 14px; font-weight: 700; }
+    .notice-list { list-style: none; margin: 0; padding: 0; max-height: 280px; overflow: auto; }
+    .notice-list li {
+      display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px;
+      padding: 10px 14px; cursor: pointer;
+      border-top: 1px solid color-mix(in srgb, var(--cd-line) 75%, transparent);
+    }
+    .notice-list li:first-child { border-top: 0; }
+    .notice-list li:hover { background: color-mix(in srgb, var(--vscode-list-hoverBackground) 85%, transparent); }
+    .sev {
+      height: fit-content; justify-self: start;
+      border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 650;
+      border: 1px solid var(--cd-line);
+    }
+    .sev.error, .sev.critical {
+      color: #b91c1c; border-color: color-mix(in srgb, #dc2626 30%, var(--cd-line));
+      background: color-mix(in srgb, #dc2626 10%, transparent);
+    }
+    .sev.warn, .sev.warning {
+      color: #b45309; border-color: color-mix(in srgb, #d97706 30%, var(--cd-line));
+      background: color-mix(in srgb, #d97706 10%, transparent);
+    }
+    .sev.info { opacity: .8; }
+    .notice-title { font-weight: 600; }
+    .notice-detail {
+      margin-top: 2px; font-size: 12px; opacity: .62;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .empty { padding: 18px 14px; opacity: .6; }
+    .foot { font-size: 12px; opacity: .55; }
   </style>
 </head>
 <body>
-  <h1>ComputeDeck 工作台</h1>
-  <p class="sub" id="subtitle">加载中…</p>
-  <div class="row" id="topActions"></div>
-  <div class="pages" id="pages"></div>
-  <div class="grid" id="kpis"></div>
-  <div class="two">
-    <section class="panel">
-      <h2>连接 · 助手 · MCP</h2>
-      <div id="aiBlock" class="muted">—</div>
+  <div class="shell">
+    <header class="hero">
+      <div class="hero-copy">
+        <h1>ComputeDeck 工作台</h1>
+        <div class="meta">
+          <span class="pill"><span class="dot" id="connDot"></span><span id="connLabel">加载中</span></span>
+          <span id="baseLabel"></span>
+        </div>
+      </div>
+      <div class="hero-actions" id="heroActions"></div>
+    </header>
+
+    <section class="section">
+      <div class="section-h"><h2>集群状态</h2><span class="more" id="kpiMore"></span></div>
+      <div class="kpis" id="kpis"></div>
     </section>
-    <section class="panel">
-      <h2>常用操作</h2>
-      <div class="actions" id="ops"></div>
-      <p class="hint">危险操作（部署 / 腾空）会二次确认；详情输出在「ComputeDeck」通道。</p>
+
+    <section class="section">
+      <div class="section-h"><h2>控制面页面</h2><span class="more">在编辑器窗口打开</span></div>
+      <div class="pages" id="pages"></div>
+    </section>
+
+    <section class="grid-2">
+      <div class="panel">
+        <h3>连接与 Agent</h3>
+        <div class="status-rows" id="aiBlock"></div>
+        <div class="btn-row" id="authActions"></div>
+      </div>
+      <div class="panel">
+        <h3>常用操作</h3>
+        <div class="ops-group">
+          <div class="label">诊断</div>
+          <div class="btn-row" id="opsDiag"></div>
+        </div>
+        <div class="ops-group">
+          <div class="label">部署 / 维护</div>
+          <div class="btn-row" id="opsMutate"></div>
+        </div>
+        <p class="foot">危险操作会二次确认；详情在输出通道「ComputeDeck」。</p>
+      </div>
+    </section>
+
+    <section class="notices">
+      <div class="notices-h">
+        <h3>监管公告</h3>
+        <div class="btn-row" id="noticeActions"></div>
+      </div>
+      <ul class="notice-list" id="notices"></ul>
     </section>
   </div>
-  <section class="panel" style="margin-top:12px">
-    <h2>监管公告</h2>
-    <ul class="list" id="notices"></ul>
-  </section>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const PAGES = ${pagesJson};
     const el = (id) => document.getElementById(id);
-    function btn(label, payload, primary) {
+    function btn(label, payload, kind) {
       const b = document.createElement('button');
       b.textContent = label;
-      if (primary) b.className = 'primary';
+      if (kind) b.className = kind;
       b.addEventListener('click', () => vscode.postMessage(
         typeof payload === 'string' ? { command: payload } : payload
       ));
       return b;
     }
+    function kpiCard(label, value, hint, tone) {
+      const d = document.createElement('div');
+      d.className = 'kpi' + (tone ? ' ' + tone : '');
+      d.innerHTML = '<div class="label"></div><div class="value"></div><div class="hint"></div>';
+      d.children[0].textContent = label;
+      d.children[1].textContent = value;
+      d.children[2].textContent = hint || '';
+      return d;
+    }
+    function statusRow(key, title, desc, ok) {
+      const row = document.createElement('div');
+      row.className = 'status-row';
+      const k = document.createElement('div');
+      k.className = 'k';
+      k.textContent = key;
+      const v = document.createElement('div');
+      v.className = 'v';
+      const t = document.createElement('div');
+      t.className = 'title';
+      t.textContent = title;
+      if (ok === true) t.style.color = 'var(--vscode-testing-iconPassed, #16a34a)';
+      if (ok === false) t.style.color = 'var(--vscode-editorWarning-foreground, #d97706)';
+      v.append(t);
+      if (desc) {
+        const d = document.createElement('div');
+        d.className = 'desc';
+        d.textContent = desc;
+        d.title = desc;
+        v.append(d);
+      }
+      row.append(k, v);
+      return row;
+    }
     function render(state) {
       const s = state.summary || {};
-      el('subtitle').textContent = state.connected
-        ? ((state.base || '') + ' · 页面在编辑器窗口打开，不跳外部浏览器')
-        : (state.error || '未连接控制面');
-      el('topActions').replaceChildren(
-        btn('刷新', 'refresh', true),
-        btn('打开看板', 'openDashboard'),
-        btn('小助手', 'openAssistant'),
-        btn('监管公告', 'openNotices'),
-        btn('选择页面…', 'openPage'),
-        btn('上手引导', 'openWalkthrough')
+      const unread = Number((state.notices && state.notices.unread) || 0);
+      const offline = Number(s.nodes_offline || 0);
+      const connected = Boolean(state.connected);
+      const dot = el('connDot');
+      dot.className = 'dot ' + (connected ? (offline > 0 || unread > 0 ? 'warn' : 'on') : 'off');
+      el('connLabel').textContent = connected ? '已连接' : '未连接';
+      el('baseLabel').textContent = connected
+        ? (state.base || '')
+        : (state.error || '检查 apiBase / Token');
+      el('heroActions').replaceChildren(
+        btn('刷新', 'refresh', 'ghost'),
+        btn('打开看板', 'openDashboard', 'primary'),
+        btn('上手指南', 'openWalkthrough', 'ghost')
+      );
+      el('kpiMore').textContent = connected
+        ? ('空闲 GPU ' + (s.gpus_free ?? 0) + ' · 租约 ' + (s.leases ?? 0))
+        : '';
+      el('kpis').replaceChildren(
+        kpiCard('在线节点', (s.nodes_online ?? 0) + '/' + (s.nodes ?? 0), '集群可达节点', offline > 0 ? 'alert' : ''),
+        kpiCard('空闲 GPU', (s.gpus_free ?? 0) + '/' + (s.gpus_total ?? 0), '可调度显卡', Number(s.gpus_free || 0) === 0 ? 'alert' : ''),
+        kpiCard('离线', String(offline), '需探活或检修', offline > 0 ? 'bad' : ''),
+        kpiCard('未读公告', String(unread), '监管与健康提示', unread > 0 ? 'alert' : '')
       );
       const pages = el('pages');
       pages.replaceChildren();
       for (const p of PAGES) {
-        const b = btn(p.label, { command: 'openHash', hash: p.hash, title: p.label });
-        b.classList.add('page');
-        pages.append(b);
+        pages.append(btn(p.label, { command: 'openHash', hash: p.hash, title: p.label }));
       }
-      const kpis = [
-        ['在线节点', (s.nodes_online ?? 0) + '/' + (s.nodes ?? 0)],
-        ['空闲 GPU', (s.gpus_free ?? 0) + '/' + (s.gpus_total ?? 0)],
-        ['离线', String(s.nodes_offline ?? 0)],
-        ['队列', String(s.queue_pending ?? 0)],
-        ['租约', String(s.leases ?? 0)],
-        ['未读公告', String((state.notices && state.notices.unread) || 0)],
-      ];
-      el('kpis').replaceChildren(...kpis.map(([label, value]) => {
-        const d = document.createElement('div');
-        d.className = 'card';
-        const l = document.createElement('div');
-        l.className = 'label';
-        l.textContent = label;
-        const v = document.createElement('div');
-        v.className = 'value';
-        v.textContent = value;
-        d.append(l, v);
-        return d;
-      }));
       const a = state.assistant || {};
       const m = state.mcp || {};
-      const ai = el('aiBlock');
-      ai.replaceChildren();
-      const p1 = document.createElement('p');
-      const span = document.createElement('span');
-      span.className = a.ready ? 'ok' : 'muted';
-      span.textContent = a.ready
-        ? ('小助手就绪' + (a.model ? ' · ' + a.model : ''))
-        : (a.enabled ? '小助手已启用，尚未就绪' : '小助手未启用');
-      p1.append(span);
-      const p2 = document.createElement('p');
-      p2.className = 'muted';
-      p2.textContent = a.base_url || a.network_note || '';
-      const p3 = document.createElement('p');
-      p3.textContent = 'MCP ' + (m.ready ? '就绪' : '未找到 gpu-control-mcp')
-        + ' · Token ' + (m.tokenReady ? '就绪' : '需配置');
-      const authRow = document.createElement('div');
-      authRow.className = 'actions';
-      authRow.style.marginTop = '8px';
-      authRow.append(
+      el('aiBlock').replaceChildren(
+        statusRow('小助手', a.ready ? ('就绪 · ' + (a.model || 'llm')) : (a.enabled ? '已启用，未就绪' : '未启用'), a.base_url || a.network_note || '', a.ready ? true : false),
+        statusRow('MCP', m.ready ? '可执行文件就绪' : '未找到 gpu-control-mcp', m.path || '', m.ready ? true : false),
+        statusRow('Token', m.tokenReady ? '就绪' : '需要配置', m.tokenReady ? '本机或 SecretStorage' : '可使用本机 Token / 设置 Token', m.tokenReady ? true : false)
+      );
+      el('authActions').replaceChildren(
         btn(m.tokenReady ? '使用本机 Token' : '设置 Token', m.tokenReady ? 'useLocalCredentials' : 'setToken'),
         btn('注册 MCP', 'installMcp'),
-        btn('密码登录', 'login'),
-        btn('打开设置', 'openSettings')
+        btn('密码登录', 'login', 'ghost'),
+        btn('设置', 'openSettings', 'ghost')
       );
-      ai.append(p1, p2, p3, authRow);
-      el('ops').replaceChildren(
+      el('opsDiag').replaceChildren(
         btn('运行自检', 'runDoctor'),
         btn('节点探活', 'liveness'),
         btn('测试 SSH', 'testSSH'),
-        btn('只读诊断', 'execPreset'),
-        btn('部署 Job', 'deployJob'),
-        btn('腾空节点', 'freeNode')
+        btn('只读诊断', 'execPreset')
+      );
+      el('opsMutate').replaceChildren(
+        btn('部署 Job', 'deployJob', 'primary'),
+        btn('腾空节点', 'freeNode', 'danger')
+      );
+      el('noticeActions').replaceChildren(
+        btn(unread > 0 ? ('查看全部 · ' + unread) : '打开公告页', 'openNotices', 'ghost')
       );
       const list = el('notices');
       const items = (state.notices && state.notices.items) || [];
       list.replaceChildren();
       if (!items.length) {
+        const empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = '暂无公告';
+        list.append(empty);
+        return;
+      }
+      for (const n of items.slice(0, 8)) {
         const li = document.createElement('li');
-        li.className = 'muted';
-        li.textContent = '暂无公告';
+        const sev = document.createElement('span');
+        const sevName = String(n.severity || 'info').toLowerCase();
+        sev.className = 'sev ' + sevName;
+        sev.textContent = sevName;
+        const body = document.createElement('div');
+        const title = document.createElement('div');
+        title.className = 'notice-title';
+        title.textContent = n.title || '公告';
+        const detail = document.createElement('div');
+        detail.className = 'notice-detail';
+        detail.textContent = n.detail || n.source || '';
+        body.append(title, detail);
+        li.append(sev, body);
+        li.addEventListener('click', () => vscode.postMessage({ command: 'openNotices' }));
         list.append(li);
-      } else {
-        for (const n of items) {
-          const li = document.createElement('li');
-          const title = document.createElement('div');
-          title.textContent = (n.severity ? '[' + n.severity + '] ' : '') + (n.title || '');
-          if (n.severity === 'error' || n.severity === 'critical') title.className = 'warn';
-          const detail = document.createElement('div');
-          detail.className = 'muted';
-          detail.textContent = n.detail || n.source || '';
-          li.append(title, detail);
-          li.style.cursor = 'pointer';
-          li.addEventListener('click', () => vscode.postMessage({ command: 'openNotices' }));
-          list.append(li);
-        }
       }
     }
     window.addEventListener('message', (ev) => {
@@ -1337,6 +1512,7 @@ function refreshWorkbench() {
 function showWorkbench() {
   if (workbenchPanel) {
     workbenchPanel.reveal(vscode.ViewColumn.Active, false);
+    workbenchPanel.webview.html = buildWorkbenchHtml(workbenchPanel.webview);
     refreshWorkbench();
     return;
   }

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.16
+
+- 工作台 UI 重排：页头状态、四格 KPI、页面分段导航、连接/操作分区、公告列表层次更清晰
+
 ## 1.2.15
 
 - Getting Started：优先原生 Walkthrough；CodeLab 等环境回落「上手指南」编辑器窗口（同五步内容）
