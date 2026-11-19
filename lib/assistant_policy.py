@@ -26,6 +26,8 @@ TOOL_RISKS: dict[str, str] = {
     "gc_queue": "write",
     "gc_lease": "write",
     "gc_diagnose": "write",
+    "gc_plan_job": "read",
+    "gc_tls": "read",
     "gc_gateway": "write",
     "gc_node": "write",
     "gc_exec": "destructive",
@@ -34,7 +36,7 @@ TOOL_RISKS: dict[str, str] = {
 TEACHING_SUMMARY = (
     "ComputeDeck（CLI/MCP：gpu-control）是可迁移的多节点算力控制面。"
     "先查目录（gc_api_catalog / GET /api），不要假设特定 Job 名，以已安装列表为准。"
-    "调度用 gc_queue / gc_lease；排障用 gc_diagnose；入口用 gc_gateway；"
+    "调度用 gc_queue / gc_lease；多机任务先用 gc_plan_job；排障用 gc_diagnose；入口用 gc_gateway；"
     "隔离与 inventory 用 gc_node；异主租约部署用 gc_deploy(force=true)。"
     "改配置后建议 gc_node(action='render') 与 gc_doctor()。"
     "kill / free / 写配置前先 gc_overview 或 gc_get_config 确认目标。"

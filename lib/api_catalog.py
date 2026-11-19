@@ -819,7 +819,9 @@ def mcp_tools_summary() -> list[dict[str, str]]:
     return [
         {"name": "gc_api_catalog", "summary": "列出 HTTP / CLI / MCP 能力与鉴权说明"},
         {"name": "gc_auth_status", "summary": "查询鉴权模式与是否已配置 token"},
-        {"name": "gc_doctor", "summary": "运行配置自检"},
+        {"name": "gc_doctor", "summary": "运行配置自检（含 TLS / nginx 漂移）"},
+        {"name": "gc_plan_job", "summary": "多机任务规划（2×4 卡 = 8 卡），只读"},
+        {"name": "gc_tls", "summary": "入口 TLS 证书 show / check，只读"},
         {"name": "gc_overview", "summary": "集群总览"},
         {"name": "gc_get_jobs", "summary": "列出已注册 Job"},
         {"name": "gc_job_action", "summary": "启停 Job（start|stop|…）"},

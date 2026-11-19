@@ -63,7 +63,8 @@ open http://127.0.0.1:8787/api/docs
 
 1. 有对应的 `gc_*` 工具时优先使用，参数已经结构化，不必拼接 CLI。
 2. 调度 / 排障 / 入口 / 节点：`gc_queue` · `gc_lease` · `gc_diagnose` · `gc_gateway` · `gc_node`。
-3. 冷门子命令再用 `gc_cli`；需要完整路径表或请求体时查 `gc_api_catalog` 或 `/api/openapi.json`。
+3. 多机任务先用 `gc_plan_job`（只读规划）；TLS 证书状态用 `gc_tls`。
+4. 冷门子命令再用 `gc_cli`；需要完整路径表或请求体时查 `gc_api_catalog` 或 `/api/openapi.json`。
 
 ### 交付形态
 
@@ -193,12 +194,14 @@ Cursor 片段示例：
 MCP 给 Agent 的说明和风险分级来自同一份定义：`lib/assistant_policy.py`，同时用于 `instructions` 和 `GET /api/assistant/policy`。  
 UI 小助手：设置面板填 Base URL / 模型 / Key（`POST /api/assistant/config`，可 `POST /api/assistant/models` 下拉）；`POST /api/assistant/chat` 调 OpenAI 兼容上游；未配则引导去设置。
 
-MCP 直接工具（23 个）：`gc_overview` · `gc_liveness` · `gc_doctor` · `gc_diagnose` · `gc_get_jobs` · `gc_api_catalog` · `gc_auth_status` · `gc_get_config` · `gc_queue` · `gc_lease` · `gc_gateway` · `gc_node` · `gc_deploy` · `gc_free_node` · `gc_job_action` · `gc_procs` · `gc_models` · `gc_toolkits` · `gc_exec_preset` · `gc_exec` · `gc_put_config` · `gc_remote` · `gc_cli`。
+MCP 直接工具（25 个）：`gc_overview` · `gc_liveness` · `gc_doctor` · `gc_plan_job` · `gc_tls` · `gc_diagnose` · `gc_get_jobs` · `gc_api_catalog` · `gc_auth_status` · `gc_get_config` · `gc_queue` · `gc_lease` · `gc_gateway` · `gc_node` · `gc_deploy` · `gc_free_node` · `gc_job_action` · `gc_procs` · `gc_models` · `gc_toolkits` · `gc_exec_preset` · `gc_exec` · `gc_put_config` · `gc_remote` · `gc_cli`。
 
 网页小助手另有 8 个便捷工具：`gc_job_logs` · `gc_logs` · `gc_metrics_history` · `gc_metrics_refresh` · `gc_notices` · `gc_probe_run` · `gc_resources_refresh` · `gc_install_template`。它们对应的 HTTP 接口也都在 `GET /api` 里；MCP 客户端可以用 `gc_cli` 或直接调 HTTP。
 
 说明：
 
+- `gc_plan_job(gpus, job, nodes)` 只做规划：返回 rank、`MASTER_ADDR`、`NPROC_PER_NODE`、hostfile 和告警；不会启动任务。
+- `gc_tls(action="show"|"check")` 查看证书就绪和到期时间；不会改配置。
 - `gc_deploy` 的 `gpus` 可省略（读 `cluster.scheduling.unit_gpus`）；异主租约用 `force=true`。
 - `gc_exec_preset(node, preset)` 运行只读诊断（`nvidia-smi` / `gpu-util` / `gpu-procs` / `ports` 等），自动执行。
 - `gc_exec` 按命令分级：`nvidia-smi / df / ps / ls / cat / grep / ss / docker ps / systemctl status` 等只读命令自动执行；`mkdir / sed -i / cp` 等修改类命令一次确认；`rm / kill / reboot / python -c / 重定向 / 管道` 等危险命令二次确认。

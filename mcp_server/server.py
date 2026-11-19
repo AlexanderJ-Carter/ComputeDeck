@@ -155,6 +155,36 @@ def gc_doctor() -> dict:
 
 
 @mcp.tool()
+def gc_plan_job(
+    gpus: int,
+    job: str | None = None,
+    nodes: str | None = None,
+    include_unverified: bool = False,
+) -> dict:
+    """规划多机任务（例如 2×4 卡组成 8 卡作业），只读，不启动任务。
+
+    返回 rank、MASTER_ADDR、NPROC_PER_NODE、hostfile 和告警。
+    """
+    args = ["plan-job", "--gpus", str(gpus), "--json"]
+    if job:
+        args.extend(["--job", job])
+    if nodes:
+        args.extend(["--nodes", nodes])
+    if include_unverified:
+        args.append("--include-unverified")
+    return _cli_json(args, timeout=60)
+
+
+@mcp.tool()
+def gc_tls(action: str = "show") -> dict:
+    """查看入口 TLS 证书状态；action=show|check，只读。"""
+    action = str(action or "show").strip().lower()
+    if action not in {"show", "check"}:
+        return {"ok": False, "error": "action 须为 show|check"}
+    return _cli_json(["tls", action], timeout=30)
+
+
+@mcp.tool()
 def gc_overview(refresh: bool = False) -> dict:
     """集群总览：节点、GPU、lease、Job 摘要。refresh=true 时刷新 GPU。"""
     if _prefer_http():
