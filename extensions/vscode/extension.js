@@ -712,20 +712,6 @@ function updateStatusBar(data, error) {
 }
 
 // ── 看板链接与一次性登录票据 ─────────────────────────────────
-const CONTROL_PAGES = [
-  { id: 'actions', label: '看板', hash: '/#/actions' },
-  { id: 'cluster', label: '节点', hash: '/#/cluster' },
-  { id: 'workloads', label: '任务', hash: '/#/workloads' },
-  { id: 'endpoints', label: '入口', hash: '/#/endpoints' },
-  { id: 'models', label: '模型', hash: '/#/models' },
-  { id: 'toolkits', label: '工具栈', hash: '/#/toolkits' },
-  { id: 'ops', label: '批量命令', hash: '/#/ops' },
-  { id: 'terminal', label: '交互终端', hash: '/#/terminal' },
-  { id: 'config', label: '配置', hash: '/#/config' },
-  { id: 'assistant', label: '小助手', hash: '/#/assistant' },
-  { id: 'notices', label: '公告', hash: '/#/notices' },
-];
-
 function controlUiUrl(hash = '') {
   const base = client.base();
   if (!hash) return `${base}/#/actions`;
@@ -775,15 +761,6 @@ async function dashboardUrlWithTicket(browserUrl, hash) {
     if (output) output.appendLine(t('打开看板：未换取登录票据（{0}）', (err && err.message) || err));
     return targetUrl;
   }
-}
-
-function pageTitleForHash(hash = '') {
-  const id = String(hash || '/#/actions')
-    .replace(/^\/#\/?/, '')
-    .replace(/^#\/?/, '')
-    .split('/')[0] || 'actions';
-  const page = CONTROL_PAGES.find((p) => p.id === id);
-  return page ? t('ComputeDeck · {0}', page.label) : t('ComputeDeck 接入');
 }
 
 function isWebIde() {
@@ -967,14 +944,13 @@ function buildAccessHubHtml(webview, state) {
       b.addEventListener('click', () => vscode.postMessage({ command }));
       (parent || document.getElementById('topActions')).append(b);
     }
-    btn('打开完整看板', 'simpleBrowser', true);
-    btn('打开工作台', 'openWorkbench');
+    btn('打开看板', 'openWorkbench', true);
     btn('五分钟上手', 'openWalkthrough');
     const auth = document.getElementById('authActions');
     btn('刷新', 'refresh', false, auth);
     btn('使用本机密钥', 'useLocalCredentials', false, auth);
     btn('密码登录', 'login', false, auth);
-    btn('用浏览器打开', 'openExternal', false, auth);
+    btn('用浏览器打开完整看板', 'openExternal', false, auth);
     btn('复制看板地址', 'copyUrl', false, auth);
     const ai = document.getElementById('aiActions');
     ${state.assistantReady
@@ -1097,82 +1073,9 @@ function showAccessHub(opts = {}) {
   });
 }
 
-async function trySimpleBrowser(url) {
-  try {
-    await vscode.commands.executeCommand('simpleBrowser.show', url);
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
-
-async function openControlUi(hash = '', title) {
-  const localUrl = controlUiUrl(hash);
-  const browserUrl = await resolveUiUrl(hash);
-  const mode = String(config().get('uiOpenMode', 'auto') || 'auto');
-  const panelTitle = title || pageTitleForHash(hash);
-
-  if (mode === 'external') {
-    const targetUrl = await dashboardUrlWithTicket(browserUrl, hash);
-    await vscode.env.openExternal(vscode.Uri.parse(targetUrl));
-    return 'external';
-  }
-
-  if (mode === 'simpleBrowser') {
-    const targetUrl = await dashboardUrlWithTicket(browserUrl, hash);
-    if (await trySimpleBrowser(targetUrl)) return 'simpleBrowser';
-    showAccessHub({
-      hash,
-      title: t('怎么用 ComputeDeck'),
-      localUrl,
-      browserUrl,
-      tryEmbed: false,
-    });
-    return 'access';
-  }
-
-  if (mode === 'embed') {
-    const targetUrl = await dashboardUrlWithTicket(browserUrl, hash);
-    showAccessHub({ hash, title: panelTitle, localUrl, browserUrl: targetUrl, tryEmbed: true });
-    return 'embed';
-  }
-
-  if (mode === 'access') {
-    showAccessHub({
-      hash,
-      title: t('怎么用 ComputeDeck'),
-      localUrl,
-      browserUrl,
-      tryEmbed: false,
-    });
-    return 'access';
-  }
-
-  // auto：先开真正的网页看板；失败再给「怎么用」（标题不再冒充看板）。
-  const targetUrl = await dashboardUrlWithTicket(browserUrl, hash);
-  if (await trySimpleBrowser(targetUrl)) return 'simpleBrowser';
-  showAccessHub({
-    hash,
-    title: t('怎么用 ComputeDeck'),
-    localUrl,
-    browserUrl,
-    tryEmbed: false,
-  });
-  return 'access';
-}
-
 async function openControlUiExternal(hash = '') {
   const browserUrl = await resolveUiUrl(hash);
   await vscode.env.openExternal(vscode.Uri.parse(await dashboardUrlWithTicket(browserUrl, hash)));
-}
-
-async function pickControlPage() {
-  const picked = await vscode.window.showQuickPick(
-    CONTROL_PAGES.map((p) => ({ label: p.label, description: p.hash, page: p })),
-    { placeHolder: t('打开看板里的哪一页？') }
-  );
-  if (!picked) return;
-  await openControlUi(picked.page.hash, t('ComputeDeck · {0}', picked.page.label));
 }
 
 // ── 五分钟上手内容 ─────────────────────────────────────────
@@ -1252,21 +1155,12 @@ async function configureAssistant() {
         description: status.base_url || t('还没填地址'),
         action: 'setup',
       },
-      {
-        label: t('只打开看板里的设置页'),
-        description: t('图表旁边的完整配置界面'),
-        action: 'web',
-      },
     ],
     { placeHolder: t('小助手：聊天还是先配 API？') }
   );
   if (!start) return;
   if (start.action === 'open') {
-    await openControlUi('/#/assistant', t('ComputeDeck · 小助手'));
-    return;
-  }
-  if (start.action === 'web') {
-    await openControlUi('/#/assistant', t('ComputeDeck · 小助手'));
+    showAssistantPanel();
     return;
   }
 
@@ -1416,7 +1310,7 @@ async function configureAssistant() {
     if (saved.ready) {
       const open = t('打开小助手');
       const choice = await vscode.window.showInformationMessage(t('要现在打开聊天吗？'), open);
-      if (choice === open) await openControlUi('/#/assistant', t('ComputeDeck · 小助手'));
+      if (choice === open) showAssistantPanel();
     }
   } catch (err) {
     vscode.window.showErrorMessage(t('保存失败：{0}', err.message || err));
@@ -1803,6 +1697,19 @@ function workbenchSnapshot() {
       queue_pending: summary.queue_pending ?? 0,
       leases: (data?.leases || []).length,
     },
+    quality: {
+      score: data?.overview?.quality?.score ?? null,
+      grade: data?.overview?.quality?.grade || '',
+    },
+    gateway: data?.gateway?.layering?.summary || '',
+    nodes: (data?.overview?.nodes || []).slice(0, 20).map((node) => ({
+      name: node.name || '',
+      state: node.liveness_state || node.state || 'unknown',
+      free: node.free ?? 0,
+      total: node.total ?? 0,
+      used: node.used ?? 0,
+      cordoned: !!node.cordoned,
+    })),
     assistant: {
       enabled: Boolean(assistant.enabled),
       ready: Boolean(assistant.ready),
@@ -1841,7 +1748,6 @@ function buildWorkbenchHtml(webview) {
     `style-src ${webview.cspSource} 'unsafe-inline'`,
     `script-src 'nonce-${nonce}'`,
   ].join('; ');
-  const pagesJson = JSON.stringify(CONTROL_PAGES);
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -1958,6 +1864,13 @@ function buildWorkbenchHtml(webview) {
       background: color-mix(in srgb, var(--vscode-list-hoverBackground) 90%, transparent);
       opacity: 1;
     }
+    .node-list { display: grid; gap: 6px; }
+    .node-row {
+      display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+      border: 1px solid var(--cd-line); border-radius: 8px; background: var(--cd-soft);
+    }
+    .node-row strong { min-width: 7rem; }
+    .node-row span { color: var(--vscode-descriptionForeground, #667); font-size: 12px; }
     .grid-2 {
       display: grid;
       grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr);
@@ -2035,7 +1948,7 @@ function buildWorkbenchHtml(webview) {
   <div class="shell">
     <header class="hero">
       <div class="hero-copy">
-        <h1>ComputeDeck 工作台</h1>
+        <h1>ComputeDeck 看板</h1>
         <div class="meta">
           <span class="pill"><span class="dot" id="connDot"></span><span id="connLabel">加载中</span></span>
           <span id="baseLabel"></span>
@@ -2058,8 +1971,13 @@ function buildWorkbenchHtml(webview) {
     </section>
 
     <section class="section">
-      <div class="section-h"><h2>看板页面</h2><span class="more">在编辑器里打开</span></div>
+      <div class="section-h"><h2>插件内操作</h2><span class="more">不打开网页</span></div>
       <div class="pages" id="pages"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-h"><h2>节点</h2><span class="more" id="nodesMore"></span></div>
+      <div class="node-list" id="nodeList"></div>
     </section>
 
     <section class="section">
@@ -2110,7 +2028,6 @@ function buildWorkbenchHtml(webview) {
   </div>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
-    const PAGES = ${pagesJson};
     const el = (id) => document.getElementById(id);
     function btn(label, payload, kind) {
       const b = document.createElement('button');
@@ -2168,8 +2085,10 @@ function buildWorkbenchHtml(webview) {
       el('heroActions').replaceChildren(
         btn('刷新', 'refresh', 'ghost'),
         btn('怎么用', 'openAccess', 'primary'),
-        btn('打开完整看板', 'openDashboard', 'ghost'),
-        btn('五分钟上手', 'openWalkthrough', 'ghost')
+        btn('排队', 'queue', 'ghost'),
+        btn('入口', 'gateway', 'ghost'),
+        btn('配置文件', 'openConfig', 'ghost'),
+        btn('用浏览器打开', 'openExternalBrowser', 'ghost')
       );
       const access = state.access || {};
       const accessBox = el('accessBox');
@@ -2182,7 +2101,7 @@ function buildWorkbenchHtml(webview) {
           : '若刷不出集群，点「怎么用」里的登录按钮';
         const detail = document.createElement('div');
         detail.className = 'notice-detail';
-        detail.textContent = '需要完整界面时点「打开完整看板」；打不开再用「用浏览器打开」。';
+        detail.textContent = '图表和助手长对话在完整网页看板里；日常操作可以直接在插件里完成。';
         accessBox.append(title, detail);
       }
       el('kpiMore').textContent = connected
@@ -2195,10 +2114,35 @@ function buildWorkbenchHtml(webview) {
         kpiCard('未读公告', String(unread), '健康与提示', unread > 0 ? 'alert' : '')
       );
       const pages = el('pages');
-      pages.replaceChildren();
-      for (const p of PAGES) {
-        pages.append(btn(p.label, { command: 'openHash', hash: p.hash, title: p.label }));
+      pages.replaceChildren(
+        btn('排队与占卡', 'queue', 'ghost'),
+        btn('入口状态', 'gateway', 'ghost'),
+        btn('打开配置文件', 'openConfig', 'ghost'),
+        btn('公告', 'openNotices', 'ghost'),
+        btn('五分钟上手', 'openWalkthrough', 'ghost')
+      );
+      const nodes = el('nodeList');
+      nodes.replaceChildren();
+      for (const node of state.nodes || []) {
+        const row = document.createElement('div');
+        row.className = 'node-row';
+        const name = document.createElement('strong');
+        name.textContent = node.name;
+        const meta = document.createElement('span');
+        const stateText = node.state === 'offline' ? '离线' : node.state === 'degraded' ? '异常' : node.cordoned ? '已隔离' : node.used ? '占用中' : '空闲';
+        meta.textContent = stateText + ' · ' + node.free + '/' + node.total + ' 空闲';
+        row.append(name, meta);
+        nodes.append(row);
       }
+      if (!(state.nodes || []).length) {
+        const empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = '暂无节点快照';
+        nodes.append(empty);
+      }
+      el('nodesMore').textContent = state.quality && state.quality.score != null
+        ? '健康 ' + state.quality.score + ' ' + (state.quality.grade || '')
+        : '';
       const a = state.assistant || {};
       const m = state.mcp || {};
       el('aiMore').textContent = a.ready
@@ -2332,15 +2276,6 @@ function showWorkbench() {
     if (command === 'ready' || command === 'refresh') {
       if (command === 'refresh') await provider.refresh(true);
       else refreshWorkbench();
-      return;
-    }
-    if (command === 'openHash') {
-      const page = CONTROL_PAGES.find((p) => p.hash === msg.hash) || { label: msg.title || '看板', hash: msg.hash };
-      await openControlUi(page.hash || '/#/actions', t('ComputeDeck · {0}', page.label || msg.title || '看板'));
-      return;
-    }
-    if (command === 'openPage') {
-      await pickControlPage();
       return;
     }
     if (command === 'openSettings') {
@@ -2481,7 +2416,6 @@ async function nodeMenu(nodeArg) {
     { label: t('查看 GPU 进程'), action: 'gpu-procs', icon: 'list-unordered' },
     { label: node.cordoned ? t('取消隔离') : t('隔离节点'), action: 'cordon', icon: 'lock' },
     { label: t('腾空节点'), action: 'free', icon: 'debug-stop' },
-    { label: t('在看板里查看这台节点'), action: 'dashboard', icon: 'globe' },
   ].map((x) => ({
     label: `${offline && ['terminal', 'nvidia-smi', 'gpu-procs', 'free'].includes(x.action) ? '$(warning) ' : ''}${x.label}`,
     action: x.action,
@@ -2503,8 +2437,6 @@ async function nodeMenu(nodeArg) {
       return toggleCordon(node);
     case 'free':
       return freeNode(node);
-    case 'dashboard':
-      return openControlUi('/#/cluster');
   }
 }
 
@@ -3247,15 +3179,7 @@ function registerCommands(context) {
     });
   });
   cmd('computedeck.openDashboard', async () => {
-    const opened = await openControlUi('/#/actions', t('ComputeDeck · 看板'));
-    if (opened === 'access') {
-      vscode.window.showInformationMessage(
-        t('网页看板没能直接打开。可以点「打开完整看板」，或用浏览器打开。')
-      );
-    }
-  });
-  cmd('computedeck.openPage', async () => {
-    await pickControlPage();
+    showWorkbench();
   });
   cmd('computedeck.openAssistant', async () => {
     await askAssistant();
