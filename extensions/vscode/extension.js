@@ -260,6 +260,23 @@ class ComputeDeckClient {
     });
   }
 
+  queueCancel(id) {
+    return this.request(`/api/queue/${encodeURIComponent(id)}/cancel`, {
+      method: 'POST',
+      body: {},
+      timeoutMs: 30000,
+    });
+  }
+
+  gatewayAction(action, kind) {
+    const body = kind ? { kind } : {};
+    return this.request(`/api/gateway/${action}`, {
+      method: 'POST',
+      body,
+      timeoutMs: 180000,
+    });
+  }
+
   exchangeTicket(target) {
     return this.request('/api/auth/exchange', {
       method: 'POST',
@@ -2658,84 +2675,361 @@ function registerMcp(context) {
 
 // ── 插件内操作（不打开网页） ───────────────────────────────
 
+let assistantPanel;
+let assistantReady = false;
+let assistantInitialPrompt = '';
 let assistantConversation = '';
 
-async function askAssistant(promptText) {
-  let status = null;
+function buildAssistantPanelHtml(webview) {
+  const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const csp = [
+    `default-src 'none'`,
+    `style-src ${webview.cspSource} 'unsafe-inline'`,
+    `script-src 'nonce-${nonce}'`,
+  ].join('; ');
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="${csp}" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ComputeDeck 小助手</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --accent: var(--vscode-button-background, #0f766e);
+      --accent-ink: var(--vscode-button-foreground, #f0fdfa);
+      --line: var(--vscode-widget-border, rgba(127,127,127,.28));
+      --soft: color-mix(in srgb, var(--vscode-editor-background) 92%, var(--vscode-foreground) 5%);
+      --muted: color-mix(in srgb, var(--vscode-foreground) 62%, transparent);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; height: 100vh; display: grid; grid-template-rows: auto minmax(0,1fr) auto;
+      font: 13px/1.55 var(--vscode-font-family); color: var(--vscode-foreground);
+      background: var(--vscode-editor-background);
+    }
+    header {
+      display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--vscode-editor-background) 94%, var(--vscode-foreground) 3%);
+    }
+    .mark { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(135deg,#2dd4bf,#0f766e); display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 12px; }
+    .title { font-weight: 650; }
+    .model { font-size: 11px; color: var(--muted); }
+    header .spacer { flex: 1; }
+    header button, .composer button {
+      appearance: none; font: inherit; cursor: pointer; border-radius: 8px;
+      border: 1px solid var(--line); background: transparent; color: var(--vscode-foreground); padding: 6px 10px;
+    }
+    header button.primary, .composer button.primary { border-color: transparent; background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+    main { overflow: auto; padding: 18px 16px 24px; }
+    .thread { max-width: 760px; margin: 0 auto; display: grid; gap: 12px; }
+    .empty { color: var(--muted); text-align: center; padding: 40px 16px; }
+    .empty strong { display: block; color: var(--vscode-foreground); margin-bottom: 6px; }
+    .msg { display: grid; gap: 4px; max-width: 92%; }
+    .msg.user { justify-self: end; }
+    .msg.bot { justify-self: start; }
+    .bubble {
+      padding: 10px 13px; border-radius: 14px; white-space: pre-wrap; word-break: break-word;
+      border: 1px solid var(--line); background: var(--soft);
+    }
+    .msg.user .bubble { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+    .role { font-size: 10.5px; color: var(--muted); padding: 0 3px; }
+    .action {
+      margin-top: 6px; border: 1px solid color-mix(in srgb, var(--vscode-editorWarning-foreground, #d97706) 40%, var(--line));
+      border-left: 3px solid var(--vscode-editorWarning-foreground, #d97706);
+      border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; background: var(--soft);
+    }
+    .action[data-risk="destructive"] { border-color: color-mix(in srgb, #dc2626 40%, var(--line)); border-left-color: #dc2626; }
+    .action .summary { font-weight: 600; }
+    .action .meta { font-size: 11px; color: var(--muted); }
+    .action .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .action button { appearance: none; font: inherit; cursor: pointer; border-radius: 7px; border: 1px solid var(--line); background: transparent; color: var(--vscode-foreground); padding: 5px 10px; }
+    .action button.primary { border-color: transparent; background: var(--accent); color: var(--accent-ink); }
+    .action[data-state="done"] { opacity: .65; }
+    .action[data-state="failed"] { border-left-color: #dc2626; }
+    footer { border-top: 1px solid var(--line); padding: 12px 16px 14px; background: color-mix(in srgb, var(--vscode-editor-background) 96%, var(--vscode-foreground) 2%); }
+    .composer { max-width: 760px; margin: 0 auto; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; align-items: end; }
+    textarea {
+      resize: none; min-height: 44px; max-height: 160px; width: 100%; padding: 10px 12px;
+      border-radius: 10px; border: 1px solid var(--line); background: var(--vscode-input-background, transparent);
+      color: var(--vscode-input-foreground, var(--vscode-foreground)); font: inherit;
+    }
+    .hint { max-width: 760px; margin: 7px auto 0; color: var(--muted); font-size: 11px; }
+    .thinking { color: var(--muted); font-size: 12px; padding: 4px 2px; }
+  </style>
+</head>
+<body>
+  <header>
+    <span class="mark">CD</span>
+    <div><div class="title">ComputeDeck 助手</div><div class="model" id="model">加载中…</div></div>
+    <span class="spacer"></span>
+    <button type="button" id="new">新对话</button>
+    <button type="button" id="settings">设置</button>
+  </header>
+  <main><div class="thread" id="thread">
+    <div class="empty" id="empty"><strong>问集群相关的问题</strong>例如「哪些节点空闲？」「为什么健康分低？」<br>助手会调用只读工具；写操作会先给出确认卡。</div>
+  </div></main>
+  <footer>
+    <div class="composer">
+      <textarea id="input" rows="1" placeholder="输入问题，Enter 发送，Shift+Enter 换行"></textarea>
+      <button type="button" class="primary" id="send">发送</button>
+    </div>
+    <p class="hint">写操作需要确认；破坏性操作需要确认两次。</p>
+  </footer>
+  <script nonce="${nonce}">
+    const vscode = acquireVsCodeApi();
+    const thread = document.getElementById('thread');
+    const input = document.getElementById('input');
+    const send = document.getElementById('send');
+    const empty = document.getElementById('empty');
+    let busy = false;
+    let lastAssistant = null;
+
+    function addMessage(role, text) {
+      if (empty) empty.remove();
+      const wrap = document.createElement('div');
+      wrap.className = 'msg ' + role;
+      const who = document.createElement('div');
+      who.className = 'role';
+      who.textContent = role === 'user' ? '你' : 'ComputeDeck';
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      bubble.textContent = text;
+      wrap.append(who, bubble);
+      thread.append(wrap);
+      thread.scrollIntoView({ block: 'end' });
+      if (role === 'bot') lastAssistant = wrap;
+      return wrap;
+    }
+
+    function addAction(parent, action) {
+      const card = document.createElement('div');
+      card.className = 'action';
+      card.dataset.id = action.id || '';
+      card.dataset.risk = action.risk || 'write';
+      card.dataset.state = 'pending';
+      const summary = document.createElement('div');
+      summary.className = 'summary';
+      summary.textContent = action.summary || action.label || '执行该操作';
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = action.risk === 'destructive' ? '破坏性操作 · 需要二次确认' : '写操作 · 需要确认';
+      const row = document.createElement('div');
+      row.className = 'row';
+      const allow = document.createElement('button');
+      allow.className = 'primary';
+      allow.textContent = '允许';
+      const reject = document.createElement('button');
+      reject.textContent = '拒绝';
+      let armed = false;
+      allow.addEventListener('click', () => {
+        if (action.risk === 'destructive' && !armed) {
+          armed = true;
+          allow.textContent = '再次确认';
+          meta.textContent = '再点一次确认执行；Esc 不是取消，请点拒绝。';
+          return;
+        }
+        card.dataset.state = 'running';
+        allow.disabled = true;
+        reject.disabled = true;
+        vscode.postMessage({ type: 'execute', actionId: action.id, confirm: action.risk === 'destructive' ? 'EXECUTE' : true });
+      });
+      reject.addEventListener('click', () => {
+        card.dataset.state = 'rejected';
+        allow.disabled = true;
+        reject.disabled = true;
+        vscode.postMessage({ type: 'reject', actionId: action.id });
+      });
+      row.append(allow, reject);
+      card.append(summary, meta, row);
+      parent.append(card);
+    }
+
+    function sendText() {
+      const text = input.value.trim();
+      if (!text || busy) return;
+      input.value = '';
+      input.style.height = 'auto';
+      addMessage('user', text);
+      busy = true;
+      send.disabled = true;
+      vscode.postMessage({ type: 'ask', text });
+    }
+    send.addEventListener('click', sendText);
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); sendText(); }
+    });
+    input.addEventListener('input', () => {
+      input.style.height = 'auto';
+      input.style.height = Math.min(160, input.scrollHeight) + 'px';
+    });
+    document.getElementById('new').addEventListener('click', () => vscode.postMessage({ type: 'new' }));
+    document.getElementById('settings').addEventListener('click', () => vscode.postMessage({ type: 'settings' }));
+
+    window.addEventListener('message', (ev) => {
+      const msg = ev.data || {};
+      if (msg.type === 'init') {
+        if (msg.model) document.getElementById('model').textContent = msg.model;
+        if (msg.prompt) { input.value = msg.prompt; sendText(); }
+        return;
+      }
+      if (msg.type === 'thinking') {
+        if (!lastAssistant || !lastAssistant.querySelector('.thinking')) {
+          const wrap = addMessage('bot', '');
+          const t = document.createElement('div');
+          t.className = 'thinking';
+          t.textContent = '正在查看集群…';
+          wrap.querySelector('.bubble').append(t);
+        }
+        return;
+      }
+      if (msg.type === 'reply') {
+        busy = false;
+        send.disabled = false;
+        const thinking = lastAssistant && lastAssistant.querySelector('.thinking');
+        if (thinking) thinking.remove();
+        const reply = msg.reply || msg.error || '（无回复）';
+        if (lastAssistant && !lastAssistant.querySelector('.bubble').textContent) {
+          lastAssistant.querySelector('.bubble').textContent = reply;
+        } else {
+          addMessage('bot', reply);
+        }
+        for (const action of msg.actions || []) addAction(lastAssistant || thread, action);
+        thread.scrollIntoView({ block: 'end' });
+        return;
+      }
+      if (msg.type === 'executed') {
+        const card = thread.querySelector('.action[data-id="' + msg.actionId + '"]');
+        if (card) {
+          card.dataset.state = msg.ok ? 'done' : 'failed';
+          const meta = card.querySelector('.meta');
+          if (meta) meta.textContent = msg.ok ? '已执行' : ('失败：' + (msg.error || '未知错误'));
+        }
+        if (msg.reply) addMessage('bot', msg.reply);
+        return;
+      }
+      if (msg.type === 'error') {
+        busy = false;
+        send.disabled = false;
+        addMessage('bot', msg.error || '请求失败');
+      }
+    });
+    vscode.postMessage({ type: 'ready' });
+  </script>
+</body>
+</html>`;
+}
+
+function showAssistantPanel(prompt = '') {
+  assistantInitialPrompt = prompt || '';
+  if (assistantPanel) {
+    assistantPanel.reveal(vscode.ViewColumn.Beside, false);
+    if (assistantReady) {
+      assistantPanel.webview.postMessage({ type: 'init', prompt: assistantInitialPrompt });
+      assistantInitialPrompt = '';
+    }
+    return;
+  }
+  assistantPanel = vscode.window.createWebviewPanel(
+    'computedeck.assistant',
+    t('ComputeDeck 小助手'),
+    vscode.ViewColumn.Beside,
+    { enableScripts: true, retainContextWhenHidden: true }
+  );
+  assistantPanel.webview.html = buildAssistantPanelHtml(assistantPanel.webview);
+  assistantPanel.onDidDispose(() => {
+    assistantPanel = undefined;
+    assistantReady = false;
+  });
+  assistantPanel.webview.onDidReceiveMessage(async (msg) => {
+    if (!msg || !msg.type) return;
+    if (msg.type === 'ready') {
+      assistantReady = true;
+      let model = '';
+      try {
+        const status = await client.assistantStatus();
+        model = status.ready ? t('{0} · 已就绪', status.model || 'LLM') : t('未配置 API');
+      } catch (_) {
+        model = t('状态未知');
+      }
+      assistantPanel?.webview.postMessage({ type: 'init', model, prompt: assistantInitialPrompt });
+      assistantInitialPrompt = '';
+      return;
+    }
+    if (msg.type === 'settings') {
+      await vscode.commands.executeCommand('computedeck.configureAssistant');
+      return;
+    }
+    if (msg.type === 'new') {
+      assistantConversation = '';
+      if (assistantPanel) assistantPanel.webview.html = buildAssistantPanelHtml(assistantPanel.webview);
+      assistantReady = false;
+      return;
+    }
+    if (msg.type === 'ask') {
+      const text = String(msg.text || '').trim();
+      if (!text) return;
+      assistantPanel?.webview.postMessage({ type: 'thinking' });
+      try {
+        const body = { message: text };
+        if (assistantConversation) body.conversation_id = assistantConversation;
+        const data = await client.assistantChat(body);
+        if (data.conversation_id) assistantConversation = data.conversation_id;
+        assistantPanel?.webview.postMessage({
+          type: 'reply',
+          reply: data.reply || data.error || '',
+          actions: data.pending_actions || [],
+        });
+      } catch (err) {
+        assistantPanel?.webview.postMessage({ type: 'error', error: err.message || String(err) });
+      }
+      return;
+    }
+    if (msg.type === 'execute' || msg.type === 'reject') {
+      try {
+        const data = await client.assistantExecute({
+          conversation_id: assistantConversation,
+          action_id: msg.actionId,
+          ...(msg.type === 'reject' ? { stage: 'reject' } : { confirm: msg.confirm }),
+        });
+        assistantPanel?.webview.postMessage({
+          type: 'executed',
+          actionId: msg.actionId,
+          ok: msg.type === 'reject' ? true : !!data.ok,
+          reply: data.reply || '',
+          error: data.error || '',
+        });
+        if (msg.type !== 'reject') provider.refresh(false).catch(() => {});
+      } catch (err) {
+        assistantPanel?.webview.postMessage({
+          type: 'executed',
+          actionId: msg.actionId,
+          ok: false,
+          error: err.message || String(err),
+        });
+      }
+    }
+  });
+}
+
+async function askAssistant(promptText = '') {
   try {
-    status = await client.assistantStatus();
+    const status = await client.assistantStatus();
+    if (!status || !status.ready) {
+      const choice = await vscode.window.showWarningMessage(
+        t('小助手还没配置好，需要先填模型地址和密钥。'),
+        t('配置小助手 API')
+      );
+      if (choice) await vscode.commands.executeCommand('computedeck.configureAssistant');
+      return;
+    }
   } catch (err) {
     vscode.window.showErrorMessage(t('读取小助手状态失败：{0}', err.message || err));
     return;
   }
-  if (!status || !status.ready) {
-    const choice = await vscode.window.showWarningMessage(
-      t('小助手还没配置好，需要先填模型地址和密钥。'),
-      t('配置小助手 API')
-    );
-    if (choice) await vscode.commands.executeCommand('computedeck.configureAssistant');
-    return;
-  }
-  const message =
-    promptText ||
-    (await vscode.window.showInputBox({
-      prompt: t('问 ComputeDeck 助手（例如：哪些节点空闲？）'),
-      ignoreFocusOut: true,
-    }));
-  if (!message || !String(message).trim()) return;
-  const body = { message: String(message).trim() };
-  if (assistantConversation) body.conversation_id = assistantConversation;
-  try {
-    const data = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: t('ComputeDeck 助手正在处理…'), cancellable: false },
-      () => client.assistantChat(body)
-    );
-    if (data.conversation_id) assistantConversation = data.conversation_id;
-    output.show(true);
-    output.appendLine(`\n> ${body.message}`);
-    if (data.reply) output.appendLine(String(data.reply));
-    if (data.warning) output.appendLine(t('提示：{0}', data.warning));
-    const pending = Array.isArray(data.pending_actions) ? data.pending_actions : [];
-    for (const action of pending) await confirmAssistantAction(action, data.conversation_id);
-  } catch (err) {
-    vscode.window.showErrorMessage(t('小助手请求失败：{0}', err.message || err));
-  }
-}
-
-async function confirmAssistantAction(action, conversationId) {
-  const summary = action.summary || action.label || t('执行该操作');
-  const risk = String(action.risk || 'write');
-  const allow = await vscode.window.showWarningMessage(
-    t('助手请求执行：{0}', summary),
-    { modal: true },
-    t('允许'),
-    t('拒绝')
-  );
-  if (allow !== t('允许')) return;
-  let confirm = true;
-  if (risk === 'destructive' || String(action.confirm_level || '') === 'double') {
-    const again = await vscode.window.showWarningMessage(
-      t('这是破坏性操作，确认执行？\n{0}', summary),
-      { modal: true },
-      t('再次确认')
-    );
-    if (again !== t('再次确认')) return;
-    confirm = 'EXECUTE';
-  }
-  try {
-    const result = await client.assistantExecute({
-      conversation_id: conversationId,
-      action_id: action.id,
-      confirm,
-    });
-    output.show(true);
-    output.appendLine(`\n[${action.label || action.tool || 'action'}] ${result.ok ? t('已执行') : t('失败')}`);
-    if (result.reply) output.appendLine(String(result.reply));
-    if (result.ok) vscode.window.showInformationMessage(t('操作已执行'));
-    else vscode.window.showErrorMessage(t('执行失败：{0}', result.error || result.reply || t('未知错误')));
-  } catch (err) {
-    vscode.window.showErrorMessage(t('执行失败：{0}', err.message || err));
-  }
+  showAssistantPanel(promptText || '');
 }
 
 async function openNoticesNative() {
@@ -2770,6 +3064,108 @@ async function openNoticesNative() {
   output.show(true);
   output.appendLine(`\n[${picked.notice.title || picked.notice.id}]`);
   if (picked.notice.detail) output.appendLine(String(picked.notice.detail));
+}
+
+async function openQueueNative() {
+  let data = null;
+  try {
+    data = await client.queueList();
+  } catch (err) {
+    vscode.window.showErrorMessage(t('读取队列失败：{0}', err.message || err));
+    return;
+  }
+  const workloads = Array.isArray(data.workloads) ? data.workloads : [];
+  const pending = workloads.filter((w) => w.status === 'pending');
+  const items = [
+    { label: '$(add) 提交 Job 到队列', action: 'submit' },
+    { label: `$(play) 调度队列${pending.length ? `（${pending.length} 个等待）` : ''}`, action: 'schedule' },
+    ...workloads.map((w) => ({
+      label: `$(list-ordered) ${w.id} · ${w.job} · ${w.gpus || '?'} GPU`,
+      description: `${w.status || ''}${w.selected_nodes?.length ? ` · ${w.selected_nodes.join(',')}` : ''}`,
+      action: 'cancel',
+      workload: w,
+    })),
+  ];
+  const picked = await vscode.window.showQuickPick(items, { placeHolder: t('排队与占卡') });
+  if (!picked) return;
+  try {
+    if (picked.action === 'submit') {
+      const jobs = await client.jobs();
+      const jobPick = await vscode.window.showQuickPick(
+        jobs.map((j) => ({ label: j.name, description: j.distributed ? t('多机') : t('单机'), job: j })),
+        { placeHolder: t('选择 Job') }
+      );
+      if (!jobPick) return;
+      const gpusText = await vscode.window.showInputBox({
+        prompt: t('需要多少 GPU'),
+        value: String(jobPick.job.gpus_per_node || 1),
+        validateInput: (v) => (/^\d+$/.test(String(v).trim()) ? '' : t('请输入整数')),
+      });
+      if (!gpusText) return;
+      const nodes = await vscode.window.showInputBox({
+        prompt: t('指定节点（逗号分隔，可留空自动选）'),
+        placeHolder: 'gpu-1,gpu-2',
+      });
+      const note = await vscode.window.showInputBox({ prompt: t('备注（可留空）') });
+      const result = await client.queueAction('submit', {
+        job: jobPick.job.name,
+        gpus: Number(gpusText),
+        ...(nodes ? { nodes } : {}),
+        ...(note ? { note } : {}),
+      });
+      output.show(true);
+      output.appendLine(JSON.stringify(result, null, 2));
+      vscode.window.showInformationMessage(t('已加入队列'));
+    } else if (picked.action === 'schedule') {
+      const result = await client.queueAction('schedule', {});
+      output.show(true);
+      output.appendLine(JSON.stringify(result, null, 2));
+      vscode.window.showInformationMessage(t('已触发调度'));
+    } else if (picked.action === 'cancel' && picked.workload) {
+      await client.queueCancel(picked.workload.id);
+      vscode.window.showInformationMessage(t('已取消 {0}', picked.workload.id));
+    }
+    await provider.refresh(false);
+  } catch (err) {
+    vscode.window.showErrorMessage(t('队列操作失败：{0}', err.message || err));
+  }
+}
+
+async function openGatewayNative() {
+  let status = null;
+  try {
+    status = await client.gatewayStatus();
+  } catch (err) {
+    vscode.window.showErrorMessage(t('读取入口状态失败：{0}', err.message || err));
+    return;
+  }
+  const layering = status.layering || {};
+  const edge = status.edge || {};
+  const litellm = status.litellm || {};
+  output.show(true);
+  output.appendLine(`\n[入口] ${layering.summary || status.preferred || 'edge'}`);
+  output.appendLine(`${t('Edge')}: ${edge.running ? t('运行中') : t('未运行')} · ${edge.listen || '-'}`);
+  output.appendLine(`${t('LiteLLM')}: ${litellm.running ? t('运行中') : t('未运行')} · ${litellm.url || '-'}`);
+  if (status.nginx) {
+    output.appendLine(`nginx: ${status.nginx.in_sync ? t('配置已同步') : t('配置待应用')} · ${status.nginx.apply_path || t('未配置 apply_path')}`);
+  }
+  const picked = await vscode.window.showQuickPick(
+    [
+      { label: '$(refresh) 重新渲染入口产物', action: 'render' },
+      { label: '$(play) 启动 Edge', action: 'start', kind: 'edge' },
+      { label: '$(play) 启动 LiteLLM', action: 'start', kind: 'litellm' },
+      { label: '$(stop) 停止全部入口', action: 'stop', kind: 'all' },
+    ],
+    { placeHolder: t('入口操作') }
+  );
+  if (!picked) return;
+  try {
+    await client.gatewayAction(picked.action, picked.kind);
+    vscode.window.showInformationMessage(t('入口操作已执行'));
+    await provider.refresh(false);
+  } catch (err) {
+    vscode.window.showErrorMessage(t('入口操作失败：{0}', err.message || err));
+  }
 }
 
 async function openConfigFile() {
@@ -2869,6 +3265,12 @@ function registerCommands(context) {
   });
   cmd('computedeck.openNotices', async () => {
     await openNoticesNative();
+  });
+  cmd('computedeck.queue', async () => {
+    await openQueueNative();
+  });
+  cmd('computedeck.gateway', async () => {
+    await openGatewayNative();
   });
   cmd('computedeck.openConfig', async () => {
     await openConfigFile();
