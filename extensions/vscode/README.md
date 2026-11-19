@@ -1,18 +1,19 @@
 # ComputeDeck for VS Code
 
-在 VS Code 侧栏直接查看和操作 [ComputeDeck](https://github.com/AlexanderJ-Carter/ComputeDeck) 多节点 GPU 控制面。
+在 VS Code 里操作 [ComputeDeck](https://github.com/AlexanderJ-Carter/ComputeDeck) 多节点 GPU 控制面：侧栏做导航，工作台面板承载 KPI / 助手 / 公告 / 常用操作。
 
 | 能力 | 说明 |
 |---|---|
-| 集群树 | 总览、节点在线/离线、GPU 空闲/占用、Job、队列/租约、入口分层 |
-| 状态栏 | `CD 4/4 节点 · 12/16 空闲`；离线时变红 |
+| 工作台 | 编辑器旁独立窗口：集群 KPI、小助手/MCP 状态、监管公告、自检/探活/部署等 |
+| 集群树 | 节点在线/离线、GPU、Job、队列/租约、入口；总览默认折叠 |
+| 状态栏 | `CD 4/4 节点 · 12/16 空闲`；点击打开工作台 |
 | 节点 | SSH 终端、`nvidia-smi` / GPU 进程、隔离/恢复、腾空 |
 | Job | 部署、启动 / 停止 / 重启 / 状态 / 等待就绪 |
-| 诊断 | 自检、节点探活、测试 SSH、只读诊断预设 |
-| AI / MCP | 侧栏看小助手就绪态与未读公告；一键打开 Web 助手 / 公告；注册 MCP 供 Copilot 调 `gc_*` |
+| Web 看板 | Simple Browser（或系统浏览器）打开完整控制面 / 助手 / 公告 |
+| MCP | 注册 MCP 供 Copilot 调 `gc_*` |
 | 上手引导 | 5 步 Walkthrough：连接 → 集群树 → 节点 → Job → AI/MCP |
 
-完整看板、AI 助手、趋势图仍在浏览器 Web 控制面；插件只做高频、低摩擦操作。危险操作（腾空、停止 Job、部署）均有确认。
+完整看板、AI 对话、趋势图仍在 Web 控制面；插件只做高频、低摩擦操作。危险操作（腾空、停止 Job、部署）均有确认。
 
 ## 安装
 
@@ -69,9 +70,8 @@ CONTROL_HOST=codelab-xxx ./scripts/preview_extension.sh --api http://127.0.0.1:8
 
 命令面板按分类 **ComputeDeck** 筛选，或点侧栏标题栏图标：
 
-- 刷新集群状态 / 打开 Web 控制面 / 打开上手引导
-- 运行自检 · 节点探活 · 测试 SSH · 只读诊断
-- 部署 Job · 腾空节点 · 注册 MCP Server
+- 刷新 / 打开工作台 / 打开 Web 控制面 / 打开上手引导
+- 工作台内：自检 · 探活 · SSH · 诊断 · 部署 · 腾空 · MCP
 
 节点与 Job 树项上有内联按钮。
 

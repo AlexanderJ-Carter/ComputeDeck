@@ -12,6 +12,7 @@
   "computedeck.config.mcpPath": "Path to gpu-control-mcp for registering the MCP Server with VS Code / Copilot.",
   "computedeck.config.sshUser": "Default SSH user for node terminals. Leave empty to use ansible_user from nodes.json.",
   "computedeck.command.refresh": "Refresh Cluster Status",
+  "computedeck.command.openWorkbench": "Open Workbench",
   "computedeck.command.openDashboard": "Open Web Control Plane",
   "computedeck.command.login": "Password Login",
   "computedeck.command.setToken": "Set API Token",
@@ -39,7 +40,7 @@
   "computedeck.walkthrough.connect.description": "Set the control plane URL and sign in. With Remote SSH this is usually 127.0.0.1.\n[Password Login](command:computedeck.login)\n[Set API Token](command:computedeck.setToken)",
   "computedeck.walkthrough.connect.alt": "Connect to the ComputeDeck control plane",
   "computedeck.walkthrough.cluster.title": "Read the Cluster Tree",
-  "computedeck.walkthrough.cluster.description": "Overview, nodes, jobs, queue/leases, and ingress; the status bar keeps node and free-GPU counts visible.",
+  "computedeck.walkthrough.cluster.description": "Sidebar keeps node/job navigation; KPIs, assistant, notices, and common actions live in the Workbench editor panel.\n[Open Workbench](command:computedeck.openWorkbench)",
   "computedeck.walkthrough.cluster.alt": "ComputeDeck cluster tree",
   "computedeck.walkthrough.nodes.title": "Node Terminals and Diagnostics",
   "computedeck.walkthrough.nodes.description": "Use the context menu or inline buttons to open an SSH terminal, run read-only diagnostics, cordon, or free a node.\n[Node Actions](command:computedeck.nodeMenu)",
@@ -55,5 +56,5 @@
   "computedeck.config.controlRoot": "Path to the local ComputeDeck control plane repo. Leave empty to detect the workspace or ~/gpu-control.",
   "computedeck.command.openAssistant": "Open Web Assistant",
   "computedeck.command.openNotices": "Open Notices",
-  "computedeck.welcome.disconnected": "Control plane not connected. On the control host, local Token is used automatically.\n[Use Local Token](command:computedeck.useLocalCredentials)\n[Password Login](command:computedeck.login)\n[Open Web Control Plane](command:computedeck.openDashboard)\n[Open Getting Started](command:computedeck.openWalkthrough)"
+  "computedeck.welcome.disconnected": "Control plane not connected. On the control host, local Token is used automatically.\n[Use Local Token](command:computedeck.useLocalCredentials)\n[Password Login](command:computedeck.login)\n[Open Workbench](command:computedeck.openWorkbench)\n[Open Web Control Plane](command:computedeck.openDashboard)\n[Open Getting Started](command:computedeck.openWalkthrough)"
 }

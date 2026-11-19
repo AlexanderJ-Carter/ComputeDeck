@@ -12,6 +12,7 @@
   "computedeck.config.mcpPath": "gpu-control-mcp 可执行文件路径；用于向 VS Code / Copilot 注册 MCP Server。",
   "computedeck.config.sshUser": "节点终端默认 SSH 用户；留空则使用节点 ansible_user。",
   "computedeck.command.refresh": "刷新集群状态",
+  "computedeck.command.openWorkbench": "打开工作台",
   "computedeck.command.openDashboard": "打开 Web 控制面",
   "computedeck.command.login": "密码登录",
   "computedeck.command.setToken": "设置 API Token",
@@ -39,7 +40,7 @@
   "computedeck.walkthrough.connect.description": "填写控制面地址并登录；Remote SSH 场景通常就是 127.0.0.1。\n[密码登录](command:computedeck.login)\n[设置 API Token](command:computedeck.setToken)",
   "computedeck.walkthrough.connect.alt": "连接 ComputeDeck 控制面",
   "computedeck.walkthrough.cluster.title": "读懂集群树",
-  "computedeck.walkthrough.cluster.description": "总览、节点、Job、队列租约、入口五个分区；状态栏常驻节点与空闲 GPU。",
+  "computedeck.walkthrough.cluster.description": "侧栏保留节点/Job 导航；KPI、助手、公告与常用操作在「工作台」编辑器窗口。\n[打开工作台](command:computedeck.openWorkbench)",
   "computedeck.walkthrough.cluster.alt": "ComputeDeck 集群树",
   "computedeck.walkthrough.nodes.title": "节点终端与诊断",
   "computedeck.walkthrough.nodes.description": "右键或行内按钮打开 SSH 终端、跑只读诊断、隔离或腾空节点。\n[节点操作](command:computedeck.nodeMenu)",
@@ -55,5 +56,5 @@
   "computedeck.config.controlRoot": "本机控制面仓库路径；留空则自动识别工作区或 ~/gpu-control。",
   "computedeck.command.openAssistant": "打开 Web 小助手",
   "computedeck.command.openNotices": "打开监管公告",
-  "computedeck.welcome.disconnected": "还没连上控制面。在 control 仓库打开时会自动读本机 Token。\n[使用本机 Token](command:computedeck.useLocalCredentials)\n[密码登录](command:computedeck.login)\n[打开 Web 控制面](command:computedeck.openDashboard)\n[打开上手引导](command:computedeck.openWalkthrough)"
+  "computedeck.welcome.disconnected": "还没连上控制面。在 control 仓库打开时会自动读本机 Token。\n[使用本机 Token](command:computedeck.useLocalCredentials)\n[密码登录](command:computedeck.login)\n[打开工作台](command:computedeck.openWorkbench)\n[打开 Web 控制面](command:computedeck.openDashboard)\n[打开上手引导](command:computedeck.openWalkthrough)"
 }

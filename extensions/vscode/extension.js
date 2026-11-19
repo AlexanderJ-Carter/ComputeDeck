@@ -15,6 +15,7 @@ let statusBar;
 let output;
 let pollTimer;
 let mcpEmitter;
+let workbenchPanel;
 
 class ApiError extends Error {
   constructor(message, status, data) {
@@ -336,6 +337,7 @@ class ClusterProvider {
     }
     this.emitter.fire();
     updateStatusBar(this.data, this.lastError);
+    refreshWorkbench();
     return this.data;
   }
 
@@ -419,7 +421,7 @@ class ClusterProvider {
       })
     );
     sections.push(
-      makeItem(t('集群总览'), vscode.TreeItemCollapsibleState.Expanded, {
+      makeItem(t('集群总览'), vscode.TreeItemCollapsibleState.Collapsed, {
         description: t('{0} 节点 · {1} 空闲 GPU', summary.nodes ?? nodes.length, summary.gpus_free ?? 0),
         iconPath: new vscode.ThemeIcon('dashboard'),
         children: summaryRows,
@@ -542,99 +544,21 @@ class ClusterProvider {
       })
     );
 
-    const assistant = this.data.assistant || {};
     const notices = this.data.notices || {};
     const unread = Number(notices.unread || 0);
-    const mcpPath = resolveMcpPath();
-    const mcpReady = Boolean(mcpPath && fs.existsSync(mcpPath));
-    const tokenReady = Boolean(readLocalApiToken() || process.env.GPU_CONTROL_API_TOKEN);
+    const assistant = this.data.assistant || {};
 
-    const noticeItems = (notices.items || [])
-      .filter((n) => !n.dismissed)
-      .slice(0, 8)
-      .map((n) =>
-        makeItem(n.title || n.id || t('公告'), vscode.TreeItemCollapsibleState.None, {
-          description: n.severity || n.source || '',
-          tooltip: [n.detail, n.fix].filter(Boolean).join('\n\n'),
-          iconPath: severityIcon(n.severity),
-          command: { command: 'computedeck.openNotices', title: t('打开监管公告') },
-        })
-      );
-
-    const aiChildren = [
-      makeItem(t('Web 小助手'), vscode.TreeItemCollapsibleState.None, {
-        description: assistant.ready
-          ? t('就绪 · {0}', assistant.model || assistant.mode || 'llm')
-          : assistant.enabled
-            ? t('已启用，尚未就绪')
-            : t('未启用'),
-        iconPath: new vscode.ThemeIcon(
-          assistant.ready ? 'sparkle' : 'circle-slash',
-          assistant.ready ? new vscode.ThemeColor('charts.green') : undefined
-        ),
-        tooltip: [
-          assistant.base_url ? `Base URL: ${assistant.base_url}` : '',
-          assistant.network_note || '',
-        ]
-          .filter(Boolean)
-          .join('\n'),
-        command: { command: 'computedeck.openAssistant', title: t('打开 Web 小助手') },
-      }),
-      makeItem(t('监管公告'), vscode.TreeItemCollapsibleState.None, {
-        description: unread > 0 ? t('{0} 条未读', unread) : t('无未读'),
-        iconPath: new vscode.ThemeIcon(
-          unread > 0 ? 'bell-dot' : 'bell',
-          unread > 0 ? new vscode.ThemeColor('editorWarning.foreground') : undefined
-        ),
-        command: { command: 'computedeck.openNotices', title: t('打开监管公告') },
-      }),
-      ...noticeItems,
-      makeItem(t('MCP Server'), vscode.TreeItemCollapsibleState.None, {
-        description: mcpReady ? t('可执行文件就绪') : t('未找到 gpu-control-mcp'),
-        iconPath: new vscode.ThemeIcon(mcpReady ? 'extensions' : 'warning'),
-        tooltip: mcpPath || '',
-        command: { command: 'computedeck.installMcp', title: t('注册 MCP Server') },
-      }),
-      makeItem(t('MCP 鉴权'), vscode.TreeItemCollapsibleState.None, {
-        description: tokenReady ? t('Token 就绪') : t('需要 API Token'),
-        iconPath: new vscode.ThemeIcon(tokenReady ? 'key' : 'warning'),
-        command: {
-          command: tokenReady ? 'computedeck.useLocalCredentials' : 'computedeck.setToken',
-          title: t('MCP 鉴权'),
-        },
-      }),
-      makeItem(t('打开 Web 控制面'), vscode.TreeItemCollapsibleState.None, {
-        iconPath: new vscode.ThemeIcon('globe'),
-        command: { command: 'computedeck.openDashboard', title: t('打开 Web 控制面') },
-      }),
-    ];
+    // Sidebar stays lean: rich AI / notices / actions live in the workbench panel.
     sections.unshift(
-      makeItem(t('AI 与 MCP'), vscode.TreeItemCollapsibleState.Expanded, {
-        description: unread > 0 ? t('{0} 未读公告', unread) : assistant.ready ? t('助手就绪') : t('助手 / Agent'),
-        iconPath: new vscode.ThemeIcon('sparkle'),
-        children: aiChildren,
-      })
-    );
-
-    const toolRows = [
-      [t('运行自检'), 'computedeck.runDoctor', 'search'],
-      [t('节点探活'), 'computedeck.liveness', 'pulse'],
-      [t('测试 SSH'), 'computedeck.testSSH', 'plug'],
-      [t('运行只读诊断'), 'computedeck.execPreset', 'beaker'],
-      [t('部署 Job'), 'computedeck.deployJob', 'rocket'],
-      [t('腾空节点'), 'computedeck.freeNode', 'debug-stop'],
-      [t('上手引导'), 'computedeck.openWalkthrough', 'book'],
-    ].map(([label, command, icon]) =>
-      makeItem(label, vscode.TreeItemCollapsibleState.None, {
-        iconPath: new vscode.ThemeIcon(icon),
-        command: { command, title: label },
-      })
-    );
-    sections.push(
-      makeItem(t('操作'), vscode.TreeItemCollapsibleState.Collapsed, {
-        description: t('诊断 / 部署'),
-        iconPath: new vscode.ThemeIcon('tools'),
-        children: toolRows,
+      makeItem(t('打开工作台'), vscode.TreeItemCollapsibleState.None, {
+        description:
+          unread > 0
+            ? t('{0} 未读公告', unread)
+            : assistant.ready
+              ? t('助手就绪')
+              : t('{0} 节点 · {1} 空闲 GPU', summary.nodes ?? nodes.length, summary.gpus_free ?? 0),
+        iconPath: new vscode.ThemeIcon('window'),
+        command: { command: 'computedeck.openWorkbench', title: t('打开工作台') },
       })
     );
     return sections;
@@ -675,13 +599,346 @@ function updateStatusBar(data, error) {
         ? t('Web 小助手：就绪（{0}）', data.assistant?.model || data.assistant?.mode || 'llm')
         : t('Web 小助手：未就绪'),
       '',
-      t('点击打开 Web 控制面；侧栏可进小助手 / 公告 / MCP'),
+      t('点击打开工作台；完整看板可用「打开 Web 控制面」'),
     ].join('\n')
   );
   statusBar.backgroundColor = warn
     ? new vscode.ThemeColor('statusBarItem.warningBackground')
     : undefined;
-  statusBar.command = unread > 0 ? 'computedeck.openNotices' : 'computedeck.openDashboard';
+  statusBar.command = 'computedeck.openWorkbench';
+}
+
+async function openControlUi(hash = '') {
+  const url = `${client.base()}${hash || ''}`;
+  try {
+    await vscode.commands.executeCommand('simpleBrowser.show', url);
+    return;
+  } catch (_) {
+    // Simple Browser 在部分发行版不可用，回落系统浏览器。
+  }
+  await vscode.env.openExternal(vscode.Uri.parse(url));
+}
+
+function workbenchSnapshot() {
+  const data = provider?.data || null;
+  const error = provider?.lastError || null;
+  const summary = data?.overview?.summary || {};
+  const assistant = data?.assistant || {};
+  const notices = data?.notices || {};
+  const mcpPath = resolveMcpPath();
+  const mcpReady = Boolean(mcpPath && fs.existsSync(mcpPath));
+  const tokenReady = Boolean(readLocalApiToken() || process.env.GPU_CONTROL_API_TOKEN);
+  return {
+    connected: Boolean(data) && !error,
+    error: error ? String(error.message || error) : '',
+    base: client.base(),
+    summary: {
+      nodes: summary.nodes ?? 0,
+      nodes_online: summary.nodes_online ?? 0,
+      nodes_offline: summary.nodes_offline ?? 0,
+      gpus_free: summary.gpus_free ?? 0,
+      gpus_total: summary.gpus_total ?? 0,
+      queue_pending: summary.queue_pending ?? 0,
+      leases: (data?.leases || []).length,
+    },
+    assistant: {
+      enabled: Boolean(assistant.enabled),
+      ready: Boolean(assistant.ready),
+      model: assistant.model || assistant.mode || '',
+      base_url: assistant.base_url || '',
+      network_note: assistant.network_note || '',
+    },
+    notices: {
+      unread: Number(notices.unread || 0),
+      items: (notices.items || [])
+        .filter((n) => !n.dismissed)
+        .slice(0, 8)
+        .map((n) => ({
+          id: n.id || '',
+          title: n.title || n.id || t('公告'),
+          severity: n.severity || '',
+          source: n.source || '',
+          detail: n.detail || '',
+        })),
+    },
+    mcp: {
+      ready: mcpReady,
+      path: mcpPath || '',
+      tokenReady,
+    },
+  };
+}
+
+function buildWorkbenchHtml(webview) {
+  const nonce = String(Date.now());
+  const csp = [
+    `default-src 'none'`,
+    `style-src ${webview.cspSource} 'unsafe-inline'`,
+    `script-src 'nonce-${nonce}'`,
+  ].join('; ');
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="${csp}" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ComputeDeck 工作台</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --gap: 14px;
+      --radius: 10px;
+    }
+    body {
+      margin: 0;
+      padding: 20px 22px 28px;
+      font: 13px/1.45 var(--vscode-font-family);
+      color: var(--vscode-foreground);
+      background: var(--vscode-editor-background);
+    }
+    h1 {
+      margin: 0 0 4px;
+      font-size: 18px;
+      font-weight: 650;
+    }
+    .sub {
+      margin: 0 0 18px;
+      opacity: 0.75;
+    }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    button, .linkish {
+      appearance: none;
+      border: 1px solid var(--vscode-button-border, transparent);
+      background: var(--vscode-button-secondaryBackground);
+      color: var(--vscode-button-secondaryForeground);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font: inherit;
+      cursor: pointer;
+    }
+    button.primary {
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+    }
+    button:hover { filter: brightness(1.05); }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: var(--gap);
+      margin-bottom: 18px;
+    }
+    .card, .panel {
+      border: 1px solid var(--vscode-widget-border, rgba(127,127,127,.35));
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      background: color-mix(in srgb, var(--vscode-editor-background) 88%, var(--vscode-foreground) 4%);
+    }
+    .card .label { opacity: 0.7; font-size: 12px; }
+    .card .value { margin-top: 4px; font-size: 22px; font-weight: 650; }
+    .panel h2 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      font-weight: 650;
+    }
+    .muted { opacity: 0.7; }
+    .warn { color: var(--vscode-editorWarning-foreground); }
+    .ok { color: var(--vscode-testing-iconPassed, #3fb950); }
+    .list { margin: 0; padding: 0; list-style: none; }
+    .list li {
+      padding: 8px 0;
+      border-top: 1px solid var(--vscode-widget-border, rgba(127,127,127,.25));
+    }
+    .list li:first-child { border-top: none; padding-top: 0; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .two {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: var(--gap);
+    }
+  </style>
+</head>
+<body>
+  <h1>ComputeDeck 工作台</h1>
+  <p class="sub" id="subtitle">加载中…</p>
+  <div class="row" id="topActions"></div>
+  <div class="grid" id="kpis"></div>
+  <div class="two">
+    <section class="panel">
+      <h2>助手 · 公告 · MCP</h2>
+      <div id="aiBlock" class="muted">—</div>
+    </section>
+    <section class="panel">
+      <h2>常用操作</h2>
+      <div class="actions" id="ops"></div>
+    </section>
+  </div>
+  <section class="panel" style="margin-top:14px">
+    <h2>监管公告</h2>
+    <ul class="list" id="notices"></ul>
+  </section>
+  <script nonce="${nonce}">
+    const vscode = acquireVsCodeApi();
+    const el = (id) => document.getElementById(id);
+    function btn(label, cmd, primary) {
+      const b = document.createElement('button');
+      b.textContent = label;
+      if (primary) b.className = 'primary';
+      b.addEventListener('click', () => vscode.postMessage({ command: cmd }));
+      return b;
+    }
+    function render(state) {
+      const s = state.summary || {};
+      el('subtitle').textContent = state.connected
+        ? (state.base || '') + ' · 侧栏保留节点/Job 导航'
+        : (state.error || '未连接控制面');
+      const top = el('topActions');
+      top.replaceChildren(
+        btn('刷新', 'refresh', true),
+        btn('打开 Web 看板', 'openDashboard'),
+        btn('Web 小助手', 'openAssistant'),
+        btn('监管公告页', 'openNotices'),
+        btn('上手引导', 'openWalkthrough')
+      );
+      const kpis = [
+        ['在线节点', (s.nodes_online ?? 0) + '/' + (s.nodes ?? 0)],
+        ['空闲 GPU', (s.gpus_free ?? 0) + '/' + (s.gpus_total ?? 0)],
+        ['离线', String(s.nodes_offline ?? 0)],
+        ['队列 pending', String(s.queue_pending ?? 0)],
+        ['租约', String(s.leases ?? 0)],
+        ['未读公告', String((state.notices && state.notices.unread) || 0)],
+      ];
+      el('kpis').replaceChildren(...kpis.map(([label, value]) => {
+        const d = document.createElement('div');
+        d.className = 'card';
+        d.innerHTML = '<div class="label"></div><div class="value"></div>';
+        d.children[0].textContent = label;
+        d.children[1].textContent = value;
+        return d;
+      }));
+      const a = state.assistant || {};
+      const m = state.mcp || {};
+      const ai = el('aiBlock');
+      ai.replaceChildren();
+      const p1 = document.createElement('p');
+      p1.innerHTML = '';
+      p1.append(
+        document.createTextNode('小助手：'),
+      );
+      const span = document.createElement('span');
+      span.className = a.ready ? 'ok' : 'muted';
+      span.textContent = a.ready
+        ? ('就绪' + (a.model ? ' · ' + a.model : ''))
+        : (a.enabled ? '已启用，尚未就绪' : '未启用');
+      p1.append(span);
+      const p2 = document.createElement('p');
+      p2.className = 'muted';
+      p2.textContent = a.base_url || a.network_note || '';
+      const p3 = document.createElement('p');
+      p3.textContent = 'MCP：' + (m.ready ? '可执行文件就绪' : '未找到 gpu-control-mcp')
+        + ' · Token ' + (m.tokenReady ? '就绪' : '需配置');
+      const authRow = document.createElement('div');
+      authRow.className = 'actions';
+      authRow.style.marginTop = '8px';
+      authRow.append(
+        btn(m.tokenReady ? '使用本机 Token' : '设置 Token', m.tokenReady ? 'useLocalCredentials' : 'setToken'),
+        btn('注册 MCP', 'installMcp'),
+        btn('密码登录', 'login')
+      );
+      ai.append(p1, p2, p3, authRow);
+      const ops = el('ops');
+      ops.replaceChildren(
+        btn('运行自检', 'runDoctor'),
+        btn('节点探活', 'liveness'),
+        btn('测试 SSH', 'testSSH'),
+        btn('只读诊断', 'execPreset'),
+        btn('部署 Job', 'deployJob'),
+        btn('腾空节点', 'freeNode')
+      );
+      const list = el('notices');
+      const items = (state.notices && state.notices.items) || [];
+      list.replaceChildren();
+      if (!items.length) {
+        const li = document.createElement('li');
+        li.className = 'muted';
+        li.textContent = '暂无公告';
+        list.append(li);
+      } else {
+        for (const n of items) {
+          const li = document.createElement('li');
+          const title = document.createElement('div');
+          title.textContent = (n.severity ? '[' + n.severity + '] ' : '') + (n.title || '');
+          if (n.severity === 'error' || n.severity === 'critical') title.className = 'warn';
+          const detail = document.createElement('div');
+          detail.className = 'muted';
+          detail.textContent = n.detail || n.source || '';
+          li.append(title, detail);
+          list.append(li);
+        }
+      }
+    }
+    window.addEventListener('message', (ev) => {
+      if (ev.data && ev.data.type === 'state') render(ev.data.state || {});
+    });
+    vscode.postMessage({ command: 'ready' });
+  </script>
+</body>
+</html>`;
+}
+
+function refreshWorkbench() {
+  if (!workbenchPanel) return;
+  workbenchPanel.webview.postMessage({ type: 'state', state: workbenchSnapshot() });
+}
+
+function showWorkbench() {
+  if (workbenchPanel) {
+    workbenchPanel.reveal(vscode.ViewColumn.Active, false);
+    refreshWorkbench();
+    return;
+  }
+  workbenchPanel = vscode.window.createWebviewPanel(
+    'computedeck.workbench',
+    t('ComputeDeck 工作台'),
+    vscode.ViewColumn.Beside,
+    { enableScripts: true, retainContextWhenHidden: true }
+  );
+  workbenchPanel.webview.html = buildWorkbenchHtml(workbenchPanel.webview);
+  workbenchPanel.onDidDispose(() => {
+    workbenchPanel = undefined;
+  });
+  workbenchPanel.webview.onDidReceiveMessage(async (msg) => {
+    const command = msg && msg.command;
+    if (!command) return;
+    if (command === 'ready' || command === 'refresh') {
+      if (command === 'refresh') await provider.refresh(true);
+      else refreshWorkbench();
+      return;
+    }
+    const map = {
+      openDashboard: 'computedeck.openDashboard',
+      openAssistant: 'computedeck.openAssistant',
+      openNotices: 'computedeck.openNotices',
+      openWalkthrough: 'computedeck.openWalkthrough',
+      runDoctor: 'computedeck.runDoctor',
+      liveness: 'computedeck.liveness',
+      testSSH: 'computedeck.testSSH',
+      execPreset: 'computedeck.execPreset',
+      deployJob: 'computedeck.deployJob',
+      freeNode: 'computedeck.freeNode',
+      installMcp: 'computedeck.installMcp',
+      login: 'computedeck.login',
+      useLocalCredentials: 'computedeck.useLocalCredentials',
+      setToken: 'computedeck.setToken',
+    };
+    const target = map[command];
+    if (target) await vscode.commands.executeCommand(target);
+  });
+  refreshWorkbench();
 }
 
 function showResult(title, payload) {
@@ -813,7 +1070,7 @@ async function nodeMenu(nodeArg) {
     case 'free':
       return freeNode(node);
     case 'dashboard':
-      return vscode.env.openExternal(vscode.Uri.parse(`${client.base()}/#/cluster`));
+      return openControlUi('/#/cluster');
   }
 }
 
@@ -1006,14 +1263,17 @@ function registerCommands(context) {
   cmd('computedeck.refresh', async () => {
     await provider.refresh(true);
   });
+  cmd('computedeck.openWorkbench', async () => {
+    showWorkbench();
+  });
   cmd('computedeck.openDashboard', async () => {
-    await vscode.env.openExternal(vscode.Uri.parse(client.base()));
+    await openControlUi();
   });
   cmd('computedeck.openAssistant', async () => {
-    await vscode.env.openExternal(vscode.Uri.parse(`${client.base()}/#/assistant`));
+    await openControlUi('/#/assistant');
   });
   cmd('computedeck.openNotices', async () => {
-    await vscode.env.openExternal(vscode.Uri.parse(`${client.base()}/#/notices`));
+    await openControlUi('/#/notices');
   });
   cmd('computedeck.openWalkthrough', async () => {
     const walkthroughId = `${context.extension.id}#computedeck.getStarted`;
