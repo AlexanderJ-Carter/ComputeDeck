@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.14
+
+- 控制面页面默认在编辑器窗口打开（`uiOpenMode=editor`）；不再自动跳系统浏览器
+- 工作台增加各页面入口；新增「打开控制面页面」「在系统浏览器打开看板」
+- 设置 `computedeck.uiOpenMode`：`editor` / `auto` / `simpleBrowser` / `external`
+- README / Walkthrough / `docs/vscode插件.md` 与命令文案对齐「窗口优先」
+
 ## 1.2.13
 
 - 侧栏精简：顶部「打开工作台」；KPI / 助手 / 公告 / 常用操作迁到编辑器旁 Webview 工作台面板

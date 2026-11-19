@@ -2,7 +2,7 @@
   "name": "computedeck-vscode",
   "displayName": "%computedeck.displayName%",
   "description": "%computedeck.description%",
-  "version": "1.2.13",
+  "version": "1.2.14",
   "publisher": "computedeck",
   "license": "AGPL-3.0-only",
   "icon": "media/icon.png",
@@ -56,6 +56,12 @@
         "icon": "$(globe)"
       },
       {
+        "command": "computedeck.openPage",
+        "title": "%computedeck.command.openPage%",
+        "category": "%computedeck.category%",
+        "icon": "$(layout)"
+      },
+      {
         "command": "computedeck.openNotices",
         "title": "%computedeck.command.openNotices%",
         "category": "%computedeck.category%",
@@ -66,6 +72,12 @@
         "title": "%computedeck.command.openAssistant%",
         "category": "%computedeck.category%",
         "icon": "$(sparkle)"
+      },
+      {
+        "command": "computedeck.openExternalBrowser",
+        "title": "%computedeck.command.openExternalBrowser%",
+        "category": "%computedeck.category%",
+        "icon": "$(link-external)"
       },
       {
         "command": "computedeck.login",
@@ -294,9 +306,14 @@
           "group": "navigation@3"
         },
         {
-          "command": "computedeck.openWalkthrough",
+          "command": "computedeck.openPage",
           "when": "view == computedeck.cluster",
           "group": "navigation@4"
+        },
+        {
+          "command": "computedeck.openWalkthrough",
+          "when": "view == computedeck.cluster",
+          "group": "navigation@5"
         }
       ],
       "view/item/context": [
@@ -380,6 +397,23 @@
           "type": "string",
           "default": "",
           "description": "%computedeck.config.controlRoot%"
+        },
+        "computedeck.uiOpenMode": {
+          "type": "string",
+          "default": "editor",
+          "enum": [
+            "auto",
+            "simpleBrowser",
+            "editor",
+            "external"
+          ],
+          "enumDescriptions": [
+            "%computedeck.config.uiOpenMode.auto%",
+            "%computedeck.config.uiOpenMode.simpleBrowser%",
+            "%computedeck.config.uiOpenMode.editor%",
+            "%computedeck.config.uiOpenMode.external%"
+          ],
+          "description": "%computedeck.config.uiOpenMode%"
         }
       }
     },
